@@ -440,15 +440,19 @@ def main():
     if use_production:
         try:
             from waitress import serve
-            print("✓ Waitress server running (handles 10-50 concurrent users)")
-            serve(app, host=Config.HOST, port=Config.PORT, threads=8)
+            print("✓ Waitress server running (producción – hasta 50 usuarios simultáneos)")
+            serve(
+                app.wsgi_app,           # ← LA CLAVE: usar .wsgi_app
+                host=Config.HOST,
+                port=Config.PORT,
+                threads=12,
+                connection_limit=100
+            )
         except ImportError:
-            print("❌ Waitress not installed!")
-            print("   Install: pip install waitress")
-            print("   Falling back to development server...\n")
+            print("❌ Waitress no instalado → pip install waitress")
             use_production = False
-
     if not use_production:
+        
         # Development mode - Simpler, good for testing
         try:
             app.run(
