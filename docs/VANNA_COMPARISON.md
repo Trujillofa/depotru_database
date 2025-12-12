@@ -11,6 +11,8 @@
 | **AI Providers** | OpenAI, Grok, Anthropic, Ollama | **Grok only** (optimized) |
 | **Vanna Version** | Latest (flexible imports) | **2.0.1 Legacy** (stable) |
 | **Spanish Support** | Yes | **Optimized for Spanish** 🇪🇸 |
+| **Number Formatting** | Basic | **Colombian format** 💰 🆕 |
+| **AI Insights** | No | **Yes** (recommendations) 🤖 🆕 |
 | **Production Ready** | Good (Flask only) | **Flexible** (Dev or Prod) |
 | **Configuration** | Manual flags | **.env file** (cleaner) |
 | **Error Handling** | Basic | **Enhanced** (detailed debugging) |
@@ -58,6 +60,50 @@ export ANTHROPIC_API_KEY='sk-ant-...'
 
 python src/vanna_chat.py
 ```
+
+---
+
+## 🎨 Beautiful Output (vanna_grok.py Only)
+
+**`vanna_grok.py` includes enhanced output formatting:**
+
+### 💰 Colombian Number Formatting
+- **Currency**: `$123.456.789` (pesos colombianos)
+- **Percentages**: `45,6%` (comma as decimal separator)
+- **Quantities**: `1.234` (period as thousands separator)
+- **Auto-detection**: Based on column names
+
+### 🤖 AI-Generated Insights
+Every query includes:
+- **📊 Resumen Ejecutivo**: Quick data summary
+- **💡 Insights Clave**: 2-3 key findings
+- **🎯 Recomendaciones**: 3-5 actionable business recommendations
+
+**Example Output:**
+```
+======================================================================
+📊 RESULTADOS (con formato colombiano)
+======================================================================
+
+Producto                   Unidades_Vendidas  Revenue
+-------------------------  -----------------  ----------------
+CEMENTO GRIS x 50KG        2.456              $45.678.900
+VARILLA 3/8" x 6M          1.892              $38.234.567
+
+======================================================================
+🤖 ANÁLISIS INTELIGENTE (Powered by Grok)
+======================================================================
+
+📊 Resumen: Cemento lidera ventas con 54% del revenue total...
+💡 Insights: Alta rotación en materiales básicos...
+🎯 Recomendaciones:
+  1. Asegurar stock permanente de cemento
+  2. Crear combos cemento + varilla
+  3. Promoción cross-selling con arena
+======================================================================
+```
+
+**See full examples:** [VANNA_BEAUTIFUL_OUTPUT.md](VANNA_BEAUTIFUL_OUTPUT.md) 🆕
 
 ---
 

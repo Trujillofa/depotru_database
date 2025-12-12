@@ -63,10 +63,10 @@ python src/business_analyzer_combined.py
 
 **Two implementations available** ([see comparison](docs/VANNA_COMPARISON.md)):
 
-**A) Production-Ready Grok (Recommended):**
+**A) Production-Ready Grok (Recommended) 🌟:**
 ```bash
 # Install
-pip install vanna chromadb pyodbc openai waitress python-dotenv
+pip install vanna chromadb pyodbc openai waitress python-dotenv pandas
 
 # Configure .env
 echo "GROK_API_KEY=xai-your-key" >> .env
@@ -76,6 +76,12 @@ python src/vanna_grok.py
 # → http://localhost:8084
 # Ask in Spanish: "Top 10 productos más vendidos"
 ```
+
+**✨ Features:**
+- 💰 **Beautiful number formatting** (Colombian pesos: `$123.456.789`)
+- 🤖 **AI-powered insights** (Grok analyzes results and gives recommendations)
+- 🇪🇸 **Spanish-optimized** (Colombian business context)
+- 📊 **Executive summaries** with each query
 
 **B) Multi-Provider (Testing):**
 ```bash
@@ -449,9 +455,10 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 | I want to... | Go here... |
 |-------------|-----------|
 | **Use Grok AI in Spanish** 🆕 | [src/vanna_grok.py](src/vanna_grok.py) + [docs/VANNA_COMPARISON.md](docs/VANNA_COMPARISON.md) |
+| **See beautiful output examples** 🎨 | [docs/VANNA_BEAUTIFUL_OUTPUT.md](docs/VANNA_BEAUTIFUL_OUTPUT.md) 🆕 |
 | Ask questions in plain English | [src/vanna_chat.py](src/vanna_chat.py) + [docs/VANNA_SETUP.md](docs/VANNA_SETUP.md) |
 | Get started quickly | [docs/START_HERE.md](docs/START_HERE.md) |
-| Compare Vanna implementations | [docs/VANNA_COMPARISON.md](docs/VANNA_COMPARISON.md) 🆕 |
+| Compare Vanna implementations | [docs/VANNA_COMPARISON.md](docs/VANNA_COMPARISON.md) |
 | Run traditional analyzer | `python src/business_analyzer_combined.py` |
 | Build web dashboard | `streamlit run examples/streamlit_dashboard.py` |
 | Fix critical bugs | [examples/improvements_p0.py](examples/improvements_p0.py) |
