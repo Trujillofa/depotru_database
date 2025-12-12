@@ -11,7 +11,7 @@
 | **AI Providers** | OpenAI, Grok, Anthropic, Ollama | **Grok only** (optimized) |
 | **Vanna Version** | Latest (flexible imports) | **2.0.1 Legacy** (stable) |
 | **Spanish Support** | Yes | **Optimized for Spanish** 🇪🇸 |
-| **Production Ready** | Good | **Excellent** (Waitress server) |
+| **Production Ready** | Good (Flask only) | **Flexible** (Dev or Prod) |
 | **Configuration** | Manual flags | **.env file** (cleaner) |
 | **Error Handling** | Basic | **Enhanced** (detailed debugging) |
 | **Training Examples** | English | **Spanish business queries** |
@@ -214,31 +214,42 @@ except Exception as e:
 
 ### 6. **Production Server**
 
-**`vanna_chat.py`** - Flask dev server:
+**`vanna_chat.py`** - Flask dev server only:
 ```python
 app = VannaFlaskApp(vn, allow_llm_to_see_data=True)
 app.run(port=8084)
 ```
 
-**`vanna_grok.py`** - Waitress production server:
-```python
-app = VannaFlaskApp(
-    vn,
-    allow_llm_to_see_data=True,
-    title="SmartBusiness + Grok AI",
-    subtitle="¡Chatea con tu base de datos en español natural!"
-)
+**`vanna_grok.py`** - Flexible dev/production mode:
+```bash
+# Development mode (default)
+python src/vanna_grok.py
 
-try:
-    from waitress import serve
-    print("Using Waitress (production mode)")
-    serve(app, host=Config.HOST, port=Config.PORT, threads=8)
-except ImportError:
-    print("Waitress missing → Flask dev server")
-    app.run(host=Config.HOST, port=Config.PORT, threaded=True)
+# Production mode (Waitress server)
+PRODUCTION_MODE=true python src/vanna_grok.py
 ```
 
-**Advantage:** Waitress is **production-grade** (better performance, stability, security).
+**Code:**
+```python
+use_production = os.getenv("PRODUCTION_MODE", "false").lower() == "true"
+
+if use_production:
+    from waitress import serve
+    serve(app, host=Config.HOST, port=Config.PORT, threads=8)
+else:
+    app.run(
+        host=Config.HOST,
+        port=Config.PORT,
+        debug=False,
+        use_reloader=False
+    )
+```
+
+**Advantages:**
+- ✅ **Simple by default** (Flask dev server, no extra dependencies)
+- ✅ **Production-ready when needed** (Waitress handles 10-50 concurrent users)
+- ✅ **Environment-based switching** (clean configuration)
+- ✅ **Graceful KeyboardInterrupt** handling
 
 ---
 
@@ -286,7 +297,11 @@ except ImportError:
 
 ```bash
 # 1. Install dependencies
-pip install vanna[legacy] chromadb pyodbc openai waitress python-dotenv
+# Development (testing):
+pip install vanna chromadb pyodbc openai python-dotenv
+
+# Production (add waitress):
+pip install vanna chromadb pyodbc openai python-dotenv waitress
 
 # 2. Install ODBC driver (if not already installed)
 # Ubuntu/Debian:
@@ -310,7 +325,14 @@ DB_USER=Consulta
 DB_PASSWORD=Control*01
 EOF
 
-# 4. Run
+# 4a. Run (Development mode - simpler, good for testing)
+python src/vanna_grok.py
+
+# 4b. Run (Production mode - Waitress server, handles 10-50 users)
+PRODUCTION_MODE=true python src/vanna_grok.py
+
+# Or add to .env:
+echo "PRODUCTION_MODE=true" >> .env
 python src/vanna_grok.py
 ```
 

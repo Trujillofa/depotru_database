@@ -192,10 +192,18 @@ def main():
     # 3. Train (Schema + Rules + Examples)
     train_vanna(vn)
 
-    # 4. Launch Web UI (Flask – Stable & Chart-Friendly)
+    # 4. Launch Web UI (Vanna's Built-in Flask Runner)
     print(f"\n🌐 Server firing up → http://{Config.HOST}:{Config.PORT}")
     print("   Pro Tips: Ask 'Top productos rentables' or 'Ventas mensuales por categoría'")
-    print("   Auto-generates SQL, tables, & charts. Ctrl+C to stop.\n")
+    print("   Auto-generates SQL, tables, & charts. Ctrl+C to stop.")
+
+    # Check if production mode requested via environment
+    use_production = os.getenv("PRODUCTION_MODE", "false").lower() == "true"
+
+    if use_production:
+        print("\n   🚀 PRODUCTION MODE: Using Waitress server")
+    else:
+        print("   💡 Development mode (for production: set PRODUCTION_MODE=true)\n")
 
     app = VannaFlaskApp(
         vn,
@@ -204,14 +212,34 @@ def main():
         subtitle="¡Chatea con tu base de datos en español natural!"
     )
 
-    # Prod-Ready Server (Waitress > Flask Dev)
-    try:
-        from waitress import serve
-        print("Using Waitress (production mode)")
-        serve(app, host=Config.HOST, port=Config.PORT, threads=8)
-    except ImportError:
-        print("Waitress missing → Flask dev server (install: pip install waitress)")
-        app.run(host=Config.HOST, port=Config.PORT, threaded=True, debug=False)
+    # Production vs Development Server
+    if use_production:
+        try:
+            from waitress import serve
+            print("✓ Waitress server running (handles 10-50 concurrent users)")
+            serve(app, host=Config.HOST, port=Config.PORT, threads=8)
+        except ImportError:
+            print("❌ Waitress not installed!")
+            print("   Install: pip install waitress")
+            print("   Falling back to development server...\n")
+            use_production = False
+
+    if not use_production:
+        # Development mode - Simpler, good for testing
+        try:
+            app.run(
+                host=Config.HOST,
+                port=Config.PORT,
+                debug=False,  # Set True for error pages (dev only)
+                use_reloader=False  # Avoids double-spawns in scripts
+            )
+        except KeyboardInterrupt:
+            print("\n\n👋 Server stopped gracefully!")
+        except Exception as e:
+            print(f"\n❌ Launch error: {e}")
+            print("💡 Troubleshooting:")
+            print("   - Check port 8084 isn't already in use")
+            print("   - Try a different port: PORT=8085 python src/vanna_grok.py")
 
 if __name__ == "__main__":
     main()
