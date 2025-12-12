@@ -24,17 +24,19 @@ seaborn>=0.12.0             # Statistical data visualization
 # ============================================================================
 streamlit>=1.20.0           # Web dashboard framework
 flask>=2.0.0                # Lightweight web framework (for Vanna)
+waitress>=2.1.0             # Production WSGI server (for vanna_grok.py)
 
 # AI/ML - Natural Language to SQL
 # ============================================================================
-# Vanna AI Integration
-vanna>=0.3.0                # Natural language to SQL
+# Vanna AI Integration (Two implementations available)
+vanna>=0.3.0                # Natural language to SQL (latest version)
+# vanna[legacy]             # Alternative: Use legacy for vanna_grok.py stability
 chromadb>=0.4.0             # Vector database for local Vanna storage
-openai>=1.0.0               # OpenAI API (for GPT-4)
+openai>=1.0.0               # OpenAI API (for GPT-4 and Grok via compatible API)
 
 # LLM Providers (Choose based on your preference)
 anthropic>=0.7.0            # Anthropic Claude API
-# Note: Grok uses OpenAI-compatible API, no separate package needed
+# Note: Grok uses OpenAI-compatible API via openai package
 # Note: Ollama runs locally, no package needed (install separately)
 
 # Encryption/Decryption (Optional - for NCX file support)

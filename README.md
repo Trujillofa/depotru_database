@@ -61,20 +61,35 @@ python src/business_analyzer_combined.py
 
 ### Option 2: AI-Powered Natural Language Queries 🌟
 
+**Two implementations available** ([see comparison](docs/VANNA_COMPARISON.md)):
+
+**A) Production-Ready Grok (Recommended):**
 ```bash
-# Install Vanna AI
+# Install
+pip install vanna chromadb pyodbc openai waitress python-dotenv
+
+# Configure .env
+echo "GROK_API_KEY=xai-your-key" >> .env
+
+# Run
+python src/vanna_grok.py
+# → http://localhost:8084
+# Ask in Spanish: "Top 10 productos más vendidos"
+```
+
+**B) Multi-Provider (Testing):**
+```bash
+# Install
 pip install vanna chromadb pyodbc openai
 
-# Set your API key (choose one)
-export OPENAI_API_KEY='sk-your-key'      # OpenAI
-export GROK_API_KEY='xai-your-key'        # Grok (xAI)  🆕
-export ANTHROPIC_API_KEY='sk-ant-key'     # Anthropic
+# Choose provider
+export GROK_API_KEY='xai-your-key'        # Grok (xAI)
+# OR export OPENAI_API_KEY='sk-...'       # OpenAI
+# OR export ANTHROPIC_API_KEY='sk-ant-'   # Anthropic
 
-# Run Vanna chat interface
+# Run
 python src/vanna_chat.py
-
-# Open browser to http://localhost:8084
-# Ask: "Show me revenue by category this month"
+# → http://localhost:8084
 ```
 
 ### Option 3: Interactive Web Dashboard
@@ -101,8 +116,9 @@ coding_omarchy/
 │
 ├── src/                              # 💻 Source Code
 │   ├── __init__.py
-│   ├── business_analyzer_combined.py # Main analyzer
-│   ├── vanna_chat.py                 # AI natural language SQL (with Grok!)
+│   ├── business_analyzer_combined.py # Main analyzer (traditional)
+│   ├── vanna_grok.py                 # 🆕 AI chat (Grok-optimized, Spanish)
+│   ├── vanna_chat.py                 # AI chat (multi-provider support)
 │   ├── config.py                     # Configuration management
 │   └── utils/                        # Utility functions
 │       └── __init__.py
@@ -114,12 +130,14 @@ coding_omarchy/
 │
 ├── docs/                             # 📚 Documentation
 │   ├── START_HERE.md                 # ⭐ Start here!
+│   ├── VANNA_COMPARISON.md           # 🆕 Vanna implementations comparison
+│   ├── VANNA_SETUP.md                # Vanna AI setup guide
+│   ├── ARCHITECTURE.md               # Technical architecture
 │   ├── ANALYSIS_SUMMARY.md           # Executive summary
 │   ├── IMPROVEMENT_ANALYSIS.md       # Detailed analysis
 │   ├── QUICK_START_IMPROVEMENTS.md   # Fast-track guide
 │   ├── P0_FIXES_APPLIED.md           # Critical fixes
 │   ├── METABASE_TROUBLESHOOTING.md   # Metabase guide
-│   ├── VANNA_SETUP.md                # Vanna AI setup (includes Grok!)
 │   ├── SECURITY.md                   # Security guidelines
 │   ├── CONTRIBUTING.md               # Development guide
 │   └── setup_instructions.md         # Setup instructions
@@ -430,9 +448,10 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
 | I want to... | Go here... |
 |-------------|-----------|
+| **Use Grok AI in Spanish** 🆕 | [src/vanna_grok.py](src/vanna_grok.py) + [docs/VANNA_COMPARISON.md](docs/VANNA_COMPARISON.md) |
 | Ask questions in plain English | [src/vanna_chat.py](src/vanna_chat.py) + [docs/VANNA_SETUP.md](docs/VANNA_SETUP.md) |
 | Get started quickly | [docs/START_HERE.md](docs/START_HERE.md) |
-| Set up Grok AI | [docs/VANNA_SETUP.md](docs/VANNA_SETUP.md) 🆕 |
+| Compare Vanna implementations | [docs/VANNA_COMPARISON.md](docs/VANNA_COMPARISON.md) 🆕 |
 | Run traditional analyzer | `python src/business_analyzer_combined.py` |
 | Build web dashboard | `streamlit run examples/streamlit_dashboard.py` |
 | Fix critical bugs | [examples/improvements_p0.py](examples/improvements_p0.py) |
