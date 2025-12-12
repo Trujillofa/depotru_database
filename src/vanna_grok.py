@@ -23,19 +23,20 @@ load_dotenv()
 
 # Set Colombian locale for number formatting (fallback to Spanish/default)
 try:
-    locale.setlocale(locale.LC_ALL, 'es_CO.UTF-8')  # Colombian Spanish
+    locale.setlocale(locale.LC_ALL, "es_CO.UTF-8")  # Colombian Spanish
 except locale.Error:
     try:
-        locale.setlocale(locale.LC_ALL, 'es_ES.UTF-8')  # Spanish
+        locale.setlocale(locale.LC_ALL, "es_ES.UTF-8")  # Spanish
     except locale.Error:
         try:
-            locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')  # Fallback
+            locale.setlocale(locale.LC_ALL, "en_US.UTF-8")  # Fallback
         except locale.Error:
             pass  # Use system default
 
 # =============================================================================
 # CONFIGURATION (from .env – keep secrets safe!)
 # =============================================================================
+
 
 class Config:
     GROK_API_KEY = os.getenv("GROK_API_KEY")
@@ -51,9 +52,11 @@ class Config:
     PORT = int(os.getenv("PORT", "8084"))
     HOST = os.getenv("HOST", "0.0.0.0")
 
+
 # =============================================================================
 # NUMBER FORMATTING (Colombian Pesos, Percentages, Thousands)
 # =============================================================================
+
 
 def format_number(value: Any, column_name: str = "") -> str:
     """
@@ -72,25 +75,38 @@ def format_number(value: Any, column_name: str = "") -> str:
 
     # Currency columns (Colombian Pesos)
     currency_keywords = [
-        'revenue', 'ganancia', 'facturacion', 'total', 'costo',
-        'precio', 'valor', 'ingreso', 'profit', 'cost', 'iva'
+        "revenue",
+        "ganancia",
+        "facturacion",
+        "total",
+        "costo",
+        "precio",
+        "valor",
+        "ingreso",
+        "profit",
+        "cost",
+        "iva",
     ]
     if any(kw in col_lower for kw in currency_keywords):
         try:
             num = float(value)
             # Colombian format: $123.456.789 (period as thousands separator)
-            formatted = f"${num:,.0f}".replace(',', '.')
+            formatted = f"${num:,.0f}".replace(",", ".")
             return formatted
         except (ValueError, TypeError):
             return str(value)
 
     # Percentage columns
-    percentage_keywords = ['margen', 'margin', 'pct', 'porcentaje', 'percentage', '%']
+    percentage_keywords = ["margen", "margin", "pct", "porcentaje", "percentage", "%"]
     if any(kw in col_lower for kw in percentage_keywords):
         try:
             num = float(value)
             # Spanish format: 45,6% (comma as decimal separator)
-            formatted = f"{num:,.1f}%".replace(',', 'TEMP').replace('.', ',').replace('TEMP', '.')
+            formatted = (
+                f"{num:,.1f}%".replace(",", "TEMP")
+                .replace(".", ",")
+                .replace("TEMP", ".")
+            )
             return formatted
         except (ValueError, TypeError):
             return str(value)
@@ -99,13 +115,18 @@ def format_number(value: Any, column_name: str = "") -> str:
     try:
         num = float(value)
         if num == int(num):  # Integer
-            formatted = f"{int(num):,}".replace(',', '.')
+            formatted = f"{int(num):,}".replace(",", ".")
             return formatted
         else:  # Decimal
-            formatted = f"{num:,.2f}".replace(',', 'TEMP').replace('.', ',').replace('TEMP', '.')
+            formatted = (
+                f"{num:,.2f}".replace(",", "TEMP")
+                .replace(".", ",")
+                .replace("TEMP", ".")
+            )
             return formatted
     except (ValueError, TypeError):
         return str(value)
+
 
 def format_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Apply beautiful formatting to entire dataframe"""
@@ -120,11 +141,15 @@ def format_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     return df_formatted
 
+
 # =============================================================================
 # AI INSIGHTS GENERATION (Grok analyzes results and gives recommendations)
 # =============================================================================
 
-def generate_insights(question: str, sql: str, df: pd.DataFrame, grok_client: OpenAI) -> str:
+
+def generate_insights(
+    question: str, sql: str, df: pd.DataFrame, grok_client: OpenAI
+) -> str:
     """
     Use Grok to analyze query results and generate business insights.
 
@@ -135,21 +160,21 @@ def generate_insights(question: str, sql: str, df: pd.DataFrame, grok_client: Op
 
     # Prepare data summary for Grok
     summary = {
-        'rows': len(df),
-        'columns': list(df.columns),
-        'sample': df.head(10).to_dict('records') if len(df) > 0 else [],
-        'stats': {}
+        "rows": len(df),
+        "columns": list(df.columns),
+        "sample": df.head(10).to_dict("records") if len(df) > 0 else [],
+        "stats": {},
     }
 
     # Add statistics for numeric columns
     for col in df.columns:
         try:
             if pd.api.types.is_numeric_dtype(df[col]):
-                summary['stats'][col] = {
-                    'min': float(df[col].min()),
-                    'max': float(df[col].max()),
-                    'mean': float(df[col].mean()),
-                    'total': float(df[col].sum()) if 'sum' in dir(df[col]) else None
+                summary["stats"][col] = {
+                    "min": float(df[col].min()),
+                    "max": float(df[col].max()),
+                    "mean": float(df[col].mean()),
+                    "total": float(df[col].sum()) if "sum" in dir(df[col]) else None,
                 }
         except:
             pass
@@ -176,13 +201,16 @@ Usa emojis para hacer el análisis más visual."""
 
     try:
         response = grok_client.chat.completions.create(
-            model="grok-beta",
+            model="grok-4-1-fast-non-reasoning",
             messages=[
-                {"role": "system", "content": "Eres un consultor de negocios experto en retail y ferreterías. Siempre respondes en español colombiano con recomendaciones accionables."},
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system",
+                    "content": "Eres un consultor de negocios experto en retail y ferreterías. Siempre respondes en español colombiano con recomendaciones accionables.",
+                },
+                {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=500
+            max_tokens=500,
         )
 
         insights = response.choices[0].message.content.strip()
@@ -191,9 +219,11 @@ Usa emojis para hacer el análisis más visual."""
     except Exception as e:
         return f"⚠️ No se pudieron generar insights: {e}"
 
+
 # =============================================================================
 # CUSTOM VANNA CLASS – Grok + ChromaDB + MSSQL (ODBC via pyodbc)
 # =============================================================================
+
 
 class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
     def __init__(self):
@@ -201,14 +231,11 @@ class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
         ChromaDB_VectorStore.__init__(self, config={})
 
         # 2. Grok LLM via OpenAI-compatible client
-        client = OpenAI(
-            api_key=Config.GROK_API_KEY,
-            base_url="https://api.x.ai/v1"
-        )
+        client = OpenAI(api_key=Config.GROK_API_KEY, base_url="https://api.x.ai/v1")
         OpenAI_Chat.__init__(
             self,
             client=client,
-            config={"model": "grok-beta"}  # Stable as of Dec 2025
+            config={"model": "grok-4-1-fast-non-reasoning"},  # Stable as of Dec 2025
         )
 
     def connect_to_mssql_odbc(self):
@@ -242,10 +269,7 @@ class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
             sys.exit(1)
 
     def ask(
-        self,
-        question: str = None,
-        print_results: bool = True,
-        auto_train: bool = True
+        self, question: str = None, print_results: bool = True, auto_train: bool = True
     ) -> tuple:
         """
         Enhanced ask() method with:
@@ -269,9 +293,9 @@ class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
                 return sql, df, None
 
             # ========== ENHANCEMENT 1: Format Numbers ==========
-            print("\n" + "="*70)
+            print("\n" + "=" * 70)
             print("📊 RESULTADOS (con formato colombiano)")
-            print("="*70)
+            print("=" * 70)
             print(f"\n📝 SQL Ejecutado:\n{sql}\n")
             print(f"✅ {len(df)} filas encontradas\n")
 
@@ -283,15 +307,14 @@ class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
             # ========== ENHANCEMENT 2: AI Insights ==========
             # Get Grok client for insights
             grok_client = OpenAI(
-                api_key=Config.GROK_API_KEY,
-                base_url="https://api.x.ai/v1"
+                api_key=Config.GROK_API_KEY, base_url="https://api.x.ai/v1"
             )
 
             insights = generate_insights(
                 question=question,
                 sql=sql,
                 df=df,  # Use original unformatted data for analysis
-                grok_client=grok_client
+                grok_client=grok_client,
             )
 
             print(insights)
@@ -309,15 +332,18 @@ class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
             print(f"\n❌ Error ejecutando consulta: {e}\n")
             return None, None, None
 
+
 # =============================================================================
 # TRAINING – Schema, Rules, & Golden Examples (Your Accuracy Secret Sauce)
 # =============================================================================
+
 
 def train_vanna(vn: GrokVanna):
     print("\nTraining on SmartBusiness schema & rules...")
 
     # 1. DDL (Table Structure)
-    vn.train(ddl="""
+    vn.train(
+        ddl="""
         CREATE TABLE banco_datos (
             Fecha DATE,
             TotalMasIva DECIMAL(18,2),
@@ -331,10 +357,12 @@ def train_vanna(vn: GrokVanna):
             categoria NVARCHAR(100),
             subcategoria NVARCHAR(100)
         );
-    """)
+    """
+    )
 
     # 2. Business Rules/Docs (Forces smart filtering)
-    vn.train(documentation="""
+    vn.train(
+        documentation="""
         SmartBusiness – Ferretería Sales Database
         CRITICAL RULE: ALWAYS add WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') to exclude test/cancelled docs.
         Key Metrics:
@@ -344,11 +372,14 @@ def train_vanna(vn: GrokVanna):
         - Margin %: (TotalSinIva - ValorCosto) / TotalSinIva * 100
         - Tax (IVA): TotalMasIva - TotalSinIva
         Queries in Spanish work best (e.g., 'productos vendidos').
-    """)
+    """
+    )
 
     # 3. Golden Examples (Few-shot prompts = Grok's SQL superpowers)
     examples = [
-        ("Top 10 productos más vendidos este año", """
+        (
+            "Top 10 productos más vendidos este año",
+            """
             SELECT TOP 10
                 ArticulosNombre AS Producto,
                 SUM(Cantidad) AS Unidades_Vendidas,
@@ -358,8 +389,11 @@ def train_vanna(vn: GrokVanna):
               AND YEAR(Fecha) = YEAR(GETDATE())
             GROUP BY ArticulosNombre
             ORDER BY Revenue DESC
-        """),
-        ("Ganancias por categoría en el último mes", """
+        """,
+        ),
+        (
+            "Ganancias por categoría en el último mes",
+            """
             SELECT
                 categoria,
                 SUM(TotalSinIva - ValorCosto) AS Ganancia_Neta
@@ -368,8 +402,11 @@ def train_vanna(vn: GrokVanna):
               AND Fecha >= DATEADD(MONTH, -1, GETDATE())
             GROUP BY categoria
             ORDER BY Ganancia_Neta DESC
-        """),
-        ("Top 10 clientes por facturación total", """
+        """,
+        ),
+        (
+            "Top 10 clientes por facturación total",
+            """
             SELECT TOP 10
                 TercerosNombres AS Cliente,
                 SUM(TotalMasIva) AS Facturacion_Total
@@ -377,8 +414,11 @@ def train_vanna(vn: GrokVanna):
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
             GROUP BY TercerosNombres
             ORDER BY Facturacion_Total DESC
-        """),
-        ("Margen de ganancia promedio por subcategoría", """
+        """,
+        ),
+        (
+            "Margen de ganancia promedio por subcategoría",
+            """
             SELECT
                 subcategoria,
                 AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0)) AS Margen_Promedio_Pct
@@ -386,7 +426,8 @@ def train_vanna(vn: GrokVanna):
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') AND TotalSinIva > 0
             GROUP BY subcategoria
             ORDER BY Margen_Promedio_Pct DESC
-        """)
+        """,
+        ),
     ]
 
     for question, sql in examples:
@@ -397,9 +438,11 @@ def train_vanna(vn: GrokVanna):
 
     print("✓ Training complete – Vanna's ready to query like a pro!")
 
+
 # =============================================================================
 # MAIN – Connect, Train, Serve (One-Command Magic)
 # =============================================================================
+
 
 def main():
     print("=" * 70)
@@ -416,58 +459,36 @@ def main():
     # 3. Train (Schema + Rules + Examples)
     train_vanna(vn)
 
-    # 4. Launch Web UI (Vanna's Built-in Flask Runner)
+    # 4. Launch Web UI (Vanna's Native Runner – Handles Everything)
     print(f"\n🌐 Server firing up → http://{Config.HOST}:{Config.PORT}")
-    print("   Pro Tips: Ask 'Top productos rentables' or 'Ventas mensuales por categoría'")
-    print("   Auto-generates SQL, tables, & charts. Ctrl+C to stop.")
-
-    # Check if production mode requested via environment
-    use_production = os.getenv("PRODUCTION_MODE", "false").lower() == "true"
-
-    if use_production:
-        print("\n   🚀 PRODUCTION MODE: Using Waitress server")
-    else:
-        print("   💡 Development mode (for production: set PRODUCTION_MODE=true)\n")
+    print(
+        "   Pro Tips: Ask 'Top productos rentables' or 'Ventas mensuales por categoría'"
+    )
+    print("   Auto-generates SQL, tables, & charts. Ctrl+C to stop.\n")
 
     app = VannaFlaskApp(
         vn,
         allow_llm_to_see_data=True,  # Grok peeks at results for smarter viz
         title="SmartBusiness + Grok AI",
-        subtitle="¡Chatea con tu base de datos en español natural!"
+        subtitle="¡Chatea con tu base de datos en español natural!",
     )
 
-    # Production vs Development Server
-    if use_production:
-        try:
-            from waitress import serve
-            print("✓ Waitress server running (producción – hasta 50 usuarios simultáneos)")
-            serve(
-                app.wsgi_app,           # ← LA CLAVE: usar .wsgi_app
-                host=Config.HOST,
-                port=Config.PORT,
-                threads=12,
-                connection_limit=100
-            )
-        except ImportError:
-            print("❌ Waitress no instalado → pip install waitress")
-            use_production = False
-    if not use_production:
-        
-        # Development mode - Simpler, good for testing
-        try:
-            app.run(
-                host=Config.HOST,
-                port=Config.PORT,
-                debug=False,  # Set True for error pages (dev only)
-                use_reloader=False  # Avoids double-spawns in scripts
-            )
-        except KeyboardInterrupt:
-            print("\n\n👋 Server stopped gracefully!")
-        except Exception as e:
-            print(f"\n❌ Launch error: {e}")
-            print("💡 Troubleshooting:")
-            print("   - Check port 8084 isn't already in use")
-            print("   - Try a different port: PORT=8085 python src/vanna_grok.py")
+    # 🚀 Vanna's Official Magic: .run() – Works in Dev/Prod, No Hacks Needed
+    print("✓ Using Vanna's built-in Flask runner (threaded for multiple users)")
+    try:
+        app.run(
+            host=Config.HOST,
+            port=Config.PORT,
+            debug=False,  # False for prod-like stability
+            use_reloader=False,  # No double-spawns in scripts
+            threaded=True,  # Handles 10-20 concurrent chats
+        )
+    except KeyboardInterrupt:
+        print("\n\n👋 Server stopped gracefully! (Gracias por chatear con tus datos)")
+    except Exception as e:
+        print(f"\n❌ Launch hiccup: {e}")
+        print("💡 Fixes: Check port (lsof -i :8084), or try PORT=8085 in .env")
+
 
 if __name__ == "__main__":
     main()
