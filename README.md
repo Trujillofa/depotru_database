@@ -136,7 +136,9 @@ coding_omarchy/
 │
 ├── docs/                             # 📚 Documentation
 │   ├── START_HERE.md                 # ⭐ Start here!
+│   ├── ROADMAP.md                    # 🗺️ Strategic roadmap & what's next
 │   ├── VANNA_COMPARISON.md           # 🆕 Vanna implementations comparison
+│   ├── VANNA_BEAUTIFUL_OUTPUT.md     # 🎨 Beautiful output examples
 │   ├── VANNA_SETUP.md                # Vanna AI setup guide
 │   ├── ARCHITECTURE.md               # Technical architecture
 │   ├── ANALYSIS_SUMMARY.md           # Executive summary
@@ -454,8 +456,9 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
 | I want to... | Go here... |
 |-------------|-----------|
+| **See what's next / roadmap** 🗺️ | [docs/ROADMAP.md](docs/ROADMAP.md) 🆕 |
 | **Use Grok AI in Spanish** 🆕 | [src/vanna_grok.py](src/vanna_grok.py) + [docs/VANNA_COMPARISON.md](docs/VANNA_COMPARISON.md) |
-| **See beautiful output examples** 🎨 | [docs/VANNA_BEAUTIFUL_OUTPUT.md](docs/VANNA_BEAUTIFUL_OUTPUT.md) 🆕 |
+| **See beautiful output examples** 🎨 | [docs/VANNA_BEAUTIFUL_OUTPUT.md](docs/VANNA_BEAUTIFUL_OUTPUT.md) |
 | Ask questions in plain English | [src/vanna_chat.py](src/vanna_chat.py) + [docs/VANNA_SETUP.md](docs/VANNA_SETUP.md) |
 | Get started quickly | [docs/START_HERE.md](docs/START_HERE.md) |
 | Compare Vanna implementations | [docs/VANNA_COMPARISON.md](docs/VANNA_COMPARISON.md) |
