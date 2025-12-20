@@ -325,18 +325,23 @@ See `.env.example` for all options.
 ## 🧪 Testing
 
 ```bash
-# Install test dependencies
-pip install pytest pytest-cov
+# Quick start - Run basic tests (no dependencies required)
+python run_tests.py --quick
 
-# Run all tests
-pytest tests/
+# Run all available tests
+python run_tests.py
 
-# Run with coverage
-pytest tests/ --cov=src --cov-report=html
+# Run with coverage report
+python run_tests.py --cov
+
+# Using pytest directly
+pytest tests/ -v
 
 # Run specific test file
-pytest tests/test_business_metrics.py -v
+pytest tests/test_basic.py -v
 ```
+
+📖 **See [docs/TESTING.md](docs/TESTING.md) for detailed testing guide**
 
 ---
 
@@ -457,6 +462,7 @@ See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 | I want to... | Go here... |
 |-------------|-----------|
 | **See what's next / roadmap** 🗺️ | [docs/ROADMAP.md](docs/ROADMAP.md) 🆕 |
+| **Run tests** 🧪 | `python run_tests.py --quick` + [docs/TESTING.md](docs/TESTING.md) |
 | **Use Grok AI in Spanish** 🆕 | [src/vanna_grok.py](src/vanna_grok.py) + [docs/VANNA_COMPARISON.md](docs/VANNA_COMPARISON.md) |
 | **See beautiful output examples** 🎨 | [docs/VANNA_BEAUTIFUL_OUTPUT.md](docs/VANNA_BEAUTIFUL_OUTPUT.md) |
 | Ask questions in plain English | [src/vanna_chat.py](src/vanna_chat.py) + [docs/VANNA_SETUP.md](docs/VANNA_SETUP.md) |
