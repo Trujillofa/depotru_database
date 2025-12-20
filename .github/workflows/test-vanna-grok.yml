@@ -44,6 +44,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
       
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y freetds-dev unixodbc-dev
+      
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -52,6 +57,7 @@ jobs:
           pip install vanna chromadb openai
           pip install python-dotenv
           pip install flask waitress
+          pip install pyodbc
       
       - name: Run tests for vanna_grok.py
         run: |

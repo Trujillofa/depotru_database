@@ -81,6 +81,7 @@ jobs:
           pip install pandas matplotlib python-dotenv || true
           pip install vanna chromadb openai || true
           pip install flask waitress || true
+          pip install pyodbc || true
           pip install pymssql || true
       
       - name: Run all tests
