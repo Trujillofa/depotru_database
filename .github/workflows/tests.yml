@@ -80,6 +80,7 @@ jobs:
           # Install optional dependencies for testing
           pip install pandas matplotlib python-dotenv || true
           pip install vanna chromadb openai || true
+          pip install flask waitress || true
           pip install pymssql || true
       
       - name: Run all tests

@@ -51,6 +51,7 @@ jobs:
           pip install pandas
           pip install vanna chromadb openai
           pip install python-dotenv
+          pip install flask waitress
       
       - name: Run tests for vanna_grok.py
         run: |
