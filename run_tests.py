@@ -19,6 +19,18 @@ from pathlib import Path
 
 def main():
     """Run tests with pytest."""
+    # Check if pytest is available
+    try:
+        subprocess.run(
+            ["pytest", "--version"],
+            capture_output=True,
+            check=True
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("❌ Error: pytest is not installed.")
+        print("Install it with: pip install pytest pytest-cov")
+        return 1
+    
     # Default arguments
     pytest_args = ["pytest"]
     
@@ -57,7 +69,14 @@ def main():
     print(f"Command: {' '.join(pytest_args)}")
     print()
     
-    result = subprocess.run(pytest_args)
+    try:
+        result = subprocess.run(
+            pytest_args,
+            stderr=subprocess.STDOUT
+        )
+    except Exception as e:
+        print(f"❌ Error running tests: {e}")
+        return 1
     
     if result.returncode == 0:
         print()

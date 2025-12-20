@@ -14,37 +14,43 @@ class TestRepositoryStructure:
     
     def test_readme_exists(self):
         """Test that README.md exists."""
-        readme = Path("README.md")
+        repo_root = Path(__file__).parent.parent
+        readme = repo_root / "README.md"
         assert readme.exists(), "README.md should exist"
         assert readme.is_file(), "README.md should be a file"
         
     def test_requirements_exists(self):
         """Test that requirements.txt exists."""
-        requirements = Path("requirements.txt")
+        repo_root = Path(__file__).parent.parent
+        requirements = repo_root / "requirements.txt"
         assert requirements.exists(), "requirements.txt should exist"
         assert requirements.is_file(), "requirements.txt should be a file"
     
     def test_src_directory_exists(self):
         """Test that src directory exists."""
-        src = Path("src")
+        repo_root = Path(__file__).parent.parent
+        src = repo_root / "src"
         assert src.exists(), "src directory should exist"
         assert src.is_dir(), "src should be a directory"
     
     def test_tests_directory_exists(self):
         """Test that tests directory exists."""
-        tests = Path("tests")
+        repo_root = Path(__file__).parent.parent
+        tests = repo_root / "tests"
         assert tests.exists(), "tests directory should exist"
         assert tests.is_dir(), "tests should be a directory"
     
     def test_docs_directory_exists(self):
         """Test that docs directory exists."""
-        docs = Path("docs")
+        repo_root = Path(__file__).parent.parent
+        docs = repo_root / "docs"
         assert docs.exists(), "docs directory should exist"
         assert docs.is_dir(), "docs should be a directory"
     
     def test_env_example_exists(self):
         """Test that .env.example exists."""
-        env_example = Path(".env.example")
+        repo_root = Path(__file__).parent.parent
+        env_example = repo_root / ".env.example"
         assert env_example.exists(), ".env.example should exist"
         assert env_example.is_file(), ".env.example should be a file"
 
