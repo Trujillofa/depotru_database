@@ -1,0 +1,78 @@
+name: Test Vanna Grok
+
+on:
+  push:
+    branches: [ main, copilot/** ]
+    paths:
+      - 'src/vanna_grok.py'
+      - 'tests/test_vanna_grok.py'
+      - '.github/workflows/test-vanna-grok.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/vanna_grok.py'
+      - 'tests/test_vanna_grok.py'
+      - '.github/workflows/test-vanna-grok.yml'
+  workflow_dispatch:
+
+jobs:
+  test-vanna-grok:
+    name: Test Vanna Grok Integration
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-mock
+          pip install pandas
+          pip install vanna chromadb openai
+          pip install python-dotenv
+      
+      - name: Run tests for vanna_grok.py
+        run: |
+          pytest tests/test_vanna_grok.py -v --tb=short --cov=src/vanna_grok --cov-report=term --cov-report=xml
+        env:
+          # Mock environment variables for testing (not real credentials)
+          GROK_API_KEY: xai-test-key-for-ci
+          DB_SERVER: test-server
+          DB_NAME: TestDB
+          DB_USER: testuser
+          DB_PASSWORD: testpass
+      
+      - name: Upload coverage reports
+        if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: vanna-grok
+          name: vanna-grok-coverage
+          fail_ci_if_error: false
+      
+      - name: Test summary
+        if: always()
+        run: |
+          echo "### Test Results for vanna_grok.py" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Python version: ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Tests completed" >> $GITHUB_STEP_SUMMARY

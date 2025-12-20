@@ -49,7 +49,8 @@ tests/
 ├── conftest.py                    # Pytest configuration and fixtures
 ├── test_basic.py                  # Basic tests (no dependencies)
 ├── test_business_metrics.py       # Business metrics tests (requires pymssql)
-└── test_metabase_connection.py    # Database connection diagnostic
+├── test_metabase_connection.py    # Database connection diagnostic
+└── test_vanna_grok.py             # Vanna Grok integration tests (requires pandas, vanna)
 ```
 
 ## Test Categories
@@ -72,6 +73,15 @@ tests/
 - **Requires**: `pymssql`, database connection
 - Diagnostic tool for database issues
 - **Skipped** if dependencies not available
+
+### 4. Vanna Grok Tests (`test_vanna_grok.py`) 🆕
+- **Requires**: `pandas`, `vanna`, `openai`
+- Tests number formatting (Colombian pesos format)
+- Tests AI insights generation (mocked)
+- Tests configuration management
+- Tests edge cases and error handling
+- **Skipped** if dependencies not available
+- **Runs in CI/CD** with GitHub Actions workflow
 
 ## Installing Test Dependencies
 
@@ -101,29 +111,50 @@ addopts = -v --tb=short --strict-markers --disable-warnings
 
 ## Continuous Integration
 
-Tests are designed to work in CI environments where dependencies might not be available. Tests that require external dependencies will be automatically skipped.
+The repository includes GitHub Actions workflows for automated testing:
 
-### Example GitHub Actions workflow
+### Available Workflows
 
-```yaml
-name: Tests
+1. **Basic Tests** (`.github/workflows/tests.yml`)
+   - Runs on every push and pull request
+   - Tests basic functionality without dependencies
+   - Tests with full dependencies (when available)
+   - Runs on Python 3.10, 3.11, and 3.12
 
-on: [push, pull_request]
+2. **Vanna Grok Tests** (`.github/workflows/test-vanna-grok.yml`)
+   - Specifically tests vanna_grok.py functionality
+   - Installs vanna, pandas, and related dependencies
+   - Runs on multiple Python versions
+   - Generates coverage reports
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
-        with:
-          python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          pip install pytest pytest-cov
-      - name: Run basic tests
-        run: pytest tests/test_basic.py -v
+### GitHub Actions Status
+
+You can view the test status in the Actions tab of the repository:
+- ✅ All tests passing: Tests run successfully
+- ⏭️ Tests skipped: Dependencies not available (expected)
+- ❌ Tests failed: Investigate the failure
+
+### Running Tests Locally Like CI
+
+To replicate CI environment locally:
+
+```bash
+# Basic tests (like CI basic job)
+pip install pytest pytest-cov
+python run_tests.py --quick
+
+# Full tests (like CI with-dependencies job)
+pip install -r requirements.txt
+pytest tests/ -v --cov=src
 ```
+
+### Manual Workflow Trigger
+
+You can manually trigger workflows from GitHub:
+1. Go to the "Actions" tab
+2. Select the workflow (e.g., "Test Vanna Grok")
+3. Click "Run workflow"
+4. Select the branch and click "Run workflow"
 
 ## Writing New Tests
 
