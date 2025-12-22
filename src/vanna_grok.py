@@ -11,7 +11,7 @@ import sys
 import locale
 import time
 import pandas as pd
-from typing import Optional, Dict, Any, List
+from typing import Any, List
 from functools import wraps
 from dotenv import load_dotenv
 
@@ -112,13 +112,6 @@ class Config:
 # ROBUST NUMBER FORMATTING (Colombian Pesos, Percentages, Thousands)
 # =============================================================================
 
-def format_number(
-    value: Any,
-    column_name: str = "",
-    known_currency_cols: List[str] = None,
-    known_pct_cols: List[str] = None
-) -> str:
-
 def format_number(value: Any, column_name: str = "") -> str:
     """
     Bulletproof number formatting with explicit column detection.
@@ -144,12 +137,9 @@ def format_number(value: Any, column_name: str = "") -> str:
     except (ValueError, TypeError):
         return str(value)
 
-    # Use explicit column lists (most reliable)
-    if known_currency_cols is None:
-        known_currency_cols = Config.CURRENCY_COLUMNS
-
-    if known_pct_cols is None:
-        known_pct_cols = Config.PERCENTAGE_COLUMNS
+    # Use explicit column lists from Config
+    known_currency_cols = Config.CURRENCY_COLUMNS
+    known_pct_cols = Config.PERCENTAGE_COLUMNS
 
     # 1. EXPLICIT COLUMN MATCH (highest priority)
     if column_name in known_currency_cols:
@@ -192,58 +182,8 @@ def format_number(value: Any, column_name: str = "") -> str:
         return f"{num:,.2f}".replace(',', 'TEMP').replace('.', ',').replace('TEMP', '.')
 
 
+
 def format_dataframe(df: pd.DataFrame, max_rows: int = None) -> pd.DataFrame:
-    """
-    Apply formatting to entire dataframe with row limit protection.
-
-    Args:
-        df: DataFrame to format
-        max_rows: Maximum rows to display (default from Config)
-
-    Returns:
-        Formatted DataFrame (limited to max_rows)
-    """
-        try:
-            num = float(value)
-            # Colombian format: $123.456.789 (period as thousands separator)
-            formatted = f"${num:,.0f}".replace(",", ".")
-            return formatted
-        except (ValueError, TypeError):
-            return str(value)
-
-    # Percentage columns
-    percentage_keywords = ["margen", "margin", "pct", "porcentaje", "percentage", "%"]
-    if any(kw in col_lower for kw in percentage_keywords):
-        try:
-            num = float(value)
-            # Spanish format: 45,6% (comma as decimal separator)
-            formatted = (
-                f"{num:,.1f}%".replace(",", "TEMP")
-                .replace(".", ",")
-                .replace("TEMP", ".")
-            )
-            return formatted
-        except (ValueError, TypeError):
-            return str(value)
-
-    # Regular numbers (quantities, counts)
-    try:
-        num = float(value)
-        if num == int(num):  # Integer
-            formatted = f"{int(num):,}".replace(",", ".")
-            return formatted
-        else:  # Decimal
-            formatted = (
-                f"{num:,.2f}".replace(",", "TEMP")
-                .replace(".", ",")
-                .replace("TEMP", ".")
-            )
-            return formatted
-    except (ValueError, TypeError):
-        return str(value)
-
-
-def format_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Apply beautiful formatting to entire dataframe"""
     if df is None or df.empty:
         return df
@@ -308,12 +248,6 @@ def retry_on_failure(max_attempts: int = 3, delay: int = 2, backoff: int = 2):
 
 @retry_on_failure(max_attempts=3, delay=2)
 def generate_insights(
-    question: str,
-    sql: str,
-    df: pd.DataFrame,
-    grok_client: OpenAI
-
-def generate_insights(
     question: str, sql: str, df: pd.DataFrame, grok_client: OpenAI
 ) -> str:
     """
@@ -330,13 +264,9 @@ def generate_insights(
 
     # Prepare data summary for Grok
     summary = {
-        'rows': len(df),
-        'preview_rows': len(df_preview),
-        'columns': list(df.columns),
-        'stats': {}
         "rows": len(df),
         "columns": list(df.columns),
-        "sample": df.head(10).to_dict("records") if len(df) > 0 else [],
+        "sample": df_preview.to_dict("records") if len(df_preview) > 0 else [],
         "stats": {},
     }
 
@@ -379,9 +309,6 @@ Usa emojis para hacer el análisis más visual."""
             messages=[
                 {
                     "role": "system",
-                    "content": "Eres un consultor de negocios experto en retail y ferreterías. Siempre respondes en español colombiano con recomendaciones accionables."
-                },
-                {"role": "user", "content": prompt}
                     "content": "Eres un consultor de negocios experto en retail y ferreterías. Siempre respondes en español colombiano con recomendaciones accionables.",
                 },
                 {"role": "user", "content": prompt},
@@ -419,12 +346,6 @@ class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
             self,
             client=self.grok_client,
             config={"model": "grok-beta"}  # Stable as of Dec 2025
-        # 2. Grok LLM via OpenAI-compatible client
-        client = OpenAI(api_key=Config.GROK_API_KEY, base_url="https://api.x.ai/v1")
-        OpenAI_Chat.__init__(
-            self,
-            client=client,
-            config={"model": "grok-4-1-fast-non-reasoning"},  # Stable as of Dec 2025
         )
 
     def connect_to_mssql_odbc(self):

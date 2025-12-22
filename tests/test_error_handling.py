@@ -5,7 +5,7 @@ Tests for error handling and retry logic.
 
 import pytest
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 
 class TestRetryDecorator:
@@ -17,7 +17,6 @@ class TestRetryDecorator:
             from src.vanna_grok import retry_on_failure
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         call_count = 0
 
@@ -37,7 +36,6 @@ class TestRetryDecorator:
             from src.vanna_grok import retry_on_failure
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         call_count = 0
 
@@ -59,7 +57,6 @@ class TestRetryDecorator:
             from src.vanna_grok import retry_on_failure
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         call_count = 0
 
@@ -80,7 +77,6 @@ class TestRetryDecorator:
             from src.vanna_grok import retry_on_failure
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         call_times = []
 
@@ -112,7 +108,6 @@ class TestSecurityValidation:
             from src.vanna_grok import require_env
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         # Test with non-existent variable
         with patch.dict('os.environ', {}, clear=True):
@@ -125,7 +120,6 @@ class TestSecurityValidation:
             from src.vanna_grok import require_env
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         # Test with validation function
         with patch.dict('os.environ', {'TEST_VAR': 'valid_value'}):
