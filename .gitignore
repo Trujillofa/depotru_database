@@ -43,15 +43,16 @@ env.bak/
 venv.bak/
 .venv/
 
-# PyCharm
+# IDE
 .idea/
 *.iml
 *.iws
 .idea_modules/
-
-# VS Code
 .vscode/
 *.code-workspace
+*.swp
+*.swo
+*~
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -89,9 +90,6 @@ logs/
 # OS Files
 .DS_Store
 Thumbs.db
-*.swp
-*.swo
-*~
 .Spotlight-V100
 .Trashes
 
@@ -100,6 +98,7 @@ Thumbs.db
 *.temp
 *.bak
 *.backup
+*_backup.py
 
 # Archives
 *.zip
@@ -114,3 +113,8 @@ site/
 # Local configuration overrides
 local_config.py
 config.local.*
+
+# Database files
+*.db
+*.sqlite
+

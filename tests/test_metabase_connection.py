@@ -7,6 +7,11 @@ Usage:
     python test_metabase_connection.py
 """
 
+import pytest
+
+# Skip this module if pymssql is not installed
+pytest.importorskip("pymssql")
+
 import pymssql
 from config import Config
 

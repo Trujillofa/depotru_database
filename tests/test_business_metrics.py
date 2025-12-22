@@ -10,6 +10,10 @@ import pytest
 from decimal import Decimal
 from datetime import datetime
 
+# Skip all tests in this module if dependencies are missing
+pymssql = pytest.importorskip("pymssql", reason="pymssql not installed")
+pytest.importorskip("examples.improvements_p0", reason="improvements_p0 requires pymssql")
+
 
 # ============================================================================
 # Test Fixtures
