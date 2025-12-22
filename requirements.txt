@@ -1,2 +1,96 @@
-pymssql>=2.2.8
-vanna>=0.3.0
+# ============================================================================
+# Business Data Analyzer - Requirements
+# ============================================================================
+
+# Core Dependencies
+# ============================================================================
+pymssql>=2.2.8              # SQL Server database connection
+python-dotenv>=0.19.0       # Environment variable management
+pyodbc>=4.0.0               # ODBC database connectivity (for Vanna + SQL Server)
+
+# Data Analysis & Processing
+# ============================================================================
+pandas>=1.5.0               # Data manipulation and analysis
+numpy>=1.21.0               # Numerical computing
+
+# Visualization
+# ============================================================================
+matplotlib>=3.5.0           # Chart generation (static)
+plotly>=5.0.0               # Interactive charts (for modern dashboards)
+seaborn>=0.12.0             # Statistical data visualization
+
+# Web Framework (Optional - for dashboards)
+# ============================================================================
+streamlit>=1.20.0           # Web dashboard framework
+flask>=2.0.0                # Lightweight web framework (for Vanna)
+waitress>=2.1.0             # Production WSGI server (for vanna_grok.py)
+flasgger>=0.9.5             # Swagger UI for Flask API documentation
+
+# AI/ML - Natural Language to SQL
+# ============================================================================
+vanna>=0.3.0                # Natural language to SQL
+chromadb>=0.4.0             # Vector database for local Vanna storage
+openai>=1.0.0               # OpenAI API (for GPT-4 and Grok via compatible API)
+anthropic>=0.7.0            # Anthropic Claude API
+
+# Encryption/Decryption (Optional - for NCX file support)
+# ============================================================================
+pycryptodome>=3.15.0        # Crypto.Cipher support for Navicat files
+
+# Database Tools & Testing
+# ============================================================================
+sqlalchemy>=2.0.0           # SQL toolkit and ORM
+metabase-api>=0.3.0         # Metabase integration (optional)
+
+# Development Dependencies
+# ============================================================================
+pytest>=7.0.0               # Testing framework
+pytest-cov>=4.0.0           # Test coverage
+black>=22.0.0               # Code formatting
+flake8>=4.0.0               # Linting
+mypy>=0.950                 # Type checking
+isort>=5.12.0               # Import sorting
+
+# Jupyter (Optional - for notebooks)
+# ============================================================================
+jupyter>=1.0.0              # Jupyter notebook
+ipython>=8.0.0              # Enhanced Python shell
+ipykernel>=6.0.0            # IPython kernel for Jupyter
+
+# Utilities
+# ============================================================================
+python-dateutil>=2.8.0      # Date parsing utilities
+requests>=2.28.0            # HTTP library
+rich>=13.0.0                # Beautiful terminal formatting
+click>=8.0.0                # CLI framework
+tqdm>=4.65.0                # Progress bars
+
+# Export & Reporting
+# ============================================================================
+openpyxl>=3.0.0             # Excel file operations
+xlsxwriter>=3.0.0           # Excel file writing
+reportlab>=3.6.0            # PDF generation
+jinja2>=3.1.0               # Template engine for reports
+
+# ============================================================================
+# Installation Instructions
+# ============================================================================
+#
+# Minimal Installation (Core Business Analyzer):
+#   pip install pymssql python-dotenv matplotlib numpy
+#
+# Standard Installation (Recommended):
+#   pip install -r requirements.txt
+#
+# Vanna AI Only:
+#   pip install vanna chromadb pyodbc openai
+#
+# Development:
+#   pip install -r requirements.txt
+#   pip install pytest black flake8 mypy
+#
+# Streamlit Dashboard:
+#   pip install streamlit pandas plotly
+#
+# ============================================================================
+
