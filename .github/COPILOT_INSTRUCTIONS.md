@@ -25,7 +25,7 @@ This file provides instructions for GitHub Copilot when working with this reposi
 
 ```bash
 # Clone repository
-git clone <repo-url>
+git clone https://github.com/Trujillofa/depotru_database.git
 cd depotru_database
 
 # Create virtual environment
@@ -303,7 +303,7 @@ When adding features:
 
 ## Important Files
 
-- `src/business_analyzer_combined.py` - Main traditional analyzer (1,492 lines, legacy)
+- `src/business_analyzer_combined.py` - Main traditional analyzer (legacy implementation)
 - `src/vanna_grok.py` - Production Vanna AI implementation (Spanish, beautiful output)
 - `src/vanna_chat.py` - Multi-provider Vanna AI testing
 - `src/config.py` - Centralized configuration management
