@@ -22,7 +22,6 @@ class TestNumberFormatting:
             from src.vanna_grok import format_number
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         # Test various currency values
         assert format_number(1234567, "TotalMasIva") == "$1.234.567"
@@ -35,7 +34,6 @@ class TestNumberFormatting:
             from src.vanna_grok import format_number
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         # Test various percentage values
         assert format_number(45.6, "Margen_Promedio_Pct") == "45,6%"
@@ -48,7 +46,6 @@ class TestNumberFormatting:
             from src.vanna_grok import format_number
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         # Test integer quantities
         assert format_number(1234, "Cantidad") == "1.234"
@@ -60,7 +57,6 @@ class TestNumberFormatting:
             from src.vanna_grok import format_number
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         # Test various null representations
         assert format_number(None, "TotalMasIva") == "-"
@@ -73,7 +69,6 @@ class TestNumberFormatting:
             from src.vanna_grok import format_dataframe
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         # Create test DataFrame
         df = pd.DataFrame({
@@ -96,7 +91,6 @@ class TestNumberFormatting:
             from src.vanna_grok import format_dataframe
         except ImportError:
             pytest.skip("vanna_grok not available")
-            return
 
         # Create large DataFrame (200 rows)
         df = pd.DataFrame({
