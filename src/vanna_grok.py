@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
 vanna_grok.py (Vanna 2.0.1 Legacy Fixed – MSSQL + Grok Ready)
-Bullet-proof setup: Natural language → SQL → Charts for SmartBusiness.
-Features: Beautiful number formatting, AI insights, Spanish optimization.
+Production-ready: Natural language → SQL → Charts for SmartBusiness.
+Features: Robust formatting, AI insights, security hardening, error handling.
 Run: python src/vanna_grok.py → http://localhost:8084
 """
 
 import os
 import sys
 import locale
+import time
 import pandas as pd
-from typing import Optional, Dict, Any
+from typing import Any, List
+from functools import wraps
 from dotenv import load_dotenv
 
 # Vanna 2.0.1 legacy imports (stable for custom Grok/ChromaDB/MSSQL)
@@ -34,46 +36,124 @@ except locale.Error:
             pass  # Use system default
 
 # =============================================================================
-# CONFIGURATION (from .env – keep secrets safe!)
+# SECURITY - Required Environment Variables (No Defaults!)
 # =============================================================================
 
+def require_env(name: str, validation_func=None, error_msg: str = None) -> str:
+    """
+    Get required environment variable with optional validation.
+    Exits immediately if missing or invalid - no defaults allowed!
+    """
+    value = os.getenv(name)
 
-class Config:
-    GROK_API_KEY = os.getenv("GROK_API_KEY")
-    if not GROK_API_KEY or not GROK_API_KEY.startswith("xai-"):
-        print("❌ ERROR: Set GROK_API_KEY in .env (must start with 'xai-...')")
+    if not value:
+        print(f"❌ ERROR: Variable de entorno requerida faltante: {name}")
+        if error_msg:
+            print(f"   {error_msg}")
+        else:
+            print(f"   Agrega a tu archivo .env:")
+            print(f"   {name}=tu-valor-aqui")
+        print(f"\n   Ejemplo .env completo:")
+        print(f"   GROK_API_KEY=xai-tu-clave")
+        print(f"   DB_SERVER=tu-servidor")
+        print(f"   DB_NAME=SmartBusiness")
+        print(f"   DB_USER=tu-usuario")
+        print(f"   DB_PASSWORD=tu-contraseña")
         sys.exit(1)
 
-    DB_SERVER = os.getenv("DB_SERVER", "190.60.235.209")
-    DB_NAME = os.getenv("DB_NAME", "SmartBusiness")
-    DB_USER = os.getenv("DB_USER", "Consulta")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "Control*01")
+    if validation_func and not validation_func(value):
+        print(f"❌ ERROR: {name} tiene un valor inválido: {value}")
+        if error_msg:
+            print(f"   {error_msg}")
+        sys.exit(1)
 
+    return value
+
+# =============================================================================
+# CONFIGURATION (All required from .env – No defaults for security!)
+# =============================================================================
+
+class Config:
+    # Required API keys and credentials (no defaults!)
+    GROK_API_KEY = require_env(
+        "GROK_API_KEY",
+        validation_func=lambda x: x.startswith("xai-"),
+        error_msg="La clave debe comenzar con 'xai-'"
+    )
+
+    DB_SERVER = require_env("DB_SERVER")
+    DB_NAME = require_env("DB_NAME")
+    DB_USER = require_env("DB_USER")
+    DB_PASSWORD = require_env("DB_PASSWORD")
+
+    # Optional configuration with sensible defaults
     PORT = int(os.getenv("PORT", "8084"))
     HOST = os.getenv("HOST", "0.0.0.0")
 
+    # Feature toggles
+    ENABLE_AI_INSIGHTS = os.getenv("ENABLE_AI_INSIGHTS", "true").lower() == "true"
+    INSIGHTS_MAX_ROWS = int(os.getenv("INSIGHTS_MAX_ROWS", "15"))
+    MAX_DISPLAY_ROWS = int(os.getenv("MAX_DISPLAY_ROWS", "100"))
+
+    # Known currency columns (explicit detection for reliability)
+    CURRENCY_COLUMNS = [
+        'TotalMasIva', 'TotalSinIva', 'ValorCosto', 'Facturacion_Total',
+        'Revenue', 'Ganancia', 'Ganancia_Neta', 'total_revenue',
+        'Ticket_Promedio', 'Revenue_Neto', 'Precio', 'Costo'
+    ]
+
+    # Known percentage columns
+    PERCENTAGE_COLUMNS = [
+        'Margen_Promedio_Pct', 'profit_margin_pct', 'Margen',
+        'margin_pct', 'percentage'
+    ]
 
 # =============================================================================
-# NUMBER FORMATTING (Colombian Pesos, Percentages, Thousands)
+# ROBUST NUMBER FORMATTING (Colombian Pesos, Percentages, Thousands)
 # =============================================================================
-
 
 def format_number(value: Any, column_name: str = "") -> str:
     """
-    Format numbers beautifully based on column name and value type.
+    Bulletproof number formatting with explicit column detection.
+
+    Priority:
+    1. Explicit column name match (most reliable)
+    2. Keyword detection (fallback)
+    3. Type-based formatting (default)
 
     Examples:
-    - Revenue, Ganancia, Total → $123.456.789 (Colombian pesos)
-    - Margen, Percentage → 45,6%
-    - Cantidad, Unidades → 1.234 (thousands separator)
+    - TotalMasIva: 1234567 → "$1.234.567"
+    - Margen_Promedio_Pct: 45.6 → "45,6%"
+    - Cantidad: 1234 → "1.234"
+    - None/NaN → "-"
     """
+    # Handle nulls first
     if pd.isna(value) or value is None:
         return "-"
 
-    # Detect column type from name (Spanish business terms)
+    # Try to convert to number
+    try:
+        num = float(value)
+    except (ValueError, TypeError):
+        return str(value)
+
+    # Use explicit column lists from Config
+    known_currency_cols = Config.CURRENCY_COLUMNS
+    known_pct_cols = Config.PERCENTAGE_COLUMNS
+
+    # 1. EXPLICIT COLUMN MATCH (highest priority)
+    if column_name in known_currency_cols:
+        # Colombian format: $123.456.789
+        return f"${num:,.0f}".replace(',', '.')
+
+    if column_name in known_pct_cols:
+        # Spanish format: 45,6%
+        return f"{num:,.1f}%".replace('.', ',')
+
+    # 2. KEYWORD DETECTION (fallback)
     col_lower = column_name.lower()
 
-    # Currency columns (Colombian Pesos)
+    # Currency keywords
     currency_keywords = [
         "revenue",
         "ganancia",
@@ -88,81 +168,105 @@ def format_number(value: Any, column_name: str = "") -> str:
         "iva",
     ]
     if any(kw in col_lower for kw in currency_keywords):
-        try:
-            num = float(value)
-            # Colombian format: $123.456.789 (period as thousands separator)
-            formatted = f"${num:,.0f}".replace(",", ".")
-            return formatted
-        except (ValueError, TypeError):
-            return str(value)
+        return f"${num:,.0f}".replace(',', '.')
 
-    # Percentage columns
-    percentage_keywords = ["margen", "margin", "pct", "porcentaje", "percentage", "%"]
+    # Percentage keywords
+    percentage_keywords = ['margen', 'margin', 'pct', 'porcentaje', '%']
     if any(kw in col_lower for kw in percentage_keywords):
-        try:
-            num = float(value)
-            # Spanish format: 45,6% (comma as decimal separator)
-            formatted = (
-                f"{num:,.1f}%".replace(",", "TEMP")
-                .replace(".", ",")
-                .replace("TEMP", ".")
-            )
-            return formatted
-        except (ValueError, TypeError):
-            return str(value)
+        return f"{num:,.1f}%".replace('.', ',')
 
-    # Regular numbers (quantities, counts)
-    try:
-        num = float(value)
-        if num == int(num):  # Integer
-            formatted = f"{int(num):,}".replace(",", ".")
-            return formatted
-        else:  # Decimal
-            formatted = (
-                f"{num:,.2f}".replace(",", "TEMP")
-                .replace(".", ",")
-                .replace("TEMP", ".")
-            )
-            return formatted
-    except (ValueError, TypeError):
-        return str(value)
+    # 3. TYPE-BASED FORMATTING (default)
+    if num == int(num):  # Integer - quantities
+        return f"{int(num):,}".replace(',', '.')
+    else:  # Decimal
+        return f"{num:,.2f}".replace(',', 'TEMP').replace('.', ',').replace('TEMP', '.')
 
 
-def format_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+
+def format_dataframe(df: pd.DataFrame, max_rows: int = None) -> pd.DataFrame:
     """Apply beautiful formatting to entire dataframe"""
     if df is None or df.empty:
         return df
 
-    # Create formatted copy
-    df_formatted = df.copy()
+    if max_rows is None:
+        max_rows = Config.MAX_DISPLAY_ROWS
 
-    for col in df_formatted.columns:
-        df_formatted[col] = df_formatted[col].apply(lambda x: format_number(x, col))
+    # Limit rows for display (prevent slowness with large results)
+    df_display = df.head(max_rows).copy()
 
-    return df_formatted
+    # Apply formatting to each column
+    for col in df_display.columns:
+        df_display[col] = df_display[col].apply(
+            lambda x: format_number(x, col)
+        )
+
+    # Warn if truncated
+    if len(df) > max_rows:
+        print(f"\n⚠️ Mostrando solo las primeras {max_rows} filas (total: {len(df):,})")
+
+    return df_display
+
+# =============================================================================
+# ERROR HANDLING - Retry Logic for API Calls
+# =============================================================================
+
+def retry_on_failure(max_attempts: int = 3, delay: int = 2, backoff: int = 2):
+    """
+    Decorator for retrying failed API calls with exponential backoff.
+
+    Args:
+        max_attempts: Maximum retry attempts (default 3)
+        delay: Initial delay in seconds (default 2)
+        backoff: Backoff multiplier (default 2 = exponential)
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            current_delay = delay
+
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_attempts - 1:
+                        # Last attempt - re-raise exception
+                        raise
+
+                    print(f"⚠️ Intento {attempt + 1}/{max_attempts} falló: {e}")
+                    print(f"   Reintentando en {current_delay}s...")
+                    time.sleep(current_delay)
+                    current_delay *= backoff  # Exponential backoff
+
+            return None
+        return wrapper
+    return decorator
 
 
 # =============================================================================
 # AI INSIGHTS GENERATION (Grok analyzes results and gives recommendations)
 # =============================================================================
 
-
+@retry_on_failure(max_attempts=3, delay=2)
 def generate_insights(
     question: str, sql: str, df: pd.DataFrame, grok_client: OpenAI
 ) -> str:
     """
     Use Grok to analyze query results and generate business insights.
+    Includes automatic retry on failure.
 
     Returns Spanish business recommendations based on the data.
     """
     if df is None or df.empty:
         return "⚠️ No hay datos para analizar."
 
+    # Limit data sent to Grok (privacy + token cost)
+    df_preview = df.head(Config.INSIGHTS_MAX_ROWS)
+
     # Prepare data summary for Grok
     summary = {
         "rows": len(df),
         "columns": list(df.columns),
-        "sample": df.head(10).to_dict("records") if len(df) > 0 else [],
+        "sample": df_preview.to_dict("records") if len(df_preview) > 0 else [],
         "stats": {},
     }
 
@@ -186,8 +290,8 @@ Pregunta del usuario: {question}
 
 SQL ejecutado: {sql}
 
-Resultados (primeras filas):
-{df.head(10).to_string()}
+Resultados (primeras {len(df_preview)} de {len(df)} filas):
+{df_preview.to_string()}
 
 Estadísticas: {summary['stats']}
 
@@ -217,11 +321,12 @@ Usa emojis para hacer el análisis más visual."""
         return f"\n{'='*70}\n🤖 ANÁLISIS INTELIGENTE (Powered by Grok)\n{'='*70}\n\n{insights}\n{'='*70}\n"
 
     except Exception as e:
+        # If all retries failed, return error message
         return f"⚠️ No se pudieron generar insights: {e}"
 
 
 # =============================================================================
-# CUSTOM VANNA CLASS – Grok + ChromaDB + MSSQL (ODBC via pyodbc)
+# CUSTOM VANNA CLASS – Grok + ChromaDB + MSSQL (Resource Optimized)
 # =============================================================================
 
 
@@ -230,12 +335,17 @@ class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
         # 1. ChromaDB for RAG (local, private, fast)
         ChromaDB_VectorStore.__init__(self, config={})
 
-        # 2. Grok LLM via OpenAI-compatible client
-        client = OpenAI(api_key=Config.GROK_API_KEY, base_url="https://api.x.ai/v1")
+        # 2. Single shared Grok client (reused for SQL + insights)
+        self.grok_client = OpenAI(
+            api_key=Config.GROK_API_KEY,
+            base_url="https://api.x.ai/v1"
+        )
+
+        # 3. Initialize OpenAI Chat with shared client
         OpenAI_Chat.__init__(
             self,
-            client=client,
-            config={"model": "grok-4-1-fast-non-reasoning"},  # Stable as of Dec 2025
+            client=self.grok_client,
+            config={"model": "grok-beta"}  # Stable as of Dec 2025
         )
 
     def connect_to_mssql_odbc(self):
@@ -304,6 +414,19 @@ class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
             print(df_formatted.to_string(index=False))
             print()
 
+            # ========== ENHANCEMENT 2: AI Insights (Optional) ==========
+            insights = ""
+            if Config.ENABLE_AI_INSIGHTS:
+                # Use shared Grok client (resource optimization)
+                insights = generate_insights(
+                    question=question,
+                    sql=sql,
+                    df=df,  # Use original unformatted data for analysis
+                    grok_client=self.grok_client  # ← Reuse shared client!
+                )
+                print(insights)
+            else:
+                print("\n💡 Insights desactivados (ENABLE_AI_INSIGHTS=false)\n")
             # ========== ENHANCEMENT 2: AI Insights ==========
             # Get Grok client for insights
             grok_client = OpenAI(
