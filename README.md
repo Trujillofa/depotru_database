@@ -316,6 +316,7 @@ See `.env.example` for all options.
 - [docs/IMPROVEMENT_ANALYSIS.md](docs/IMPROVEMENT_ANALYSIS.md) - 500+ line deep dive
 - [docs/QUICK_START_IMPROVEMENTS.md](docs/QUICK_START_IMPROVEMENTS.md) - Fast-track guide
 - [docs/P0_FIXES_APPLIED.md](docs/P0_FIXES_APPLIED.md) - Critical fixes applied
+- [docs/ANACONDA_TESTING.md](docs/ANACONDA_TESTING.md) - Multi-version Python testing 🆕
 - [docs/METABASE_TROUBLESHOOTING.md](docs/METABASE_TROUBLESHOOTING.md) - Metabase guide
 - [docs/SECURITY.md](docs/SECURITY.md) - Security best practices
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) - Development workflow
@@ -323,6 +324,8 @@ See `.env.example` for all options.
 ---
 
 ## 🧪 Testing
+
+### Quick Testing
 
 ```bash
 # Install test dependencies
@@ -337,6 +340,27 @@ pytest tests/ --cov=src --cov-report=html
 # Run specific test file
 pytest tests/test_business_metrics.py -v
 ```
+
+### Multi-Version Testing with Anaconda 🆕
+
+Test on Python 3.8, 3.9, 3.10, and 3.11:
+
+```bash
+# Create Conda environment
+conda env create -f environment.yml
+conda activate business-analyzer
+
+# Run tests
+pytest tests/ -v --cov=src
+
+# Test on specific Python version
+conda create -n test-py310 python=3.10 -y
+conda activate test-py310
+pip install -r requirements.txt
+pytest tests/ -v
+```
+
+**📖 Full guide:** [docs/ANACONDA_TESTING.md](docs/ANACONDA_TESTING.md)
 
 ---
 
