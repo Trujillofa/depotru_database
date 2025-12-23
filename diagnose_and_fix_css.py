@@ -35,7 +35,7 @@ try:
     # Connect to server
     print("Connecting to server...")
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
     ssh.connect(hostname, username=username, password=password)
     print("✓ Connected successfully")
 
