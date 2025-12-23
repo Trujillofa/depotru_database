@@ -74,23 +74,22 @@ jobs:
           python -c "import sys; print(sys.path)"
           python -c "import sys; sys.path.insert(0, 'src'); from vanna_grok import format_number; print('✓ vanna_grok imports successfully')"
         env:
-          GROK_API_KEY: xai-test-key-for-ci
-          DB_SERVER: test-server
-          DB_NAME: TestDB
-          DB_USER: testuser
-          DB_PASSWORD: testpass
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          DB_SERVER: ${{ secrets.DB_SERVER }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           PYTHONPATH: ${{ github.workspace }}/src
       
       - name: Run tests for vanna_grok.py
         run: |
           PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/src pytest tests/test_vanna_grok.py -v --tb=short --cov=src/vanna_grok --cov-report=term --cov-report=xml
         env:
-          # Mock environment variables for testing (not real credentials)
-          GROK_API_KEY: xai-test-key-for-ci
-          DB_SERVER: test-server
-          DB_NAME: TestDB
-          DB_USER: testuser
-          DB_PASSWORD: testpass
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          DB_SERVER: ${{ secrets.DB_SERVER }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       
       - name: Upload coverage reports
         if: matrix.python-version == '3.12'
