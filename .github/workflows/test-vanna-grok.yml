@@ -75,6 +75,10 @@ jobs:
           python -c "import sys; sys.path.insert(0, 'src'); from vanna_grok import format_number; print('✓ vanna_grok imports successfully')"
         env:
           GROK_API_KEY: xai-test-key-for-ci
+          DB_SERVER: test-server
+          DB_NAME: TestDB
+          DB_USER: testuser
+          DB_PASSWORD: testpass
           PYTHONPATH: ${{ github.workspace }}/src
       
       - name: Run tests for vanna_grok.py
