@@ -37,56 +37,63 @@ jobs:
           python-version: ${{ matrix.python-version }}
       
       - name: Cache pip packages
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
       
-      - name: Install Microsoft ODBC Driver 17
+      - name: Install Microsoft ODBC Driver 18
         run: |
           curl https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc
           curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
+          # Install headers for pyodbc
+          sudo apt-get install -y unixodbc-dev
       
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y freetds-dev unixodbc-dev
+          sudo apt-get install -y freetds-dev
       
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip setuptools wheel
           pip install pytest pytest-cov pytest-mock
-          pip install pandas
+          pip install pandas numpy
           pip install vanna chromadb openai
           pip install python-dotenv
-          pip install flask waitress flask-sock
+          pip install flask waitress Flask-Sock
           pip install flasgger
           pip install pyodbc
       
       - name: Verify imports
         run: |
+          python -c "import sys; print(sys.path)"
           python -c "import sys; sys.path.insert(0, 'src'); from vanna_grok import format_number; print('✓ vanna_grok imports successfully')"
         env:
-          GROK_API_KEY: xai-test-key-for-ci
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          DB_SERVER: ${{ secrets.DB_SERVER }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          PYTHONPATH: ${{ github.workspace }}/src
       
       - name: Run tests for vanna_grok.py
         run: |
-          pytest tests/test_vanna_grok.py -v --tb=short --cov=src/vanna_grok --cov-report=term --cov-report=xml
+          PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/src pytest tests/test_vanna_grok.py -v --tb=short --cov=src/vanna_grok --cov-report=term --cov-report=xml
         env:
-          # Mock environment variables for testing (not real credentials)
-          GROK_API_KEY: xai-test-key-for-ci
-          DB_SERVER: test-server
-          DB_NAME: TestDB
-          DB_USER: testuser
-          DB_PASSWORD: testpass
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          DB_SERVER: ${{ secrets.DB_SERVER }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       
       - name: Upload coverage reports
         if: matrix.python-version == '3.12'
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
           flags: vanna-grok
