@@ -79,8 +79,10 @@ business_reports/
 *.jpg
 *.jpeg
 *.pdf
-analysis_*.json
-business_analysis_*.png
+# Ignore analysis JSONs in root only, not in reports/data/
+/*.json
+/analysis_*.json
+/business_analysis_*.png
 
 # Logs
 *.log

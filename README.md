@@ -264,6 +264,40 @@ All reports saved to `~/business_reports/` (configurable):
 
 ---
 
+## 🔬 Analysis Scripts
+
+The repository includes specialized analysis and reporting scripts in `/scripts/`:
+
+### Running Analysis Scripts
+
+```bash
+# SIKA product analysis
+python scripts/analysis/sika_analysis.py
+
+# General category analysis
+python scripts/analysis/run_analysis.py
+
+# Database investigation
+python scripts/analysis/investigate_deposito.py
+```
+
+### Generating Reports
+
+```bash
+# Generate English SIKA report
+python scripts/reports/generate_sika_report.py
+
+# Generate Spanish SIKA report
+python scripts/reports/generate_sika_report_es.py
+
+# Generate general analysis report
+python scripts/reports/generate_report.py
+```
+
+All generated reports are saved to the `/reports/` directory.
+
+---
+
 ## ⚙️ Configuration
 
 ### Environment Variables (.env file)

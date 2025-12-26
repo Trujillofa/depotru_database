@@ -2,7 +2,7 @@
 """Generate comprehensive PRODUCTOS SIKA markdown report with insights"""
 import json
 
-with open('/home/yderf/sika_analysis_report.json', 'r') as f:
+with open('reports/data/sika_analysis_report.json', 'r') as f:
     data = json.load(f)
 
 report = []
@@ -334,7 +334,7 @@ report.append("")
 report.append("*Report generated from SmartBusiness database*")
 
 # Write report
-with open('/home/yderf/SIKA_ANALYSIS_REPORT.md', 'w') as f:
+with open('reports/SIKA_ANALYSIS_REPORT.md', 'w') as f:
     f.write('\n'.join(report))
 
-print("✅ Report generated: /home/yderf/SIKA_ANALYSIS_REPORT.md")
+print("✅ Report generated: reports/SIKA_ANALYSIS_REPORT.md")

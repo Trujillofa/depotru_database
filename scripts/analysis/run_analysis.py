@@ -229,7 +229,7 @@ def main():
             report["avg_ticket_by_category"].append(dict(zip(cols, [float(x) if isinstance(x, Decimal) else x for x in row])))
 
         # Save report
-        output_file = "/home/yderf/analysis_report.json"
+        output_file = "reports/data/analysis_report.json"
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
 
