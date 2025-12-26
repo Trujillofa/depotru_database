@@ -2,7 +2,7 @@
 """Generate markdown report from analysis JSON"""
 import json
 
-with open('/home/yderf/analysis_report.json', 'r') as f:
+with open('reports/data/analysis_report.json', 'r') as f:
     data = json.load(f)
 
 report = []
@@ -167,7 +167,7 @@ report.append(f"- **Categories:** {len(set(c['marca'] for c in data['category_to
 report.append(f"- **Subcategories:** {len(data['avg_ticket_by_category'])//2}")
 
 # Write report
-with open('/home/yderf/ANALYSIS_REPORT.md', 'w') as f:
+with open('reports/ANALYSIS_REPORT.md', 'w') as f:
     f.write('\n'.join(report))
 
-print("Report generated: /home/yderf/ANALYSIS_REPORT.md")
+print("Report generated: reports/ANALYSIS_REPORT.md")

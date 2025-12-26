@@ -285,7 +285,7 @@ def main():
             report["subcategory_performance"].append(dict(zip(cols, [to_float(x) if isinstance(x, (Decimal, float)) else x for x in row])))
 
         # Save JSON report
-        output_json = "/home/yderf/sika_analysis_report.json"
+        output_json = "reports/data/sika_analysis_report.json"
         with open(output_json, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
         print(f"\n✅ JSON Report saved to: {output_json}")

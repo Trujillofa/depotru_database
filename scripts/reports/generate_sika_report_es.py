@@ -2,7 +2,7 @@
 """Generar reporte comprensivo PRODUCTOS SIKA en español"""
 import json
 
-with open('/home/yderf/sika_analysis_report.json', 'r') as f:
+with open('reports/data/sika_analysis_report.json', 'r') as f:
     data = json.load(f)
 
 report = []
@@ -396,7 +396,7 @@ report.append("")
 report.append(f"*Fecha de generación: {data['generated_at']}*")
 
 # Escribir reporte
-with open('/home/yderf/REPORTE_SIKA_ESPANOL.md', 'w', encoding='utf-8') as f:
+with open('reports/REPORTE_SIKA_ESPANOL.md', 'w', encoding='utf-8') as f:
     f.write('\n'.join(report))
 
-print("✅ Reporte en español generado: /home/yderf/REPORTE_SIKA_ESPANOL.md")
+print("✅ Reporte en español generado: reports/REPORTE_SIKA_ESPANOL.md")
