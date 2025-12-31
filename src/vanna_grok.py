@@ -86,14 +86,17 @@ def _is_testing_env() -> bool:
     if os.getenv("TESTING", "false").lower() == "true":
         return True
     
-    # Check if running from a test file
+    # Check if running from a test file (with depth limit for safety)
     try:
         frame = sys._getframe()
-        while frame:
+        max_depth = 20  # Safety limit to prevent infinite loops
+        depth = 0
+        while frame and depth < max_depth:
             filename = frame.f_globals.get('__file__', '')
             if 'test' in filename.lower() or 'pytest' in filename.lower():
                 return True
             frame = frame.f_back
+            depth += 1
     except (AttributeError, ValueError):
         pass
     
@@ -103,8 +106,22 @@ def _is_testing_env() -> bool:
 def get_env_or_test_default(name: str, test_default: str, validation_func=None, error_msg: str = None) -> str:
     """
     Get environment variable with testing support.
+    
     In production: uses require_env() with validation and exits on failure.
-    In testing: returns environment variable or test default without exiting.
+    In testing: returns environment variable or test default.
+    
+    Note: In testing mode, validation_func and error_msg are NOT applied
+    to allow tests to run with mock/dummy values. For production behavior,
+    set TESTING=false or ensure pytest is not in sys.modules.
+    
+    Args:
+        name: Environment variable name
+        test_default: Default value to use in testing mode
+        validation_func: Validation function (production mode only)
+        error_msg: Error message for validation failures (production mode only)
+    
+    Returns:
+        Environment variable value (validated in production, raw in testing)
     """
     is_testing = _is_testing_env()
     
