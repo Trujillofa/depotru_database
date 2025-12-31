@@ -96,9 +96,10 @@ def _is_testing_env() -> bool:
         return True
     
     # Check if running from a test file (using inspect for safety)
-    frame = None  # Initialize outside try to avoid UnboundLocalError
+    current_frame = None  # Store original frame for cleanup
     try:
-        frame = inspect.currentframe()
+        current_frame = inspect.currentframe()
+        frame = current_frame  # Working pointer for traversal
         depth = 0
         while frame and depth < MAX_STACK_FRAME_DEPTH:
             filename = frame.f_globals.get('__file__', '')
@@ -109,9 +110,9 @@ def _is_testing_env() -> bool:
     except (AttributeError, ValueError):
         pass
     finally:
-        # Explicitly delete frame reference to prevent memory leaks (safe even if None)
-        if frame is not None:
-            del frame
+        # Clean up original frame reference to prevent memory leaks
+        if current_frame is not None:
+            del current_frame
     
     return False
 
@@ -132,7 +133,10 @@ def get_env_or_test_default(
     Note: In testing mode, validation_func and error_msg are NOT applied
     to allow tests to run with mock/dummy values. This is intentional to
     prevent tests from failing due to missing production credentials.
-    For production behavior, set TESTING=false or ensure pytest is not loaded.
+    
+    To force production behavior:
+    - Set environment variable: TESTING="false" (lowercase)
+    - Or ensure pytest is not in sys.modules
     
     Args:
         name: Environment variable name
@@ -163,11 +167,12 @@ def get_env_or_test_default(
 class Config:
     # Required API keys and credentials
     # Note: test_default values are ONLY used when _is_testing_env() returns True
-    # (i.e., when pytest is running or TESTING=true). In production, require_env()
+    # (i.e., when pytest is running or TESTING="true"). In production, require_env()
     # enforces that real credentials must be provided via environment variables.
+    # Test defaults intentionally pass validation to avoid masking real issues.
     GROK_API_KEY = get_env_or_test_default(
         "GROK_API_KEY",
-        test_default="xai-test-key",  # Safe mock value for testing only
+        test_default="xai-test-key-for-ci-only",  # Matches xai- prefix for testing
         validation_func=lambda x: x.startswith("xai-"),
         error_msg="La clave debe comenzar con 'xai-'"
     )
