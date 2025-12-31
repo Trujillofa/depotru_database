@@ -351,6 +351,7 @@ See `.env.example` for all options.
 - [docs/QUICK_START_IMPROVEMENTS.md](docs/QUICK_START_IMPROVEMENTS.md) - Fast-track guide
 - [docs/P0_FIXES_APPLIED.md](docs/P0_FIXES_APPLIED.md) - Critical fixes applied
 - [docs/ANACONDA_TESTING.md](docs/ANACONDA_TESTING.md) - Multi-version Python testing 🆕
+- [docs/AI_AGENT_INSTRUCTIONS.md](docs/AI_AGENT_INSTRUCTIONS.md) - AI agent development guide 🤖
 - [docs/METABASE_TROUBLESHOOTING.md](docs/METABASE_TROUBLESHOOTING.md) - Metabase guide
 - [docs/SECURITY.md](docs/SECURITY.md) - Security best practices
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) - Development workflow
@@ -431,6 +432,22 @@ python examples/pandas_approach.py
 # Interactive Streamlit dashboard
 streamlit run examples/streamlit_dashboard.py
 ```
+
+### AI Agent Development 🤖
+
+**For AI agents working on this project:**
+
+📘 **[docs/AI_AGENT_INSTRUCTIONS.md](docs/AI_AGENT_INSTRUCTIONS.md)** - Complete guide for developing, debugging, refactoring, and fixing this project
+
+Quick reference:
+- **Architecture:** Vanna AI + Grok + MSSQL + Colombian formatting
+- **Branch naming:** `claude/feature-name-SessionID` (MUST start with `claude/`)
+- **Security:** Always use `require_env()`, never hardcode credentials
+- **Formatting:** Use `format_number()` for Colombian pesos ($1.234.567) and percentages (45,6%)
+- **Testing:** Add tests for every feature, maintain 80%+ coverage
+- **Language:** Spanish for user messages, English for code/docs
+
+📋 **[.github/QUICK_REFERENCE.md](.github/QUICK_REFERENCE.md)** - Quick commands and checklists
 
 ---
 
