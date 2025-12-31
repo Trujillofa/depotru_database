@@ -73,21 +73,60 @@ def require_env(name: str, validation_func=None, error_msg: str = None) -> str:
 # CONFIGURATION (All required from .env – No defaults for security!)
 # =============================================================================
 
-class Config:
-    # Check if we're in a testing environment
-    _IS_TESTING = "pytest" in sys.modules or os.getenv("TESTING", "false").lower() == "true"
+def _is_testing_env() -> bool:
+    """
+    Detect if we're running in a testing environment.
+    Checks multiple indicators to be robust across different test runners.
+    """
+    # Check if pytest is imported
+    if "pytest" in sys.modules:
+        return True
     
+    # Check for TESTING environment variable
+    if os.getenv("TESTING", "false").lower() == "true":
+        return True
+    
+    # Check if running from a test file
+    try:
+        frame = sys._getframe()
+        while frame:
+            filename = frame.f_globals.get('__file__', '')
+            if 'test' in filename.lower() or 'pytest' in filename.lower():
+                return True
+            frame = frame.f_back
+    except (AttributeError, ValueError):
+        pass
+    
+    return False
+
+
+def get_env_or_test_default(name: str, test_default: str, validation_func=None, error_msg: str = None) -> str:
+    """
+    Get environment variable with testing support.
+    In production: uses require_env() with validation and exits on failure.
+    In testing: returns environment variable or test default without exiting.
+    """
+    is_testing = _is_testing_env()
+    
+    if is_testing:
+        return os.getenv(name, test_default)
+    else:
+        return require_env(name, validation_func, error_msg)
+
+
+class Config:
     # Required API keys and credentials (no defaults!)
-    GROK_API_KEY = require_env(
+    GROK_API_KEY = get_env_or_test_default(
         "GROK_API_KEY",
+        test_default="xai-test-key",
         validation_func=lambda x: x.startswith("xai-"),
         error_msg="La clave debe comenzar con 'xai-'"
-    ) if not _IS_TESTING else os.getenv("GROK_API_KEY", "xai-test-key")
+    )
 
-    DB_SERVER = require_env("DB_SERVER") if not _IS_TESTING else os.getenv("DB_SERVER", "test-server")
-    DB_NAME = require_env("DB_NAME") if not _IS_TESTING else os.getenv("DB_NAME", "TestDB")
-    DB_USER = require_env("DB_USER") if not _IS_TESTING else os.getenv("DB_USER", "test_user")
-    DB_PASSWORD = require_env("DB_PASSWORD") if not _IS_TESTING else os.getenv("DB_PASSWORD", "test_password")
+    DB_SERVER = get_env_or_test_default("DB_SERVER", test_default="test-server")
+    DB_NAME = get_env_or_test_default("DB_NAME", test_default="TestDB")
+    DB_USER = get_env_or_test_default("DB_USER", test_default="test_user")
+    DB_PASSWORD = get_env_or_test_default("DB_PASSWORD", test_default="test_password")
 
     # Optional configuration with sensible defaults
     PORT = int(os.getenv("PORT", "8084"))
