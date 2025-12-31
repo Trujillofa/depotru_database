@@ -74,17 +74,20 @@ def require_env(name: str, validation_func=None, error_msg: str = None) -> str:
 # =============================================================================
 
 class Config:
+    # Check if we're in a testing environment
+    _IS_TESTING = "pytest" in sys.modules or os.getenv("TESTING", "false").lower() == "true"
+    
     # Required API keys and credentials (no defaults!)
     GROK_API_KEY = require_env(
         "GROK_API_KEY",
         validation_func=lambda x: x.startswith("xai-"),
         error_msg="La clave debe comenzar con 'xai-'"
-    )
+    ) if not _IS_TESTING else os.getenv("GROK_API_KEY", "xai-test-key")
 
-    DB_SERVER = require_env("DB_SERVER")
-    DB_NAME = require_env("DB_NAME")
-    DB_USER = require_env("DB_USER")
-    DB_PASSWORD = require_env("DB_PASSWORD")
+    DB_SERVER = require_env("DB_SERVER") if not _IS_TESTING else os.getenv("DB_SERVER", "test-server")
+    DB_NAME = require_env("DB_NAME") if not _IS_TESTING else os.getenv("DB_NAME", "TestDB")
+    DB_USER = require_env("DB_USER") if not _IS_TESTING else os.getenv("DB_USER", "test_user")
+    DB_PASSWORD = require_env("DB_PASSWORD") if not _IS_TESTING else os.getenv("DB_PASSWORD", "test_password")
 
     # Optional configuration with sensible defaults
     PORT = int(os.getenv("PORT", "8084"))
