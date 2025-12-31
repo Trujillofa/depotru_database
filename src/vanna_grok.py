@@ -96,7 +96,7 @@ def _is_testing_env() -> bool:
         return True
     
     # Check if running from a test file (using inspect for safety)
-    frame = None
+    frame = None  # Initialize outside try to avoid UnboundLocalError
     try:
         frame = inspect.currentframe()
         depth = 0
@@ -109,8 +109,9 @@ def _is_testing_env() -> bool:
     except (AttributeError, ValueError):
         pass
     finally:
-        # Explicitly delete frame reference to prevent memory leaks
-        del frame
+        # Explicitly delete frame reference to prevent memory leaks (safe even if None)
+        if frame is not None:
+            del frame
     
     return False
 
@@ -160,10 +161,13 @@ def get_env_or_test_default(
 
 
 class Config:
-    # Required API keys and credentials (no defaults!)
+    # Required API keys and credentials
+    # Note: test_default values are ONLY used when _is_testing_env() returns True
+    # (i.e., when pytest is running or TESTING=true). In production, require_env()
+    # enforces that real credentials must be provided via environment variables.
     GROK_API_KEY = get_env_or_test_default(
         "GROK_API_KEY",
-        test_default="xai-test-key",
+        test_default="xai-test-key",  # Safe mock value for testing only
         validation_func=lambda x: x.startswith("xai-"),
         error_msg="La clave debe comenzar con 'xai-'"
     )
