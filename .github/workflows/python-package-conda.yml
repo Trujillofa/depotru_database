@@ -72,12 +72,12 @@ jobs:
     - name: Run tests with pytest
       shell: bash -l {0}
       env:
-        # Dummy test credentials (not real - for CI only)
-        DB_SERVER: "test-server"
-        DB_NAME: "TestDB"
-        DB_USER: "test_user"
-        DB_PASSWORD: "test_password"
-        GROK_API_KEY: "xai-test-key-for-ci"
+        # Use credentials from GitHub secrets
+        DB_SERVER: ${{ secrets.DB_SERVER }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+        DB_USER: ${{ secrets.DB_USER }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
       run: |
         pytest tests/ -v --cov=src --cov-report=xml --cov-report=term-missing
 
