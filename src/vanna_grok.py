@@ -11,6 +11,7 @@ import sys
 import locale
 import time
 import inspect  # For safe frame inspection
+import warnings  # For better logging control
 import pandas as pd
 from typing import Any, List
 from functools import wraps
@@ -95,6 +96,7 @@ def _is_testing_env() -> bool:
         return True
     
     # Check if running from a test file (using inspect for safety)
+    frame = None
     try:
         frame = inspect.currentframe()
         depth = 0
@@ -106,6 +108,9 @@ def _is_testing_env() -> bool:
             depth += 1
     except (AttributeError, ValueError):
         pass
+    finally:
+        # Explicitly delete frame reference to prevent memory leaks
+        del frame
     
     return False
 
@@ -133,7 +138,7 @@ def get_env_or_test_default(
         test_default: Default value to use in testing mode
         validation_func: Validation function (production mode only)
         error_msg: Error message for validation failures (production mode only)
-        warn_on_test_default: If True, print warning when using test default
+        warn_on_test_default: If True, issue warning when using test default
     
     Returns:
         Environment variable value (validated in production, raw in testing)
@@ -142,9 +147,13 @@ def get_env_or_test_default(
     
     if is_testing:
         value = os.getenv(name, test_default)
-        # Log warning when using test defaults to help catch config issues
+        # Issue warning when using test defaults to help catch config issues
         if warn_on_test_default and value == test_default:
-            print(f"⚠️  Testing mode: Using default value for {name}")
+            warnings.warn(
+                f"Testing mode: Using default value for {name}",
+                category=UserWarning,
+                stacklevel=2
+            )
         return value
     else:
         return require_env(name, validation_func, error_msg)
