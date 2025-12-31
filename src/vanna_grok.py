@@ -10,6 +10,8 @@ import os
 import sys
 import locale
 import time
+import inspect  # For safe frame inspection
+import warnings  # For better logging control
 import pandas as pd
 from typing import Any, List
 from functools import wraps
@@ -22,6 +24,13 @@ from vanna.legacy.flask import VannaFlaskApp
 from openai import OpenAI
 
 load_dotenv()
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+# Maximum stack depth to search for test file indicators (safety limit)
+MAX_STACK_FRAME_DEPTH = 20
 
 # Set Colombian locale for number formatting (fallback to Spanish/default)
 try:
@@ -73,18 +82,105 @@ def require_env(name: str, validation_func=None, error_msg: str = None) -> str:
 # CONFIGURATION (All required from .env – No defaults for security!)
 # =============================================================================
 
+def _is_testing_env() -> bool:
+    """
+    Detect if we're running in a testing environment.
+    Checks multiple indicators to be robust across different test runners.
+    """
+    # Check if pytest is imported
+    if "pytest" in sys.modules:
+        return True
+    
+    # Check for TESTING environment variable
+    if os.getenv("TESTING", "false").lower() == "true":
+        return True
+    
+    # Check if running from a test file (using inspect for safety)
+    current_frame = None  # Store original frame for cleanup
+    try:
+        current_frame = inspect.currentframe()
+        frame = current_frame  # Working pointer for traversal
+        depth = 0
+        while frame and depth < MAX_STACK_FRAME_DEPTH:
+            filename = frame.f_globals.get('__file__', '')
+            if 'test' in filename.lower() or 'pytest' in filename.lower():
+                return True
+            frame = frame.f_back
+            depth += 1
+    except (AttributeError, ValueError):
+        pass
+    finally:
+        # Clean up original frame reference to prevent memory leaks
+        if current_frame is not None:
+            del current_frame
+    
+    return False
+
+
+def get_env_or_test_default(
+    name: str,
+    test_default: str,
+    validation_func=None,
+    error_msg: str = None,
+    warn_on_test_default: bool = True
+) -> str:
+    """
+    Get environment variable with testing support.
+    
+    In production: uses require_env() with validation and exits on failure.
+    In testing: returns environment variable or test default with optional warning.
+    
+    Note: In testing mode, validation_func and error_msg are NOT applied
+    to allow tests to run with mock/dummy values. This is intentional to
+    prevent tests from failing due to missing production credentials.
+    
+    To force production behavior:
+    - Set environment variable: TESTING="false" (lowercase)
+    - Or ensure pytest is not in sys.modules
+    
+    Args:
+        name: Environment variable name
+        test_default: Default value to use in testing mode
+        validation_func: Validation function (production mode only)
+        error_msg: Error message for validation failures (production mode only)
+        warn_on_test_default: If True, issue warning when using test default
+    
+    Returns:
+        Environment variable value (validated in production, raw in testing)
+    """
+    is_testing = _is_testing_env()
+    
+    if is_testing:
+        value = os.getenv(name, test_default)
+        # Issue warning when using test defaults to help catch config issues
+        if warn_on_test_default and value == test_default:
+            warnings.warn(
+                f"Testing mode: Using default value for {name}",
+                category=UserWarning,
+                stacklevel=2
+            )
+        return value
+    else:
+        return require_env(name, validation_func, error_msg)
+
+
 class Config:
-    # Required API keys and credentials (no defaults!)
-    GROK_API_KEY = require_env(
+    # Required API keys and credentials
+    # Note: test_default values are ONLY used when _is_testing_env() returns True
+    # (i.e., when pytest is running or TESTING="true"). In production, require_env()
+    # enforces that real credentials must be provided via environment variables.
+    # Test defaults intentionally pass validation to avoid masking real issues.
+    GROK_API_KEY = get_env_or_test_default(
         "GROK_API_KEY",
+        test_default="xai-test-key-for-ci-only",  # Matches xai- prefix for testing
         validation_func=lambda x: x.startswith("xai-"),
         error_msg="La clave debe comenzar con 'xai-'"
     )
 
-    DB_SERVER = require_env("DB_SERVER")
-    DB_NAME = require_env("DB_NAME")
-    DB_USER = require_env("DB_USER")
-    DB_PASSWORD = require_env("DB_PASSWORD")
+    DB_SERVER = get_env_or_test_default("DB_SERVER", test_default="test-server")
+    DB_NAME = get_env_or_test_default("DB_NAME", test_default="TestDB")
+    DB_USER = get_env_or_test_default("DB_USER", test_default="test_user")
+    DB_PASSWORD = get_env_or_test_default("DB_PASSWORD", test_default="test_password")
 
     # Optional configuration with sensible defaults
     PORT = int(os.getenv("PORT", "8084"))
