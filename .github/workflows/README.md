@@ -1,101 +1,145 @@
 # GitHub Actions Workflows
 
-This directory contains CI/CD workflows for automated testing.
+This directory contains CI/CD workflows for automated testing, security scanning, and code review.
 
 ## Available Workflows
 
-### 1. General Tests (`tests.yml`)
+### 1. CI/CD Pipeline (`python-package-conda.yml`)
 
 **Triggers:**
-- Push to `main` or `copilot/**` branches
-- Pull requests to `main`
+- Push to `main`, `develop`, `claude/**`, or `copilot/**` branches
+- Pull requests to `main` or `develop`
 - Manual workflow dispatch
 
 **Jobs:**
-- **test-basic**: Runs basic tests without dependencies
-- **test-with-dependencies**: Runs all tests with optional dependencies installed
-  - Tests on Python 3.10, 3.11, 3.12
-  - Installs pandas, vanna, matplotlib, pymssql (when possible)
-  - Generates coverage reports
 
-### 2. Vanna Grok Tests (`test-vanna-grok.yml`)
+- **test**: Runs comprehensive tests across multiple platforms and Python versions
+  - Tests on Ubuntu (3.9, 3.10, 3.11, 3.12), Windows (3.10, 3.11, 3.12), macOS (3.10, 3.11, 3.12)
+  - Linting (flake8), formatting (black), import sorting (isort), type checking (mypy) - Ubuntu 3.12 only
+  - Generates coverage reports (Ubuntu 3.12 only)
+  - Uploads to Codecov
+
+- **security**: Security scanning with bandit and safety
+  - Checks for security vulnerabilities in code
+  - Checks for vulnerable dependencies
+  - Uploads security reports
+
+- **package-build**: Validates package can be built
+  - Builds Python package using build tools
+  - Validates with twine
+  - Uploads package artifacts
+
+### 2. Claude Integration (`claude.yml`)
 
 **Triggers:**
-- Push/PR when `src/vanna_grok.py` or `tests/test_vanna_grok.py` changes
-- Manual workflow dispatch
+- Issue comments, PR review comments, or PR reviews containing `@claude`
+- New issues containing `@claude` in title or body
 
-**Jobs:**
-- **test-vanna-grok**: Specifically tests vanna_grok.py
-  - Tests on Python 3.10, 3.11, 3.12
-  - Installs pandas, vanna, openai, chromadb
-  - Tests number formatting, AI insights, configuration
-  - Generates coverage reports for vanna_grok.py
+**Purpose:**
+- Provides interactive Claude assistance on issues and PRs
+- Automatically responds when tagged with `@claude`
+
+### 3. CodeQL Security Analysis (`codeql-analysis.yml`)
+
+**Triggers:**
+- Push to `main` or `develop` branches
+- Pull requests to `main` or `develop`
+- Scheduled: Every Monday at 6:00 AM UTC
+
+**Purpose:**
+- Advanced security vulnerability scanning
+- Analyzes Python code for security issues
+- Uses extended security and quality queries
+
+### 4. Dependency Review (`dependency-review.yml`)
+
+**Triggers:**
+- Pull requests to `main` or `develop` branches
+
+**Purpose:**
+- Reviews dependency changes in PRs
+- Fails on high/critical severity vulnerabilities
+- Validates license compatibility
 
 ## Viewing Test Results
 
 1. Go to the repository on GitHub
 2. Click the **"Actions"** tab
 3. Select a workflow run to view details
-4. View test output, coverage, and any failures
+4. View test output, coverage, security reports, and any failures
 
 ## Manual Workflow Trigger
 
-To manually run a workflow:
+To manually run the CI/CD pipeline:
 
 1. Go to **Actions** tab
-2. Select the workflow (e.g., "Test Vanna Grok")
+2. Select **"CI/CD Pipeline"**
 3. Click **"Run workflow"** button
 4. Select branch and click **"Run workflow"**
 
 ## Understanding Test Status
 
 - ✅ **Success**: All tests passed
-- ⏭️ **Skipped**: Tests skipped due to missing dependencies (expected)
 - ❌ **Failure**: Tests failed, requires investigation
-- 🟡 **Warning**: Some tests passed, some skipped
+- 🟡 **Warning**: Some non-blocking checks failed (formatting, type checking)
 
 ## Local Testing
 
 To replicate CI environment locally:
 
 ```bash
-# Install dependencies like CI does
-pip install pytest pytest-cov pytest-mock
-pip install pandas vanna chromadb openai python-dotenv
+# Create Conda environment
+conda env create -f environment.yml
+conda activate test-env
 
-# Run tests like CI
+# Install dependencies
+pip install -r requirements.txt
+pip install pytest pytest-cov black flake8 mypy isort
+
+# Run tests
 pytest tests/ -v --cov=src
+
+# Run linting
+flake8 src/ --count --select=E9,F63,F7,F82
+black --check src/ tests/ examples/
+isort --check-only src/ tests/ examples/
+mypy src/
 ```
 
 ## Environment Variables
 
-The workflows use these environment variables for testing:
+The workflows use these environment variables from GitHub Secrets:
 
-- `GROK_API_KEY`: Set to `xai-test-key-for-ci` (mock value)
-- `DB_SERVER`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`: Mock database credentials
+- `GROK_API_KEY`: Grok API key for AI testing
+- `DB_SERVER`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`: Database credentials
 
-**Note**: These are NOT real credentials. Real API keys and database connections are never exposed in CI.
+**Note**: These are real secrets stored in GitHub repository settings.
 
 ## Coverage Reports
 
-Coverage reports are uploaded to Codecov for:
-- Overall test coverage (Python 3.12 only)
-- vanna_grok.py specific coverage
+Coverage reports are uploaded to Codecov from Ubuntu with Python 3.12 only.
 
 View coverage at: `https://codecov.io/gh/Trujillofa/depotru_database`
+
+## Security Reports
+
+Security scanning produces:
+- Bandit security reports (uploaded as artifacts)
+- Safety dependency vulnerability reports
+- CodeQL security analysis reports
 
 ## Troubleshooting
 
 ### Workflow Not Running
 
-- Check that the file paths in `on.push.paths` match your changes
-- Verify branch name matches the trigger pattern
+- Check that your branch matches the trigger pattern
+- Verify workflow triggers are configured correctly
 
 ### Tests Failing in CI but Passing Locally
 
-- Check Python version (CI uses 3.10, 3.11, 3.12)
-- Ensure dependencies are correctly specified
-- Review workflow logs for missing dependencies
+- Check Python version (CI uses 3.9-3.12)
+- Ensure dependencies are correctly specified in requirements.txt
+- Review workflow logs for missing dependencies or environment issues
 
 ### Workflow Permissions
 
@@ -104,20 +148,28 @@ If workflows fail with permission errors:
 2. Under "Workflow permissions", select "Read and write permissions"
 3. Save changes
 
-## Adding New Workflows
+## Workflow Optimization
 
-To add a new workflow:
+The CI/CD pipeline has been optimized for efficiency:
 
-1. Create a new `.yml` file in `.github/workflows/`
-2. Define triggers, jobs, and steps
-3. Test locally with `act` (if available) or push to a test branch
-4. Monitor the Actions tab for results
+- **Reduced matrix**: Python 3.9 only tested on Ubuntu
+- **Conditional jobs**: Linting/formatting only runs on Ubuntu 3.12
+- **Caching**: Conda packages are cached to speed up builds
+- **Single coverage upload**: Only Ubuntu 3.12 uploads to Codecov
 
 ## Best Practices
 
-- Keep workflows fast (< 5 minutes when possible)
-- Use caching for pip packages
-- Skip tests gracefully when dependencies unavailable
-- Generate coverage reports only once (Python 3.12)
-- Use workflow_dispatch for manual testing
+- Keep workflows fast (< 10 minutes when possible)
+- Use caching for conda/pip packages
+- Run expensive checks (linting, coverage) only once
+- Use `continue-on-error` for non-blocking checks
+- Add workflow_dispatch for manual testing
 - Add informative test summaries
+
+## Removed Workflows
+
+The following redundant workflows were removed to simplify maintenance:
+
+- `tests.yml` - Replaced by comprehensive CI/CD pipeline
+- `test-vanna-grok.yml` - Tests integrated into main pipeline
+- `claude-code-review.yml` - Functionality covered by claude.yml

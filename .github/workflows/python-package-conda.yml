@@ -1,8 +1,8 @@
-name: Python Package with Anaconda
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop, claude/* ]
+    branches: [ main, develop, claude/**, copilot/** ]
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch:
@@ -16,10 +16,25 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ['3.9', '3.10', '3.11', '3.12']
+        exclude:
+          # Reduce matrix size - test older Python only on Ubuntu
+          - os: windows-latest
+            python-version: '3.9'
+          - os: macos-latest
+            python-version: '3.9'
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Cache Conda packages
+      uses: actions/cache@v4
+      with:
+        path: ~/conda_pkgs_dir
+        key: ${{ runner.os }}-conda-${{ matrix.python-version }}-${{ hashFiles('environment.yml', 'requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-conda-${{ matrix.python-version }}-
+          ${{ runner.os }}-conda-
 
     - name: Set up Conda
       uses: conda-incubator/setup-miniconda@v3
@@ -29,6 +44,7 @@ jobs:
         activate-environment: test-env
         environment-file: environment.yml
         auto-activate-base: false
+        use-only-tar-bz2: true
 
     - name: Display Conda info
       shell: bash -l {0}
@@ -47,6 +63,8 @@ jobs:
 
     - name: Lint with flake8
       shell: bash -l {0}
+      # Only run linting on one platform to save time
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
       run: |
         # Stop the build if there are Python syntax errors or undefined names
         flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics
@@ -55,16 +73,19 @@ jobs:
 
     - name: Check code formatting with black
       shell: bash -l {0}
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
       run: |
         black --check src/ tests/ examples/ || echo "Code needs formatting (non-blocking)"
 
     - name: Check import sorting with isort
       shell: bash -l {0}
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
       run: |
         isort --check-only src/ tests/ examples/ || echo "Imports need sorting (non-blocking)"
 
     - name: Type checking with mypy
       shell: bash -l {0}
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
       continue-on-error: true
       run: |
         mypy src/ || echo "Type checking issues found (non-blocking)"
@@ -83,10 +104,12 @@ jobs:
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
+      # Only upload coverage from Ubuntu with Python 3.12
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
       with:
         file: ./coverage.xml
         flags: unittests
-        name: codecov-${{ matrix.os }}-py${{ matrix.python-version }}
+        name: codecov-umbrella
         fail_ci_if_error: false
 
   security:
