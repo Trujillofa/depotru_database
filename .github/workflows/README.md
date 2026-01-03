@@ -113,7 +113,7 @@ The workflows use these environment variables from GitHub Secrets:
 - `GROK_API_KEY`: Grok API key for AI testing
 - `DB_SERVER`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`: Database credentials
 
-**Note**: These are real secrets stored in GitHub repository settings.
+**Note**: These are securely stored GitHub secrets (Settings → Secrets and variables → Actions). They are never exposed in logs, code, or workflow outputs.
 
 ## Coverage Reports
 
