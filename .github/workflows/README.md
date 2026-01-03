@@ -90,7 +90,7 @@ To replicate CI environment locally:
 ```bash
 # Create Conda environment
 conda env create -f environment.yml
-conda activate test-env
+conda activate business-analyzer
 
 # Install dependencies
 pip install -r requirements.txt

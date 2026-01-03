@@ -41,7 +41,7 @@ jobs:
       with:
         auto-update-conda: true
         python-version: ${{ matrix.python-version }}
-        activate-environment: test-env
+        activate-environment: business-analyzer
         environment-file: environment.yml
         auto-activate-base: false
 
