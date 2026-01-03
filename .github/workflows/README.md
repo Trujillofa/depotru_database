@@ -1,6 +1,6 @@
 # GitHub Actions Workflows
 
-This directory contains CI/CD workflows for automated testing.
+This directory contains CI/CD workflows for automated testing and code quality.
 
 ## Available Workflows
 
@@ -31,7 +31,36 @@ This directory contains CI/CD workflows for automated testing.
   - Tests number formatting, AI insights, configuration
   - Generates coverage reports for vanna_grok.py
 
-## Viewing Test Results
+### 3. Code Quality & Security
+
+**CodeQL Analysis (`codeql-analysis.yml`)**
+- Automated security vulnerability scanning
+- Runs on push to main and on PRs
+
+**Dependency Review (`dependency-review.yml`)**
+- Scans for vulnerable dependencies in PRs
+- Prevents introduction of known security issues
+
+### 4. AI-Assisted Development
+
+**Claude Code (`claude.yml`)**
+- Triggered by @claude mentions in issues/PRs
+- Provides AI-assisted code review and suggestions
+
+**Claude Code Review (`claude-code-review.yml`)**
+- Automated code review on PR open/update
+- Reviews for code quality, security, and best practices
+
+## Workflow Organization
+
+The workflows are organized to minimize redundancy:
+
+- **tests.yml**: General test suite for all code changes
+- **test-vanna-grok.yml**: Focused testing for Vanna integration (only runs when relevant files change)
+- **codeql-analysis.yml** & **dependency-review.yml**: Security and dependency scanning
+- **claude.yml** & **claude-code-review.yml**: AI-assisted development tools
+
+## Viewing Workflow Results
 
 1. Go to the repository on GitHub
 2. Click the **"Actions"** tab
@@ -43,44 +72,53 @@ This directory contains CI/CD workflows for automated testing.
 To manually run a workflow:
 
 1. Go to **Actions** tab
-2. Select the workflow (e.g., "Test Vanna Grok")
+2. Select the workflow (e.g., "Tests" or "Test Vanna Grok")
 3. Click **"Run workflow"** button
 4. Select branch and click **"Run workflow"**
 
-## Understanding Test Status
+## Understanding Status Badges
 
 - ✅ **Success**: All tests passed
-- ⏭️ **Skipped**: Tests skipped due to missing dependencies (expected)
+- ⏭️ **Skipped**: Tests skipped due to missing dependencies (expected behavior)
 - ❌ **Failure**: Tests failed, requires investigation
 - 🟡 **Warning**: Some tests passed, some skipped
 
 ## Local Testing
 
-To replicate CI environment locally:
+Replicate CI environment locally:
 
 ```bash
-# Install dependencies like CI does
+# Install test dependencies
 pip install pytest pytest-cov pytest-mock
-pip install pandas vanna chromadb openai python-dotenv
 
-# Run tests like CI
-pytest tests/ -v --cov=src
+# Install optional dependencies for full testing
+pip install pandas vanna chromadb openai python-dotenv pymssql
+
+# Run quick tests (no dependencies required)
+python scripts/utils/run_tests.py --quick
+
+# Run all tests with coverage
+pytest tests/ -v --cov=src --cov-report=term
 ```
 
-## Environment Variables
+## Required Secrets
 
-The workflows use these environment variables for testing:
+The workflows use GitHub repository secrets for sensitive data:
 
-- `GROK_API_KEY`: Set to `xai-test-key-for-ci` (mock value)
-- `DB_SERVER`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`: Mock database credentials
+- `GROK_API_KEY`: API key for Grok/xAI service (test value in CI)
+- `DB_SERVER`: Database server address (mock value in CI)
+- `DB_NAME`: Database name (mock value in CI)
+- `DB_USER`: Database username (mock value in CI)
+- `DB_PASSWORD`: Database password (mock value in CI)
+- `CLAUDE_CODE_OAUTH_TOKEN`: OAuth token for Claude Code integration
 
-**Note**: These are NOT real credentials. Real API keys and database connections are never exposed in CI.
+**Note**: CI uses mock/test values. Real credentials are never exposed in workflows.
 
 ## Coverage Reports
 
-Coverage reports are uploaded to Codecov for:
-- Overall test coverage (Python 3.12 only)
-- vanna_grok.py specific coverage
+Coverage reports are uploaded to Codecov:
+- Overall test coverage (from tests.yml, Python 3.12 only)
+- vanna_grok.py specific coverage (from test-vanna-grok.yml, Python 3.12 only)
 
 View coverage at: `https://codecov.io/gh/Trujillofa/depotru_database`
 
@@ -88,36 +126,31 @@ View coverage at: `https://codecov.io/gh/Trujillofa/depotru_database`
 
 ### Workflow Not Running
 
-- Check that the file paths in `on.push.paths` match your changes
-- Verify branch name matches the trigger pattern
+- Check that file paths in `on.push.paths` match your changes
+- Verify branch name matches the trigger pattern (`main` or `copilot/**`)
+- Ensure you have push access to the repository
 
 ### Tests Failing in CI but Passing Locally
 
 - Check Python version (CI uses 3.10, 3.11, 3.12)
-- Ensure dependencies are correctly specified
-- Review workflow logs for missing dependencies
+- Ensure all dependencies are correctly specified in requirements.txt
+- Review workflow logs for environment differences
+- Check if tests depend on local configuration or files
 
-### Workflow Permissions
+### Permission Errors
 
 If workflows fail with permission errors:
 1. Go to Settings → Actions → General
 2. Under "Workflow permissions", select "Read and write permissions"
-3. Save changes
-
-## Adding New Workflows
-
-To add a new workflow:
-
-1. Create a new `.yml` file in `.github/workflows/`
-2. Define triggers, jobs, and steps
-3. Test locally with `act` (if available) or push to a test branch
-4. Monitor the Actions tab for results
+3. Check "Allow GitHub Actions to create and approve pull requests"
+4. Save changes
 
 ## Best Practices
 
-- Keep workflows fast (< 5 minutes when possible)
-- Use caching for pip packages
-- Skip tests gracefully when dependencies unavailable
-- Generate coverage reports only once (Python 3.12)
-- Use workflow_dispatch for manual testing
-- Add informative test summaries
+- Keep workflows fast (target < 5 minutes when possible)
+- Use caching for pip packages to speed up builds
+- Skip tests gracefully when optional dependencies are unavailable
+- Generate coverage reports only once (Python 3.12) to save resources
+- Use `workflow_dispatch` for manual testing flexibility
+- Add informative test summaries using `$GITHUB_STEP_SUMMARY`
+- Use path filters to run workflows only when relevant files change

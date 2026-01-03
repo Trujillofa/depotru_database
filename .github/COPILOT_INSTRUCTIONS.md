@@ -227,10 +227,18 @@ The repository has multiple workflows:
    - Requires ODBC drivers and specific dependencies
    - Uses mocked API keys in CI
 
-3. **claude.yml** - Claude Code integration
+3. **codeql-analysis.yml** - Security scanning
+   - Automated vulnerability detection
+   - Runs weekly and on every push/PR to main
+
+4. **dependency-review.yml** - Dependency security
+   - Scans for vulnerable dependencies in PRs
+   - Blocks high/critical severity issues
+
+5. **claude.yml** - Claude Code integration
    - Triggered by `@claude` mentions in issues/PRs
 
-4. **claude-code-review.yml** - Automated code review
+6. **claude-code-review.yml** - Automated code review
    - Runs on PR open/sync
 
 ### Branch Strategy
