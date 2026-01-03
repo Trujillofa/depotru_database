@@ -30,7 +30,7 @@ jobs:
     - name: Cache Conda packages
       uses: actions/cache@v4
       with:
-        path: ~/conda_pkgs_dir
+        path: ~/conda/pkgs
         key: ${{ runner.os }}-conda-${{ matrix.python-version }}-${{ hashFiles('environment.yml', 'requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-conda-${{ matrix.python-version }}-
@@ -44,7 +44,6 @@ jobs:
         activate-environment: test-env
         environment-file: environment.yml
         auto-activate-base: false
-        use-only-tar-bz2: true
 
     - name: Display Conda info
       shell: bash -l {0}
