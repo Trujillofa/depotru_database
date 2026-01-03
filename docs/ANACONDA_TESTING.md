@@ -134,23 +134,22 @@ chmod +x test_all_versions.sh
 
 ## GitHub Actions CI/CD
 
-The project includes automated testing via GitHub Actions. See `.github/workflows/python-package-conda.yml`.
+The project includes automated testing via GitHub Actions. See `.github/workflows/tests.yml` and `.github/workflows/test-vanna-grok.yml`.
 
 ### Workflow Features
 
-✅ **Multi-version testing** (Python 3.8, 3.9, 3.10, 3.11)
-✅ **Cross-platform** (Ubuntu, Windows, macOS)
-✅ **Code quality** (black, flake8, isort, mypy)
-✅ **Security scanning** (bandit, safety, CodeQL)
+✅ **Multi-version testing** (Python 3.10, 3.11, 3.12)
+✅ **Dependency management** (with and without optional dependencies)
 ✅ **Coverage reporting** (Codecov)
-✅ **Package building** (setup.py validation)
+✅ **Security scanning** (CodeQL, dependency review)
 
 ### Triggering Workflows
 
 Workflows run automatically on:
-- Push to `main`, `develop`, or `claude/*` branches
-- Pull requests to `main` or `develop`
+- Push to `main` or `copilot/**` branches
+- Pull requests to `main`
 - Manual trigger via GitHub UI
+- Weekly security scans (CodeQL)
 
 ### Viewing Results
 
