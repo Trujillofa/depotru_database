@@ -72,6 +72,17 @@ jobs:
       - name: Parse DATABASE secret
         run: |
           IFS=',' read -r DB_SERVER DB_NAME DB_USER DB_PASSWORD <<< "${{ secrets.DATABASE }}"
+          # Validate that all components are present
+          if [ -z "$DB_SERVER" ] || [ -z "$DB_NAME" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASSWORD" ]; then
+            echo "ERROR: DATABASE secret must contain exactly 4 comma-separated values: server,database,user,password"
+            exit 1
+          fi
+          # Mask sensitive values in logs
+          echo "::add-mask::$DB_SERVER"
+          echo "::add-mask::$DB_NAME"
+          echo "::add-mask::$DB_USER"
+          echo "::add-mask::$DB_PASSWORD"
+          # Set environment variables
           echo "DB_SERVER=$DB_SERVER" >> $GITHUB_ENV
           echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
           echo "DB_USER=$DB_USER" >> $GITHUB_ENV
