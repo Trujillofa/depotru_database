@@ -71,17 +71,24 @@ jobs:
       
       - name: Parse DATABASE secret
         run: |
-          IFS=',' read -r DB_SERVER DB_NAME DB_USER DB_PASSWORD <<< "${{ secrets.DATABASE }}"
-          # Validate that all components are present
-          if [ -z "$DB_SERVER" ] || [ -z "$DB_NAME" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASSWORD" ]; then
+          # First, count the number of comma-separated values
+          IFS=',' read -ra VALUES <<< "${{ secrets.DATABASE }}"
+          if [ ${#VALUES[@]} -ne 4 ]; then
             echo "ERROR: DATABASE secret must contain exactly 4 comma-separated values: server,database,user,password"
             exit 1
           fi
-          # Mask sensitive values in logs
+          # Parse the values
+          IFS=',' read -r DB_SERVER DB_NAME DB_USER DB_PASSWORD <<< "${{ secrets.DATABASE }}"
+          # Mask sensitive values in logs immediately
           echo "::add-mask::$DB_SERVER"
           echo "::add-mask::$DB_NAME"
           echo "::add-mask::$DB_USER"
           echo "::add-mask::$DB_PASSWORD"
+          # Validate that all components are present (after masking)
+          if [ -z "$DB_SERVER" ] || [ -z "$DB_NAME" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASSWORD" ]; then
+            echo "ERROR: DATABASE secret contains empty values"
+            exit 1
+          fi
           # Set environment variables
           echo "DB_SERVER=$DB_SERVER" >> $GITHUB_ENV
           echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
