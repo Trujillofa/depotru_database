@@ -69,16 +69,20 @@ jobs:
           pip install flasgger
           pip install pyodbc
       
+      - name: Parse DATABASE secret
+        run: |
+          IFS=',' read -r DB_SERVER DB_NAME DB_USER DB_PASSWORD <<< "${{ secrets.DATABASE }}"
+          echo "DB_SERVER=$DB_SERVER" >> $GITHUB_ENV
+          echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
+          echo "DB_USER=$DB_USER" >> $GITHUB_ENV
+          echo "DB_PASSWORD=$DB_PASSWORD" >> $GITHUB_ENV
+      
       - name: Verify imports
         run: |
           python -c "import sys; print(sys.path)"
           python -c "import sys; sys.path.insert(0, 'src'); from vanna_grok import format_number; print('✓ vanna_grok imports successfully')"
         env:
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
-          DB_SERVER: ${{ secrets.DB_SERVER }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           PYTHONPATH: ${{ github.workspace }}/src
       
       - name: Run tests for vanna_grok.py
@@ -86,10 +90,6 @@ jobs:
           PYTHONPATH=$PYTHONPATH:${{ github.workspace }}/src pytest tests/test_vanna_grok.py -v --tb=short --cov=src/vanna_grok --cov-report=term --cov-report=xml
         env:
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
-          DB_SERVER: ${{ secrets.DB_SERVER }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       
       - name: Upload coverage reports
         if: matrix.python-version == '3.12'
