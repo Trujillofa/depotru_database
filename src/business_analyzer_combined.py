@@ -179,6 +179,55 @@ def validate_limit(limit: int) -> None:
         )
 
 
+def validate_sql_identifier(identifier: str, param_name: str) -> str:
+    """
+    Validate and sanitize SQL identifier (table name, database name, column name).
+    
+    This prevents SQL injection by ensuring identifiers only contain safe characters.
+    SQL identifiers should only contain alphanumeric characters, underscores, and hyphens.
+    
+    Args:
+        identifier: The SQL identifier to validate
+        param_name: Parameter name for error messages
+    
+    Returns:
+        The validated identifier
+    
+    Raises:
+        ValueError: If identifier contains unsafe characters
+    
+    Examples:
+        >>> validate_sql_identifier("banco_datos", "table")
+        'banco_datos'
+        >>> validate_sql_identifier("SmartBusiness", "database")
+        'SmartBusiness'
+        >>> validate_sql_identifier("DROP TABLE users; --", "table")
+        Traceback (most recent call last):
+        ...
+        ValueError: Invalid table name...
+    """
+    if not identifier:
+        raise ValueError(f"{param_name} cannot be empty")
+    
+    # SQL identifiers should only contain: letters, numbers, underscores, hyphens
+    # This prevents SQL injection attacks
+    import re
+    if not re.match(r'^[a-zA-Z0-9_-]+$', identifier):
+        raise ValueError(
+            f"Invalid {param_name}: '{identifier}'. "
+            f"SQL identifiers can only contain letters, numbers, underscores, and hyphens."
+        )
+    
+    # Additional length check
+    if len(identifier) > 128:
+        raise ValueError(
+            f"{param_name} is too long ({len(identifier)} characters). "
+            f"Maximum is 128 characters."
+        )
+    
+    return identifier
+
+
 # Try to import NavicatCipher
 try:
     from NavicatCipher import Navicat12Crypto
@@ -745,6 +794,15 @@ def fetch_banco_datos(
 
     conn = None  # P0 FIX: Initialize outside try block
     try:
+        # SECURITY: Validate SQL identifiers to prevent SQL injection
+        # Table and database names cannot be parameterized in SQL, so we must validate them
+        db_name = validate_sql_identifier(Config.DB_NAME, "database name")
+        table_name = validate_sql_identifier(Config.DB_TABLE, "table name")
+        
+        # Validate excluded document codes (alphanumeric only)
+        for code in Config.EXCLUDED_DOCUMENT_CODES:
+            validate_sql_identifier(code, "excluded document code")
+        
         # Log only non-sensitive connection parameters (host and port)
         host = conn_details.get("Host")
         port = conn_details.get("Port")
@@ -755,7 +813,7 @@ def fetch_banco_datos(
             port=conn_details["Port"],
             user=conn_details["UserName"],
             password=conn_details["Password"],
-            database=Config.DB_NAME,
+            database=db_name,
             login_timeout=Config.DB_LOGIN_TIMEOUT,
             timeout=Config.DB_TIMEOUT,
             tds_version=Config.DB_TDS_VERSION,
@@ -769,17 +827,19 @@ def fetch_banco_datos(
         result = cursor.fetchone()
         logger.info(f"DB connection test: {result}")
 
-        # Get column names
-        cursor.execute(f"SELECT TOP 0 * FROM [{Config.DB_NAME}].[dbo].[{Config.DB_TABLE}]")
+        # SECURITY: Use validated identifiers in SQL query
+        # Note: Table/DB names cannot be parameterized, but we've validated them above
+        cursor.execute(f"SELECT TOP 0 * FROM [{db_name}].[dbo].[{table_name}]")
         columns = [desc[0] for desc in cursor.description]
-        logger.info(f"Columns in {Config.DB_TABLE}: {columns}")
+        logger.info(f"Columns in {table_name}: {columns}")
 
-        # Build exclusion list for query
-        excluded_codes = ', '.join([f"'{code}'" for code in Config.EXCLUDED_DOCUMENT_CODES])
+        # SECURITY: Build exclusion list using parameterized query
+        # Create placeholders for each excluded code
+        excluded_placeholders = ', '.join(['%s'] * len(Config.EXCLUDED_DOCUMENT_CODES))
 
-        # Query to fetch data
-        query = f"SELECT TOP %s * FROM [{Config.DB_NAME}].[dbo].[{Config.DB_TABLE}] WHERE DocumentosCodigo NOT IN ({excluded_codes})"
-        params = [limit]
+        # Query to fetch data with parameterized exclusion list
+        query = f"SELECT TOP %s * FROM [{db_name}].[dbo].[{table_name}] WHERE DocumentosCodigo NOT IN ({excluded_placeholders})"
+        params = [limit] + list(Config.EXCLUDED_DOCUMENT_CODES)
 
         if start_date and end_date:
             query += " AND Fecha BETWEEN %s AND %s"
@@ -795,7 +855,7 @@ def fetch_banco_datos(
         data = list(cursor)
 
         if not data:
-            logger.warning(f"No data retrieved from {Config.DB_TABLE}.")
+            logger.warning(f"No data retrieved from {table_name}.")
         else:
             logger.info(f"✓ Fetched {len(data)} rows successfully")
 
