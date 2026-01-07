@@ -15,11 +15,11 @@ import os
 HOST = os.environ.get('MAGENTO_HOST')
 USER = os.environ.get('MAGENTO_USER')
 PASS = os.environ.get('MAGENTO_PASSWORD')
-MAGENTO_ROOT = os.environ.get('MAGENTO_ROOT', '/home/deptrujillob2c/public_html')
+MAGENTO_ROOT = os.environ.get('MAGENTO_ROOT')  # No default - must be provided
 
-if not all([HOST, USER, PASS]):
+if not all([HOST, USER, PASS, MAGENTO_ROOT]):
     print("ERROR: Missing required environment variables")
-    print("Please set: MAGENTO_HOST, MAGENTO_USER, MAGENTO_PASSWORD")
+    print("Please set: MAGENTO_HOST, MAGENTO_USER, MAGENTO_PASSWORD, MAGENTO_ROOT")
     sys.exit(1)
 
 def run_ssh_command(command, description):

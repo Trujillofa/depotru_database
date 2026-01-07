@@ -32,6 +32,7 @@ import logging
 import json
 import argparse
 import os
+import re
 from datetime import datetime, date
 from decimal import Decimal
 from collections import defaultdict
@@ -211,7 +212,6 @@ def validate_sql_identifier(identifier: str, param_name: str) -> str:
     
     # SQL identifiers should only contain: letters, numbers, underscores, hyphens
     # This prevents SQL injection attacks
-    import re
     if not re.match(r'^[a-zA-Z0-9_-]+$', identifier):
         raise ValueError(
             f"Invalid {param_name}: '{identifier}'. "
@@ -834,12 +834,17 @@ def fetch_banco_datos(
         logger.info(f"Columns in {table_name}: {columns}")
 
         # SECURITY: Build exclusion list using parameterized query
-        # Create placeholders for each excluded code
-        excluded_placeholders = ', '.join(['%s'] * len(Config.EXCLUDED_DOCUMENT_CODES))
-
-        # Query to fetch data with parameterized exclusion list
-        query = f"SELECT TOP %s * FROM [{db_name}].[dbo].[{table_name}] WHERE DocumentosCodigo NOT IN ({excluded_placeholders})"
-        params = [limit] + list(Config.EXCLUDED_DOCUMENT_CODES)
+        # Handle case where exclusion list might be empty
+        if Config.EXCLUDED_DOCUMENT_CODES:
+            # Create placeholders for each excluded code
+            excluded_placeholders = ', '.join(['%s'] * len(Config.EXCLUDED_DOCUMENT_CODES))
+            # Query to fetch data with parameterized exclusion list
+            query = f"SELECT TOP %s * FROM [{db_name}].[dbo].[{table_name}] WHERE DocumentosCodigo NOT IN ({excluded_placeholders})"
+            params = [limit] + list(Config.EXCLUDED_DOCUMENT_CODES)
+        else:
+            # No exclusions - fetch all data
+            query = f"SELECT TOP %s * FROM [{db_name}].[dbo].[{table_name}]"
+            params = [limit]
 
         if start_date and end_date:
             query += " AND Fecha BETWEEN %s AND %s"

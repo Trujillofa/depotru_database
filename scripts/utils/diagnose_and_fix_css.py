@@ -15,11 +15,11 @@ import time
 hostname = os.environ.get('MAGENTO_HOST')
 username = os.environ.get('MAGENTO_USER')
 password = os.environ.get('MAGENTO_PASSWORD')
-magento_root = os.environ.get('MAGENTO_ROOT', '/home/deptrujillob2c/public_html')
+magento_root = os.environ.get('MAGENTO_ROOT')  # No default - must be provided
 
-if not all([hostname, username, password]):
+if not all([hostname, username, password, magento_root]):
     print("ERROR: Missing required environment variables")
-    print("Please set: MAGENTO_HOST, MAGENTO_USER, MAGENTO_PASSWORD")
+    print("Please set: MAGENTO_HOST, MAGENTO_USER, MAGENTO_PASSWORD, MAGENTO_ROOT")
     sys.exit(1)
 
 def run_command(ssh, command, description):

@@ -2,10 +2,9 @@
 Test SQL injection prevention measures
 """
 import pytest
-import sys
-sys.path.insert(0, 'src')
 
-from business_analyzer_combined import validate_sql_identifier
+# Use proper relative imports instead of path manipulation
+from src.business_analyzer_combined import validate_sql_identifier
 
 
 class TestSQLInjectionPrevention:
