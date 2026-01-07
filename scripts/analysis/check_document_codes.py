@@ -1,13 +1,36 @@
 #!/usr/bin/env python3
 """Check document codes and revenue breakdown"""
 import pymssql
+import os
+import sys
+
+# SECURITY: Load credentials from environment variables instead of hardcoding
+# Set these in your environment before running:
+#   export DB_SERVER="your-server"
+#   export DB_USER="your-user"
+#   export DB_PASSWORD="your-password"
+#   export DB_NAME="SmartBusiness"
+
+DB_SERVER = os.getenv("DB_SERVER")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_NAME = os.getenv("DB_NAME", "SmartBusiness")
+
+if not all([DB_SERVER, DB_USER, DB_PASSWORD]):
+    print("ERROR: Missing required environment variables")
+    print("Please set: DB_SERVER, DB_USER, DB_PASSWORD")
+    print("\nExample:")
+    print('  export DB_SERVER="your-server"')
+    print('  export DB_USER="your-user"')
+    print('  export DB_PASSWORD="your-password"')
+    sys.exit(1)
 
 conn = pymssql.connect(
-    server="190.60.235.209",
+    server=DB_SERVER,
     port=1433,
-    user="Consulta",
-    password="Control*01",
-    database="SmartBusiness",
+    user=DB_USER,
+    password=DB_PASSWORD,
+    database=DB_NAME,
     login_timeout=30,
     timeout=120,
 )
@@ -71,11 +94,12 @@ print("="*80)
 print("\n\nIMPORTANT CODES CHECK:")
 print("-"*80)
 for code in important_codes:
-    cursor.execute(f"""
+    # SECURITY: Use parameterized query to prevent SQL injection
+    cursor.execute("""
         SELECT COUNT(*), SUM(TotalMasIva)
         FROM [dbo].[banco_datos]
-        WHERE ano = 2024 AND DocumentosCodigo = '{code}'
-    """)
+        WHERE ano = 2024 AND DocumentosCodigo = %s
+    """, (code,))
     row = cursor.fetchone()
     count = row[0] if row[0] else 0
     revenue = float(row[1]) if row[1] else 0

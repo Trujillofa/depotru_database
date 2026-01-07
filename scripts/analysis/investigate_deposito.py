@@ -6,15 +6,26 @@ Check what sales are attributed to this customer
 
 import pymssql
 import json
+import os
+import sys
 from datetime import datetime
 from decimal import Decimal
 
-# Database connection
-db_host = "190.60.235.209"
-db_port = 1433
-db_username = "Consulta"
-db_password = "Control*01"
-database = "SmartBusiness"
+# SECURITY: Load credentials from environment variables
+# Set these before running:
+#   export DB_SERVER="your-server"
+#   export DB_USER="your-user"
+#   export DB_PASSWORD="your-password"
+db_host = os.environ.get('DB_SERVER')
+db_port = int(os.environ.get('DB_PORT', '1433'))
+db_username = os.environ.get('DB_USER')
+db_password = os.environ.get('DB_PASSWORD')
+database = os.environ.get('DB_NAME', 'SmartBusiness')
+
+if not all([db_host, db_username, db_password]):
+    print("ERROR: Missing required environment variables")
+    print("Please set: DB_SERVER, DB_USER, DB_PASSWORD")
+    sys.exit(1)
 
 def get_connection():
     print(f"🔗 Connecting to {db_host}:{db_port}...")

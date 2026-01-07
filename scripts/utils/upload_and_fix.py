@@ -7,11 +7,20 @@ import subprocess
 import sys
 import os
 
-# Server details
-HOST = "174.142.205.80"
-USER = "deptrujillob2c"
-PASS = "RX}MUWwSnK5G"
-MAGENTO_ROOT = "/home/deptrujillob2c/public_html"
+# SECURITY: Load server details from environment variables
+# Set these before running:
+#   export MAGENTO_HOST="your-server"
+#   export MAGENTO_USER="your-user"
+#   export MAGENTO_PASSWORD="your-password"
+HOST = os.environ.get('MAGENTO_HOST')
+USER = os.environ.get('MAGENTO_USER')
+PASS = os.environ.get('MAGENTO_PASSWORD')
+MAGENTO_ROOT = os.environ.get('MAGENTO_ROOT', '/home/deptrujillob2c/public_html')
+
+if not all([HOST, USER, PASS]):
+    print("ERROR: Missing required environment variables")
+    print("Please set: MAGENTO_HOST, MAGENTO_USER, MAGENTO_PASSWORD")
+    sys.exit(1)
 
 def run_ssh_command(command, description):
     """Run SSH command using various methods"""
