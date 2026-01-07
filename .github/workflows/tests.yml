@@ -77,12 +77,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-cov pytest-mock
-          # Install optional dependencies for testing
-          pip install pandas matplotlib python-dotenv || true
-          pip install vanna chromadb openai || true
-          pip install flask waitress || true
-          pip install pyodbc || true
-          pip install pymssql || true
+          pip install -r requirements.txt || true
       
       - name: Run all tests
         run: |
