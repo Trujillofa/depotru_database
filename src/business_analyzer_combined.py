@@ -745,9 +745,10 @@ def fetch_banco_datos(
 
     conn = None  # P0 FIX: Initialize outside try block
     try:
-        logger.info(
-            f"Connecting to database at {conn_details['Host']}:{conn_details['Port']}"
-        )
+        # Log only non-sensitive connection parameters (host and port)
+        host = conn_details.get("Host")
+        port = conn_details.get("Port")
+        logger.info(f"Connecting to database at {host}:{port}")
 
         conn = pymssql.connect(
             server=conn_details["Host"],
