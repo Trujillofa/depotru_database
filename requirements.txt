@@ -25,6 +25,7 @@ streamlit>=1.20.0           # Web dashboard framework
 flask>=2.0.0                # Lightweight web framework (for Vanna)
 waitress>=2.1.0             # Production WSGI server (for vanna_grok.py)
 flasgger>=0.9.5             # Swagger UI for Flask API documentation
+flask-sock>=0.5.3           # WebSocket support for Flask (required by Vanna)
 
 # AI/ML - Natural Language to SQL
 # ============================================================================
