@@ -24,6 +24,7 @@ python src/vanna_grok.py
 |------|---------|
 | `src/vanna_grok.py` | Main app - Natural language SQL |
 | `tests/test_*.py` | Test suite |
+| `.github/agents/business-data-analyzer.agent.md` | Custom GitHub Copilot agent |
 | `docs/AI_AGENT_INSTRUCTIONS.md` | Full instructions (READ THIS!) |
 | `docs/ROADMAP.md` | Development plan |
 | `.env.example` | Configuration template |
@@ -117,6 +118,39 @@ python -m pdb src/vanna_grok.py
 
 For complete instructions, see:
 **[docs/AI_AGENT_INSTRUCTIONS.md](../docs/AI_AGENT_INSTRUCTIONS.md)**
+
+## 🤖 Using the Custom GitHub Copilot Agent
+
+This repository has a custom GitHub Copilot agent called `@business-data-analyzer` that is specialized for this project. The agent is automatically available when using GitHub Copilot in:
+
+- **GitHub.com** (PR comments, issue discussions)
+- **VS Code** (with GitHub Copilot extension)
+- **JetBrains IDEs** (with GitHub Copilot plugin)
+- **GitHub Copilot CLI** (command line)
+
+### How to Use the Agent
+
+In GitHub Copilot chat or comments, mention the agent:
+
+```
+@business-data-analyzer help me fix this margin calculation bug
+@business-data-analyzer add tests for the Colombian peso formatting
+@business-data-analyzer review this PR for security issues
+```
+
+The agent has context about:
+- Colombian business formatting (pesos, percentages)
+- Vanna AI and Grok API integration
+- Spanish language requirements
+- Database schema and business metrics
+- Project structure and conventions
+- Testing and security requirements
+
+### Agent Location
+
+The agent definition is in: `.github/agents/business-data-analyzer.agent.md`
+
+This file is version-controlled and can be updated as the project evolves.
 
 ---
 

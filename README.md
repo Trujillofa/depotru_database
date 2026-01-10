@@ -352,6 +352,7 @@ See `.env.example` for all options.
 - [docs/P0_FIXES_APPLIED.md](docs/P0_FIXES_APPLIED.md) - Critical fixes applied
 - [docs/ANACONDA_TESTING.md](docs/ANACONDA_TESTING.md) - Multi-version Python testing 🆕
 - [docs/AI_AGENT_INSTRUCTIONS.md](docs/AI_AGENT_INSTRUCTIONS.md) - AI agent development guide 🤖
+- [.github/agents/](./github/agents/) - Custom GitHub Copilot agents 🤖✨
 - [docs/METABASE_TROUBLESHOOTING.md](docs/METABASE_TROUBLESHOOTING.md) - Metabase guide
 - [docs/SECURITY.md](docs/SECURITY.md) - Security best practices
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) - Development workflow
@@ -438,6 +439,17 @@ streamlit run examples/streamlit_dashboard.py
 **For AI agents working on this project:**
 
 📘 **[docs/AI_AGENT_INSTRUCTIONS.md](docs/AI_AGENT_INSTRUCTIONS.md)** - Complete guide for developing, debugging, refactoring, and fixing this project
+
+🤖 **[.github/agents/business-data-analyzer.agent.md](.github/agents/business-data-analyzer.agent.md)** - Custom GitHub Copilot agent specialized for this project
+
+**Using the Custom Agent:**
+
+In GitHub Copilot Chat or comments, use `@business-data-analyzer` to get specialized help:
+```
+@business-data-analyzer help me format this currency in Colombian pesos
+@business-data-analyzer review this code for security issues
+@business-data-analyzer write tests for this business metric function
+```
 
 Quick reference:
 - **Architecture:** Vanna AI + Grok + MSSQL + Colombian formatting
