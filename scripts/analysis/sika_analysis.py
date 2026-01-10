@@ -7,16 +7,26 @@ Focus: Customers, Vendors, Monthly Trends (2024 vs 2025)
 import pymssql
 import json
 import os
+import sys
 from datetime import datetime
 from decimal import Decimal
 from collections import defaultdict
 
-# Database connection - use environment variables or fallback to defaults
-db_host = os.environ.get('DB_HOST', '190.60.235.209')
+# SECURITY: Load credentials from environment variables
+# Set these before running:
+#   export DB_SERVER="your-server"
+#   export DB_USER="your-user"
+#   export DB_PASSWORD="your-password"
+db_host = os.environ.get('DB_SERVER')
 db_port = int(os.environ.get('DB_PORT', '1433'))
-db_username = os.environ.get('DB_USER', 'Consulta')
-db_password = os.environ.get('DB_PASSWORD', 'Control*01')
+db_username = os.environ.get('DB_USER')
+db_password = os.environ.get('DB_PASSWORD')
 database = os.environ.get('DB_NAME', 'SmartBusiness')
+
+if not all([db_host, db_username, db_password]):
+    print("ERROR: Missing required environment variables")
+    print("Please set: DB_SERVER, DB_USER, DB_PASSWORD")
+    sys.exit(1)
 
 def get_connection():
     print(f"🔗 Connecting to {db_host}:{db_port}...")

@@ -10,11 +10,17 @@ import pymssql
 
 def get_connection():
     """Get database connection using environment variables"""
-    db_host = os.environ.get('DB_HOST', '190.60.235.209')
+    # SECURITY: Get credentials from environment (no defaults)
+    db_host = os.environ.get('DB_SERVER')
     db_port = int(os.environ.get('DB_PORT', '1433'))
-    db_user = os.environ.get('DB_USER', 'Consulta')
-    db_password = os.environ.get('DB_PASSWORD', 'Control*01')
+    db_user = os.environ.get('DB_USER')
+    db_password = os.environ.get('DB_PASSWORD')
     db_name = os.environ.get('DB_NAME', 'SmartBusiness')
+    
+    if not all([db_host, db_user, db_password]):
+        print("ERROR: Missing required environment variables")
+        print("Please set: DB_SERVER, DB_USER, DB_PASSWORD")
+        sys.exit(1)
     
     return pymssql.connect(
         server=db_host,

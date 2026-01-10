@@ -3,13 +3,24 @@
 Diagnose and fix styles-m.css compilation issue
 """
 import paramiko
+import os
+import sys
 import time
 
-# Server credentials
-hostname = "174.142.205.80"
-username = "deptrujillob2c"
-password = "RX}MUWwSnK5G"
-magento_root = "/home/deptrujillob2c/public_html"
+# SECURITY: Load server credentials from environment variables
+# Set these before running:
+#   export MAGENTO_HOST="your-server"
+#   export MAGENTO_USER="your-user"
+#   export MAGENTO_PASSWORD="your-password"
+hostname = os.environ.get('MAGENTO_HOST')
+username = os.environ.get('MAGENTO_USER')
+password = os.environ.get('MAGENTO_PASSWORD')
+magento_root = os.environ.get('MAGENTO_ROOT')  # No default - must be provided
+
+if not all([hostname, username, password, magento_root]):
+    print("ERROR: Missing required environment variables")
+    print("Please set: MAGENTO_HOST, MAGENTO_USER, MAGENTO_PASSWORD, MAGENTO_ROOT")
+    sys.exit(1)
 
 def run_command(ssh, command, description):
     """Execute command via SSH and return output"""
