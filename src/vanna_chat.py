@@ -27,11 +27,11 @@ Then open http://localhost:8084 in your browser and start asking questions!
 """
 
 import os
-from typing import Optional
 
 # ============================================================================
 # CONFIGURATION - CHOOSE YOUR SETUP
 # ============================================================================
+
 
 # Option 1: Use OpenAI (Recommended for best results)
 USE_OPENAI = True
