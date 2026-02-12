@@ -108,6 +108,10 @@ Thumbs.db
 *.tar.gz
 *.rar
 
+# AI Agent Configuration
+.agents/config.yml
+.agents/logs/
+
 # Documentation builds
 docs/_build/
 site/
