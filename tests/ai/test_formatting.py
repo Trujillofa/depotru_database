@@ -2,22 +2,24 @@
 Tests for AI package formatting module.
 """
 
-import sys
 import os
+import sys
+
 import pytest
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
 import pandas as pd
+
 from business_analyzer.ai.formatting import (
-    format_number,
-    format_currency,
-    format_percentage,
-    format_integer,
-    format_dataframe,
     CURRENCY_COLUMNS,
     PERCENTAGE_COLUMNS,
+    format_currency,
+    format_dataframe,
+    format_integer,
+    format_number,
+    format_percentage,
 )
 
 

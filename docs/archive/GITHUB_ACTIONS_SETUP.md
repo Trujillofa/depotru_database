@@ -19,7 +19,7 @@
 
 ### 3. Environment Variable Support
 Updated scripts to use environment variables:
-- `sika_analysis.py` 
+- `sika_analysis.py`
 - `run_analysis.py`
 
 Scripts now support both:
@@ -133,5 +133,5 @@ Artifacts are retained for 30 days.
 
 ---
 
-**Created**: 2025-12-22  
+**Created**: 2025-12-22
 **Status**: ⏳ Pending GitHub token scope fix

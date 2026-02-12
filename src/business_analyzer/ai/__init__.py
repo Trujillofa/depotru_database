@@ -24,45 +24,40 @@ Environment Variables:
 
 # Base classes and configuration
 from .base import (
+    DEFAULT_PROVIDER,
+    SUPPORTED_PROVIDERS,
     AIVanna,
     Config,
-    SUPPORTED_PROVIDERS,
-    DEFAULT_PROVIDER,
-    require_env,
-    get_env_or_test_default,
-    retry_on_failure,
     create_ai_client,
+    get_env_or_test_default,
+    require_env,
+    retry_on_failure,
 )
 
 # Formatting utilities
 from .formatting import (
-    format_number,
-    format_dataframe,
-    format_currency,
-    format_percentage,
-    format_integer,
     CURRENCY_COLUMNS,
     PERCENTAGE_COLUMNS,
-)
-
-# Training utilities
-from .training import (
-    train_on_schema,
-    train_with_examples,
-    get_default_training_examples,
-    generate_training_data,
-    full_training,
+    format_currency,
+    format_dataframe,
+    format_integer,
+    format_number,
+    format_percentage,
 )
 
 # Insights generation
 from .insights import generate_insights
 
 # Provider modules
-from .providers import (
-    GrokProvider,
-    OpenAIProvider,
-    AnthropicProvider,
-    OllamaProvider,
+from .providers import AnthropicProvider, GrokProvider, OllamaProvider, OpenAIProvider
+
+# Training utilities
+from .training import (
+    full_training,
+    generate_training_data,
+    get_default_training_examples,
+    train_on_schema,
+    train_with_examples,
 )
 
 __version__ = "2.0.1"

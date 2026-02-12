@@ -29,7 +29,7 @@ SQL queries were constructed using f-strings with values from environment variab
   # BEFORE (vulnerable):
   excluded_codes = ', '.join([f"'{code}'" for code in Config.EXCLUDED_DOCUMENT_CODES])
   query = f"... WHERE DocumentosCodigo NOT IN ({excluded_codes})"
-  
+
   # AFTER (secure):
   excluded_placeholders = ', '.join(['%s'] * len(Config.EXCLUDED_DOCUMENT_CODES))
   query = f"... WHERE DocumentosCodigo NOT IN ({excluded_placeholders})"
@@ -43,7 +43,7 @@ SQL queries were constructed using f-strings with values from environment variab
   ```python
   # BEFORE (vulnerable):
   cursor.execute(f"... WHERE DocumentosCodigo = '{code}'")
-  
+
   # AFTER (secure):
   cursor.execute("... WHERE DocumentosCodigo = %s", (code,))
   ```

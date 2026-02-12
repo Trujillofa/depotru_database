@@ -7,19 +7,19 @@ external dependencies (API keys, database connections).
 Run with: pytest tests/test_vanna_grok.py -v
 """
 
-import pytest
-from pathlib import Path
 import sys
+from pathlib import Path
+
+import pytest
 
 # Skip entire module if dependencies not installed
 pd = pytest.importorskip("pandas", reason="pandas not installed")
 pytest.importorskip("vanna", reason="vanna not installed")
 
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
 # Add src to path for imports (using pytest.ini pythonpath configuration)
-from vanna_grok import format_number, format_dataframe
-
+from vanna_grok import format_dataframe, format_number
 
 # =============================================================================
 # Test Number Formatting
@@ -128,6 +128,7 @@ class TestConfiguration:
         """Test configuration with valid Grok API key."""
         # Reimport to get new config
         import importlib
+
         import vanna_grok
 
         importlib.reload(vanna_grok)
@@ -151,6 +152,7 @@ class TestConfiguration:
         """Test configuration with custom environment values."""
         # Reimport to get new config
         import importlib
+
         import vanna_grok
 
         importlib.reload(vanna_grok)
@@ -179,6 +181,7 @@ class TestConfiguration:
     def test_config_openai_provider(self):
         """Test configuration with OpenAI provider."""
         import importlib
+
         import vanna_grok
 
         importlib.reload(vanna_grok)
@@ -202,6 +205,7 @@ class TestConfiguration:
     def test_config_anthropic_provider(self):
         """Test configuration with Anthropic provider."""
         import importlib
+
         import vanna_grok
 
         importlib.reload(vanna_grok)
@@ -226,6 +230,7 @@ class TestConfiguration:
     def test_config_ollama_provider(self):
         """Test configuration with Ollama provider."""
         import importlib
+
         import vanna_grok
 
         importlib.reload(vanna_grok)

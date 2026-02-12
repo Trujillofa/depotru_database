@@ -1,0 +1,151 @@
+# ============================================================================
+# Pre-commit Configuration for Business Data Analyzer
+# ============================================================================
+# This file configures pre-commit hooks for code quality automation.
+# Run `pre-commit install` to set up the git hook scripts.
+# Run `pre-commit run --all-files` to check all files manually.
+# ============================================================================
+
+# Minimum pre-commit framework version
+minimum_pre_commit_version: "2.20.0"
+
+# Default stages for all hooks (run on commit)
+default_stages: [pre-commit]
+
+# Files to exclude from all hooks (matches pyproject.toml exclude patterns)
+exclude: >
+  (?x)^(
+    \.eggs/|
+    \.git/|
+    \.hg/|
+    \.mypy_cache/|
+    \.tox/|
+    \.venv/|
+    venv/|
+    env/|
+    build/|
+    dist/
+  )
+
+repos:
+  # ==========================================================================
+  # Built-in Pre-commit Hooks
+  # ==========================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # Trim trailing whitespace
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+        description: Removes trailing whitespace from all files
+
+      # Ensure files end with a single newline
+      - id: end-of-file-fixer
+        name: Fix end of files
+        description: Ensures all files end with exactly one newline
+
+      # Validate YAML syntax
+      - id: check-yaml
+        name: Check YAML syntax
+        description: Validates YAML files for syntax errors
+
+      # Prevent large files from being committed
+      - id: check-added-large-files
+        name: Check for large files
+        description: Prevents files larger than 500KB from being committed
+        args: ["--maxkb=500"]
+
+      # Check for merge conflict markers
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+        description: Ensures no merge conflict markers are present
+
+      # Check for debug statements
+      - id: debug-statements
+        name: Check for debug statements
+        description: Detects debugger imports and calls (pdb, ipdb, etc.)
+        files: \.py$
+
+  # ==========================================================================
+  # Black - Code Formatting
+  # ==========================================================================
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        name: Black code formatter
+        description: Formats Python code using Black
+        language_version: python3
+        args:
+          - "--line-length=88"
+          - "--target-version=py38"
+          - "--target-version=py39"
+          - "--target-version=py310"
+          - "--target-version=py311"
+        files: \.pyi?$
+
+  # ==========================================================================
+  # isort - Import Sorting
+  # ==========================================================================
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: isort import sorter
+        description: Sorts and organizes Python imports
+        args:
+          - "--profile=black"
+          - "--line-length=88"
+        files: \.py$
+
+  # ==========================================================================
+  # flake8 - Linting
+  # ==========================================================================
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        name: flake8 linter
+        description: Lints Python code for style and error checking
+        additional_dependencies:
+          - flake8-pyproject  # Allows reading config from pyproject.toml
+        args:
+          - "--max-line-length=88"
+          - "--extend-ignore=E203,W503"
+        files: \.py$
+
+  # ==========================================================================
+  # mypy - Type Checking
+  # ==========================================================================
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        name: mypy type checker
+        description: Static type checking for Python
+        args:
+          - "--python-version=3.8"
+          - "--warn-return-any"
+          - "--warn-unused-configs"
+          - "--check-untyped-defs"
+          - "--no-implicit-optional"
+          - "--warn-redundant-casts"
+          - "--warn-unused-ignores"
+          - "--show-error-codes"
+        files: \.py$
+        # Exclude tests from strict type checking (they often use mocks)
+        exclude: ^tests/
+
+# ============================================================================
+# Local Hooks (Optional - Uncomment if needed)
+# ============================================================================
+# - repo: local
+#   hooks:
+#     # Run pytest on commit (can be slow)
+#     - id: pytest
+#       name: Run pytest
+#       entry: python run_tests.py --quick
+#       language: system
+#       pass_filenames: false
+#       always_run: true
+#       stages: [pre-commit]

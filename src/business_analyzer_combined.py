@@ -25,18 +25,19 @@ Note: Visualization reports are generated automatically when matplotlib is insta
 The --generate-report flag is for future compatibility.
 """
 
-from typing import List, Dict, Any
-import pymssql
-import xml.etree.ElementTree as ET
-import logging
-import json
 import argparse
+import json
+import logging
 import os
 import re
-from datetime import datetime, date
-from decimal import Decimal
-from collections import defaultdict
 import statistics
+import xml.etree.ElementTree as ET
+from collections import defaultdict
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any, Dict, List
+
+import pymssql
 
 # Import configuration
 from config import Config, CustomerSegmentation, InventoryConfig, ProfitabilityConfig
@@ -44,17 +45,18 @@ from config import Config, CustomerSegmentation, InventoryConfig, ProfitabilityC
 # Configure logging
 logging.basicConfig(
     level=getattr(logging, Config.LOG_LEVEL),
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 # Visualization imports (optional)
 try:
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
-    from matplotlib.gridspec import GridSpec
-    import numpy as np
     import warnings
+
+    import matplotlib.patches as mpatches
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from matplotlib.gridspec import GridSpec
 
     warnings.filterwarnings("ignore")
     MATPLOTLIB_AVAILABLE = True
@@ -183,20 +185,20 @@ def validate_limit(limit: int) -> None:
 def validate_sql_identifier(identifier: str, param_name: str) -> str:
     """
     Validate and sanitize SQL identifier (table name, database name, column name).
-    
+
     This prevents SQL injection by ensuring identifiers only contain safe characters.
     SQL identifiers should only contain alphanumeric characters, underscores, and hyphens.
-    
+
     Args:
         identifier: The SQL identifier to validate
         param_name: Parameter name for error messages
-    
+
     Returns:
         The validated identifier
-    
+
     Raises:
         ValueError: If identifier contains unsafe characters
-    
+
     Examples:
         >>> validate_sql_identifier("banco_datos", "table")
         'banco_datos'
@@ -209,22 +211,22 @@ def validate_sql_identifier(identifier: str, param_name: str) -> str:
     """
     if not identifier:
         raise ValueError(f"{param_name} cannot be empty")
-    
+
     # SQL identifiers should only contain: letters, numbers, underscores, hyphens
     # This prevents SQL injection attacks
-    if not re.match(r'^[a-zA-Z0-9_-]+$', identifier):
+    if not re.match(r"^[a-zA-Z0-9_-]+$", identifier):
         raise ValueError(
             f"Invalid {param_name}: '{identifier}'. "
             f"SQL identifiers can only contain letters, numbers, underscores, and hyphens."
         )
-    
+
     # Additional length check
     if len(identifier) > 128:
         raise ValueError(
             f"{param_name} is too long ({len(identifier)} characters). "
             f"Maximum is 128 characters."
         )
-    
+
     return identifier
 
 
@@ -392,7 +394,10 @@ class BusinessMetricsCalculator:
                     "total_revenue": round(data["total_revenue"], 2),
                     "total_orders": data["total_orders"],
                     "average_order_value": round(
-                        safe_divide(data["total_revenue"], data["total_orders"], default=0), 2
+                        safe_divide(
+                            data["total_revenue"], data["total_orders"], default=0
+                        ),
+                        2,
                     ),
                     "product_diversity": len(data["products_purchased"]),
                     "customer_segment": self._segment_customer(
@@ -422,7 +427,10 @@ class BusinessMetricsCalculator:
 
     def _segment_customer(self, revenue: float, orders: int) -> str:
         """Segment customer based on revenue and order frequency"""
-        if revenue > CustomerSegmentation.VIP_REVENUE_THRESHOLD and orders > CustomerSegmentation.VIP_ORDERS_THRESHOLD:
+        if (
+            revenue > CustomerSegmentation.VIP_REVENUE_THRESHOLD
+            and orders > CustomerSegmentation.VIP_ORDERS_THRESHOLD
+        ):
             return "VIP"
         elif revenue > CustomerSegmentation.HIGH_VALUE_THRESHOLD:
             return "High Value"
@@ -495,9 +503,15 @@ class BusinessMetricsCalculator:
             "top_products": products_list[:30],
             "total_products": len(products_list),
             "underperforming_products": [
-                p for p in products_list if p["profit_margin"] < ProfitabilityConfig.LOW_MARGIN_THRESHOLD
+                p
+                for p in products_list
+                if p["profit_margin"] < ProfitabilityConfig.LOW_MARGIN_THRESHOLD
             ],
-            "star_products": [p for p in products_list if p["profit_margin"] > ProfitabilityConfig.STAR_PRODUCT_MARGIN][:10],
+            "star_products": [
+                p
+                for p in products_list
+                if p["profit_margin"] > ProfitabilityConfig.STAR_PRODUCT_MARGIN
+            ][:10],
         }
 
     def analyze_categories(self) -> Dict[str, Any]:
@@ -561,7 +575,9 @@ class BusinessMetricsCalculator:
                         else (
                             "HIGH"
                             if profit_margin < 10
-                            else "MEDIUM" if profit_margin < 20 else "LOW"
+                            else "MEDIUM"
+                            if profit_margin < 20
+                            else "LOW"
                         )
                     ),
                     "top_subcategories": subcats[:5],
@@ -780,7 +796,7 @@ def fetch_banco_datos(
     conn_details: Dict[str, Any],
     limit: int = None,
     start_date: str = None,
-    end_date: str = None
+    end_date: str = None,
 ) -> List[Dict[str, Any]]:
     """Fetch data from banco_datos table - DIRECT CONNECTION (no SSH tunnel)
 
@@ -798,11 +814,11 @@ def fetch_banco_datos(
         # Table and database names cannot be parameterized in SQL, so we must validate them
         db_name = validate_sql_identifier(Config.DB_NAME, "database name")
         table_name = validate_sql_identifier(Config.DB_TABLE, "table name")
-        
+
         # Validate excluded document codes (alphanumeric only)
         for code in Config.EXCLUDED_DOCUMENT_CODES:
             validate_sql_identifier(code, "excluded document code")
-        
+
         # Log only non-sensitive connection parameters (host and port)
         host = conn_details.get("Host")
         port = conn_details.get("Port")
@@ -837,7 +853,9 @@ def fetch_banco_datos(
         # Handle case where exclusion list might be empty
         if Config.EXCLUDED_DOCUMENT_CODES:
             # Create placeholders for each excluded code
-            excluded_placeholders = ', '.join(['%s'] * len(Config.EXCLUDED_DOCUMENT_CODES))
+            excluded_placeholders = ", ".join(
+                ["%s"] * len(Config.EXCLUDED_DOCUMENT_CODES)
+            )
             # Query to fetch data with parameterized exclusion list
             query = f"SELECT TOP %s * FROM [{db_name}].[dbo].[{table_name}] WHERE DocumentosCodigo NOT IN ({excluded_placeholders})"
             params = [limit] + list(Config.EXCLUDED_DOCUMENT_CODES)
@@ -1109,7 +1127,7 @@ def generate_visualization_report(
             labels=cat_names_short,
             autopct="%1.1f%%",
             startangle=90,
-            colors=colors[:len(cat_values)],  # Dynamic color count
+            colors=colors[: len(cat_values)],  # Dynamic color count
             textprops={"fontsize": 9},
         )
         for autotext in autotexts:
@@ -1123,11 +1141,13 @@ def generate_visualization_report(
     else:
         # Handle case with no positive data
         ax2.text(
-            0.5, 0.5,
+            0.5,
+            0.5,
             "No positive\ncategory data\navailable",
-            ha="center", va="center",
+            ha="center",
+            va="center",
             transform=ax2.transAxes,
-            fontsize=12
+            fontsize=12,
         )
         ax2.set_title(
             "Sales Distribution by Category", fontsize=14, fontweight="bold", pad=15
@@ -1387,7 +1407,9 @@ KEY BUSINESS INSIGHTS & RECOMMENDATIONS
     )
 
     # Save the comprehensive analysis
-    plt.savefig(str(output_path), dpi=Config.REPORT_DPI, bbox_inches="tight", facecolor="white")
+    plt.savefig(
+        str(output_path), dpi=Config.REPORT_DPI, bbox_inches="tight", facecolor="white"
+    )
     plt.close(fig)  # Close to free memory
 
     logger.info(f"✅ Visualization report saved to {output_path}")
@@ -1467,7 +1489,10 @@ def main():
     parser.add_argument("--start-date", help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end-date", help="End date (YYYY-MM-DD)")
     parser.add_argument(
-        "--limit", type=int, default=None, help=f"Max rows (default: {Config.DEFAULT_LIMIT})"
+        "--limit",
+        type=int,
+        default=None,
+        help=f"Max rows (default: {Config.DEFAULT_LIMIT})",
     )
     parser.add_argument("--ncx-file", help="Path to Navicat NCX connections file")
     parser.add_argument(
@@ -1531,7 +1556,7 @@ def main():
                 conn_details,
                 limit=args.limit,
                 start_date=args.start_date,
-                end_date=args.end_date
+                end_date=args.end_date,
             )
 
             if not data:
@@ -1597,7 +1622,10 @@ def main():
                 actual_start_date != "No dates found"
                 and actual_end_date != "No dates found"
             ):
-                json_output_file = Config.OUTPUT_DIR / f"analysis_comprehensive_{actual_start_date}_to_{actual_end_date}.json"
+                json_output_file = (
+                    Config.OUTPUT_DIR
+                    / f"analysis_comprehensive_{actual_start_date}_to_{actual_end_date}.json"
+                )
             else:
                 json_output_file = Config.OUTPUT_DIR / "analysis_comprehensive.json"
 

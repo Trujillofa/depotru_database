@@ -18,9 +18,9 @@ Usage:
     financial_metrics = analyzer.analyze()
 """
 
-from typing import List, Dict, Any
-from decimal import Decimal
 import statistics
+from decimal import Decimal
+from typing import Any, Dict, List
 
 
 def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:

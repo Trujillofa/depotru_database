@@ -19,13 +19,14 @@ Security Best Practices:
 4. Consider using secret management services (AWS Secrets Manager, Azure Key Vault, etc.)
 """
 
+import logging
 import os
 from pathlib import Path
-import logging
 
 # Try to load .env file if python-dotenv is available
 try:
     from dotenv import load_dotenv
+
     # Look for .env file in current directory and parent directories
     load_dotenv()
     logging.info("Loaded configuration from .env file")
@@ -42,38 +43,38 @@ class Config:
     # Database Configuration
     # Priority: Environment variables > NCX file > defaults
     NCX_FILE_PATH = os.getenv(
-        'NCX_FILE_PATH',
-        os.path.expanduser('~/Coding_OMARCHY/python_files/connections.ncx')
+        "NCX_FILE_PATH",
+        os.path.expanduser("~/Coding_OMARCHY/python_files/connections.ncx"),
     )
 
     # Direct database connection (if not using NCX file)
-    DB_HOST = os.getenv('DB_HOST', None)
-    DB_PORT = int(os.getenv('DB_PORT', '1433'))
-    DB_USER = os.getenv('DB_USER', None)
-    DB_PASSWORD = os.getenv('DB_PASSWORD', None)
-    DB_NAME = os.getenv('DB_NAME', 'SmartBusiness')
-    DB_TABLE = os.getenv('DB_TABLE', 'banco_datos')
+    DB_HOST = os.getenv("DB_HOST", None)
+    DB_PORT = int(os.getenv("DB_PORT", "1433"))
+    DB_USER = os.getenv("DB_USER", None)
+    DB_PASSWORD = os.getenv("DB_PASSWORD", None)
+    DB_NAME = os.getenv("DB_NAME", "SmartBusiness")
+    DB_TABLE = os.getenv("DB_TABLE", "banco_datos")
 
     # Database connection settings
-    DB_LOGIN_TIMEOUT = int(os.getenv('DB_LOGIN_TIMEOUT', '10'))
-    DB_TIMEOUT = int(os.getenv('DB_TIMEOUT', '10'))
-    DB_TDS_VERSION = os.getenv('DB_TDS_VERSION', '7.4')
+    DB_LOGIN_TIMEOUT = int(os.getenv("DB_LOGIN_TIMEOUT", "10"))
+    DB_TIMEOUT = int(os.getenv("DB_TIMEOUT", "10"))
+    DB_TDS_VERSION = os.getenv("DB_TDS_VERSION", "7.4")
 
     # Excluded document types (filter these out from analysis)
-    EXCLUDED_DOCUMENT_CODES = ['XY', 'AS', 'TS']
+    EXCLUDED_DOCUMENT_CODES = ["XY", "AS", "TS"]
 
     # Output Configuration
-    OUTPUT_DIR = Path(os.getenv('OUTPUT_DIR', os.path.expanduser('~/business_reports')))
+    OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", os.path.expanduser("~/business_reports")))
 
     # Report settings
-    REPORT_DPI = int(os.getenv('REPORT_DPI', '300'))
+    REPORT_DPI = int(os.getenv("REPORT_DPI", "300"))
     REPORT_FIGURE_SIZE = (20, 24)
 
     # Analysis defaults
-    DEFAULT_LIMIT = int(os.getenv('DEFAULT_LIMIT', '1000'))
+    DEFAULT_LIMIT = int(os.getenv("DEFAULT_LIMIT", "1000"))
 
     # Logging
-    LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
     @classmethod
     def ensure_output_dir(cls):
@@ -107,7 +108,11 @@ class Config:
             )
 
         # Check if NCX file path looks hardcoded (contains username or home directory references)
-        if cls.NCX_FILE_PATH and '/home/' in cls.NCX_FILE_PATH and 'NCX_FILE_PATH' not in os.environ:
+        if (
+            cls.NCX_FILE_PATH
+            and "/home/" in cls.NCX_FILE_PATH
+            and "NCX_FILE_PATH" not in os.environ
+        ):
             logger.warning(
                 f"⚠️  NCX_FILE_PATH appears to be hardcoded: {cls.NCX_FILE_PATH}\n"
                 f"   Consider setting NCX_FILE_PATH environment variable instead."
@@ -119,6 +124,7 @@ class Config:
 # Customer segmentation thresholds
 class CustomerSegmentation:
     """Customer segmentation configuration"""
+
     VIP_REVENUE_THRESHOLD = 500000
     VIP_ORDERS_THRESHOLD = 5
     HIGH_VALUE_THRESHOLD = 200000
@@ -129,6 +135,7 @@ class CustomerSegmentation:
 # Inventory velocity thresholds
 class InventoryConfig:
     """Inventory analysis configuration"""
+
     FAST_MOVER_THRESHOLD = 5  # transactions
     SLOW_MOVER_THRESHOLD = 2  # transactions
 
@@ -136,6 +143,7 @@ class InventoryConfig:
 # Profitability thresholds
 class ProfitabilityConfig:
     """Profitability analysis configuration"""
+
     LOW_MARGIN_THRESHOLD = 10  # percent
-    STAR_PRODUCT_MARGIN = 30   # percent
-    CRITICAL_MARGIN = 0        # negative margin
+    STAR_PRODUCT_MARGIN = 30  # percent
+    CRITICAL_MARGIN = 0  # negative margin

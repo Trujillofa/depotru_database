@@ -4,28 +4,30 @@ Investigation: DEPOSITO TRUJILLO SAS transactions
 Check what sales are attributed to this customer
 """
 
-import pymssql
 import json
 import os
 import sys
 from datetime import datetime
 from decimal import Decimal
 
+import pymssql
+
 # SECURITY: Load credentials from environment variables
 # Set these before running:
 #   export DB_SERVER="your-server"
 #   export DB_USER="your-user"
 #   export DB_PASSWORD="your-password"
-db_host = os.environ.get('DB_SERVER')
-db_port = int(os.environ.get('DB_PORT', '1433'))
-db_username = os.environ.get('DB_USER')
-db_password = os.environ.get('DB_PASSWORD')
-database = os.environ.get('DB_NAME', 'SmartBusiness')
+db_host = os.environ.get("DB_SERVER")
+db_port = int(os.environ.get("DB_PORT", "1433"))
+db_username = os.environ.get("DB_USER")
+db_password = os.environ.get("DB_PASSWORD")
+database = os.environ.get("DB_NAME", "SmartBusiness")
 
 if not all([db_host, db_username, db_password]):
     print("ERROR: Missing required environment variables")
     print("Please set: DB_SERVER, DB_USER, DB_PASSWORD")
     sys.exit(1)
+
 
 def get_connection():
     print(f"🔗 Connecting to {db_host}:{db_port}...")
@@ -41,6 +43,7 @@ def get_connection():
     print(f"✅ Connected to database: {database}")
     return conn
 
+
 def to_float(val):
     if val is None:
         return 0.0
@@ -48,15 +51,16 @@ def to_float(val):
         return float(val)
     return float(val)
 
+
 def main():
     conn = None
     try:
         conn = get_connection()
 
         # 1. Check DEPOSITO TRUJILLO SAS transactions
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("DEPOSITO TRUJILLO SAS - Transaction Analysis")
-        print("="*80)
+        print("=" * 80)
 
         sql_deposito = """
         SELECT
@@ -91,51 +95,45 @@ def main():
 
         if results:
             # Summary by year
-            summary_2024 = {
-                'transactions': 0,
-                'revenue': 0,
-                'profit': 0,
-                'units': 0
-            }
-            summary_2025 = {
-                'transactions': 0,
-                'revenue': 0,
-                'profit': 0,
-                'units': 0
-            }
+            summary_2024 = {"transactions": 0, "revenue": 0, "profit": 0, "units": 0}
+            summary_2025 = {"transactions": 0, "revenue": 0, "profit": 0, "units": 0}
 
             doc_codes = set()
 
             print("\n📋 Sample Transactions (First 20):")
             print("-" * 150)
-            print(f"{'Date':<12} {'Year':<6} {'Month':<6} {'Doc':<6} {'SKU':<15} {'Product':<40} {'Qty':<8} {'Revenue':<15} {'Vendor':<20}")
+            print(
+                f"{'Date':<12} {'Year':<6} {'Month':<6} {'Doc':<6} {'SKU':<15} {'Product':<40} {'Qty':<8} {'Revenue':<15} {'Vendor':<20}"
+            )
             print("-" * 150)
 
             for i, row in enumerate(results[:20]):
                 data = dict(zip(columns, row))
-                print(f"{str(data['date']):<12} {data['year']:<6} {data['month']:<6} {data['doc_code']:<6} {data['sku']:<15} {str(data['product'])[:40]:<40} {to_float(data['quantity']):<8.0f} ${to_float(data['revenue']):<14,.0f} {str(data['vendor']):<20}")
+                print(
+                    f"{str(data['date']):<12} {data['year']:<6} {data['month']:<6} {data['doc_code']:<6} {data['sku']:<15} {str(data['product'])[:40]:<40} {to_float(data['quantity']):<8.0f} ${to_float(data['revenue']):<14,.0f} {str(data['vendor']):<20}"
+                )
 
             print("-" * 150)
 
             # Calculate summaries
             for row in results:
                 data = dict(zip(columns, row))
-                year = data['year']
-                revenue = to_float(data['revenue'])
-                profit = to_float(data['profit'])
-                qty = to_float(data['quantity'])
-                doc_codes.add(data['doc_code'])
+                year = data["year"]
+                revenue = to_float(data["revenue"])
+                profit = to_float(data["profit"])
+                qty = to_float(data["quantity"])
+                doc_codes.add(data["doc_code"])
 
                 if year == 2024:
-                    summary_2024['transactions'] += 1
-                    summary_2024['revenue'] += revenue
-                    summary_2024['profit'] += profit
-                    summary_2024['units'] += qty
+                    summary_2024["transactions"] += 1
+                    summary_2024["revenue"] += revenue
+                    summary_2024["profit"] += profit
+                    summary_2024["units"] += qty
                 elif year == 2025:
-                    summary_2025['transactions'] += 1
-                    summary_2025['revenue'] += revenue
-                    summary_2025['profit'] += profit
-                    summary_2025['units'] += qty
+                    summary_2025["transactions"] += 1
+                    summary_2025["revenue"] += revenue
+                    summary_2025["profit"] += profit
+                    summary_2025["units"] += qty
 
             print("\n📈 SUMMARY BY YEAR:")
             print("\n2024:")
@@ -153,9 +151,9 @@ def main():
             print(f"\n📝 Document Codes Found: {', '.join(sorted(doc_codes))}")
 
         # 2. Check ALL providers for PRODUCTOS SIKA category
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("PRODUCTOS SIKA - Provider Verification")
-        print("="*80)
+        print("=" * 80)
 
         sql_providers = """
         SELECT DISTINCT
@@ -189,7 +187,9 @@ def main():
             transactions = int(row[2])
             revenue = to_float(row[3])
             total_revenue += revenue
-            print(f"{str(provider):<30} {products:<12} {transactions:<15,} ${revenue:<19,.0f}")
+            print(
+                f"{str(provider):<30} {products:<12} {transactions:<15,} ${revenue:<19,.0f}"
+            )
 
         print("-" * 100)
         print(f"{'TOTAL':<30} {'':<12} {'':<15} ${total_revenue:<19,.0f}")
@@ -206,11 +206,13 @@ def main():
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         if conn:
             conn.close()
             print("\n🔒 Connection closed")
+
 
 if __name__ == "__main__":
     main()

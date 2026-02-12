@@ -11,13 +11,14 @@ Pandas Benefits:
 - Integration with Plotly for interactive charts
 """
 
-import pandas as pd
+from typing import Any, Dict
+
 import numpy as np
-from sqlalchemy import create_engine
-from typing import Dict, Any
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from sqlalchemy import create_engine
 
 
 class PandasBusinessAnalyzer:
@@ -38,10 +39,7 @@ class PandasBusinessAnalyzer:
         self.engine = create_engine(connection_string)
 
     def load_data(
-        self,
-        start_date: str = None,
-        end_date: str = None,
-        limit: int = None
+        self, start_date: str = None, end_date: str = None, limit: int = None
     ) -> pd.DataFrame:
         """
         Load data from database into DataFrame.
@@ -77,10 +75,10 @@ class PandasBusinessAnalyzer:
         df = pd.read_sql(query, self.engine, params=params)
 
         # Data cleaning
-        df['Fecha'] = pd.to_datetime(df['Fecha'])
-        df['TotalMasIva'] = pd.to_numeric(df['TotalMasIva'], errors='coerce')
-        df['TotalSinIva'] = pd.to_numeric(df['TotalSinIva'], errors='coerce')
-        df['ValorCosto'] = pd.to_numeric(df['ValorCosto'], errors='coerce')
+        df["Fecha"] = pd.to_datetime(df["Fecha"])
+        df["TotalMasIva"] = pd.to_numeric(df["TotalMasIva"], errors="coerce")
+        df["TotalSinIva"] = pd.to_numeric(df["TotalSinIva"], errors="coerce")
+        df["ValorCosto"] = pd.to_numeric(df["ValorCosto"], errors="coerce")
 
         return df
 
@@ -92,22 +90,27 @@ class PandasBusinessAnalyzer:
         """
         return {
             "revenue": {
-                "total_with_iva": float(df['TotalMasIva'].sum()),
-                "total_without_iva": float(df['TotalSinIva'].sum()),
-                "average_order_value": float(df['TotalMasIva'].mean()),
-                "median_order_value": float(df['TotalMasIva'].median()),
+                "total_with_iva": float(df["TotalMasIva"].sum()),
+                "total_without_iva": float(df["TotalSinIva"].sum()),
+                "average_order_value": float(df["TotalMasIva"].mean()),
+                "median_order_value": float(df["TotalMasIva"].median()),
             },
             "costs": {
-                "total_cost": float(df['ValorCosto'].sum()),
-                "average_cost_per_unit": float(df['ValorCosto'].mean()),
+                "total_cost": float(df["ValorCosto"].sum()),
+                "average_cost_per_unit": float(df["ValorCosto"].mean()),
             },
             "profit": {
-                "gross_profit": float((df['TotalSinIva'] - df['ValorCosto']).sum()),
+                "gross_profit": float((df["TotalSinIva"] - df["ValorCosto"]).sum()),
                 "gross_profit_margin": float(
-                    ((df['TotalSinIva'] - df['ValorCosto']).sum() / df['TotalSinIva'].sum() * 100)
-                    if df['TotalSinIva'].sum() > 0 else 0
+                    (
+                        (df["TotalSinIva"] - df["ValorCosto"]).sum()
+                        / df["TotalSinIva"].sum()
+                        * 100
+                    )
+                    if df["TotalSinIva"].sum() > 0
+                    else 0
                 ),
-            }
+            },
         }
 
     def analyze_customers(self, df: pd.DataFrame) -> Dict[str, Any]:
@@ -117,32 +120,44 @@ class PandasBusinessAnalyzer:
         Compare original: 73 lines → 15 lines (79% reduction)
         """
         # Group by customer - one line!
-        customer_stats = df.groupby('customer_name').agg({
-            'TotalMasIva': ['sum', 'count', 'mean'],
-            'product_name': 'nunique',
-            'Fecha': ['min', 'max']
-        }).reset_index()
+        customer_stats = (
+            df.groupby("customer_name")
+            .agg(
+                {
+                    "TotalMasIva": ["sum", "count", "mean"],
+                    "product_name": "nunique",
+                    "Fecha": ["min", "max"],
+                }
+            )
+            .reset_index()
+        )
 
         # Flatten column names
         customer_stats.columns = [
-            'customer_name', 'total_revenue', 'total_orders',
-            'avg_order_value', 'product_diversity',
-            'first_purchase', 'last_purchase'
+            "customer_name",
+            "total_revenue",
+            "total_orders",
+            "avg_order_value",
+            "product_diversity",
+            "first_purchase",
+            "last_purchase",
         ]
 
         # Apply segmentation (vectorized!)
-        customer_stats['segment'] = customer_stats.apply(
-            lambda row: self._segment_customer(row['total_revenue'], row['total_orders']),
-            axis=1
+        customer_stats["segment"] = customer_stats.apply(
+            lambda row: self._segment_customer(
+                row["total_revenue"], row["total_orders"]
+            ),
+            axis=1,
         )
 
         # Sort and get top 20
-        top_customers = customer_stats.nlargest(20, 'total_revenue')
+        top_customers = customer_stats.nlargest(20, "total_revenue")
 
         return {
-            "top_customers": top_customers.to_dict('records'),
+            "top_customers": top_customers.to_dict("records"),
             "total_customers": len(customer_stats),
-            "segmentation": customer_stats['segment'].value_counts().to_dict()
+            "segmentation": customer_stats["segment"].value_counts().to_dict(),
         }
 
     def _segment_customer(self, revenue: float, orders: int) -> str:
@@ -164,74 +179,87 @@ class PandasBusinessAnalyzer:
 
         Compare original: 62 lines → 12 lines (81% reduction)
         """
-        product_stats = df.groupby('product_name').agg({
-            'product_code': 'first',
-            'TotalSinIva': 'sum',
-            'ValorCosto': 'sum',
-            'Cantidad': 'sum',
-            'DocumentosCodigo': 'count'
-        }).reset_index()
+        product_stats = (
+            df.groupby("product_name")
+            .agg(
+                {
+                    "product_code": "first",
+                    "TotalSinIva": "sum",
+                    "ValorCosto": "sum",
+                    "Cantidad": "sum",
+                    "DocumentosCodigo": "count",
+                }
+            )
+            .reset_index()
+        )
 
         product_stats.columns = [
-            'product_name', 'sku', 'total_revenue',
-            'total_cost', 'total_quantity', 'transactions'
+            "product_name",
+            "sku",
+            "total_revenue",
+            "total_cost",
+            "total_quantity",
+            "transactions",
         ]
 
         # Calculate profit metrics (vectorized)
-        product_stats['profit'] = product_stats['total_revenue'] - product_stats['total_cost']
-        product_stats['profit_margin'] = (
-            product_stats['profit'] / product_stats['total_revenue'] * 100
+        product_stats["profit"] = (
+            product_stats["total_revenue"] - product_stats["total_cost"]
+        )
+        product_stats["profit_margin"] = (
+            product_stats["profit"] / product_stats["total_revenue"] * 100
         ).fillna(0)
 
         # Sort by revenue
-        product_stats = product_stats.sort_values('total_revenue', ascending=False)
+        product_stats = product_stats.sort_values("total_revenue", ascending=False)
 
         return {
-            "top_products": product_stats.head(30).to_dict('records'),
+            "top_products": product_stats.head(30).to_dict("records"),
             "total_products": len(product_stats),
             "underperforming_products": product_stats[
-                product_stats['profit_margin'] < 10
-            ].to_dict('records'),
-            "star_products": product_stats[
-                product_stats['profit_margin'] > 30
-            ].head(10).to_dict('records'),
+                product_stats["profit_margin"] < 10
+            ].to_dict("records"),
+            "star_products": product_stats[product_stats["profit_margin"] > 30]
+            .head(10)
+            .to_dict("records"),
         }
 
     def analyze_categories(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Category performance analysis"""
-        category_stats = df.groupby('category').agg({
-            'TotalSinIva': 'sum',
-            'ValorCosto': 'sum',
-            'DocumentosCodigo': 'count'
-        }).reset_index()
+        category_stats = (
+            df.groupby("category")
+            .agg(
+                {"TotalSinIva": "sum", "ValorCosto": "sum", "DocumentosCodigo": "count"}
+            )
+            .reset_index()
+        )
 
-        category_stats.columns = ['category', 'total_revenue', 'total_cost', 'orders']
+        category_stats.columns = ["category", "total_revenue", "total_cost", "orders"]
 
         # Calculate metrics
-        category_stats['profit'] = category_stats['total_revenue'] - category_stats['total_cost']
-        category_stats['profit_margin'] = (
-            category_stats['profit'] / category_stats['total_revenue'] * 100
+        category_stats["profit"] = (
+            category_stats["total_revenue"] - category_stats["total_cost"]
+        )
+        category_stats["profit_margin"] = (
+            category_stats["profit"] / category_stats["total_revenue"] * 100
         ).fillna(0)
 
         # Assign risk levels (vectorized with pd.cut)
-        category_stats['risk_level'] = pd.cut(
-            category_stats['profit_margin'],
+        category_stats["risk_level"] = pd.cut(
+            category_stats["profit_margin"],
             bins=[-np.inf, 0, 10, 20, np.inf],
-            labels=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+            labels=["CRITICAL", "HIGH", "MEDIUM", "LOW"],
         )
 
         return {
             "category_performance": category_stats.sort_values(
-                'total_revenue', ascending=False
-            ).to_dict('records'),
-            "total_categories": len(category_stats)
+                "total_revenue", ascending=False
+            ).to_dict("records"),
+            "total_categories": len(category_stats),
         }
 
     def analyze_all(
-        self,
-        start_date: str = None,
-        end_date: str = None,
-        limit: int = None
+        self, start_date: str = None, end_date: str = None, limit: int = None
     ) -> Dict[str, Any]:
         """
         Complete analysis in one method.
@@ -246,9 +274,9 @@ class PandasBusinessAnalyzer:
             "metadata": {
                 "total_records": len(df),
                 "date_range": {
-                    "start": df['Fecha'].min().isoformat() if len(df) > 0 else None,
-                    "end": df['Fecha'].max().isoformat() if len(df) > 0 else None,
-                }
+                    "start": df["Fecha"].min().isoformat() if len(df) > 0 else None,
+                    "end": df["Fecha"].max().isoformat() if len(df) > 0 else None,
+                },
             },
             "financial_metrics": self.calculate_financial_metrics(df),
             "customer_analytics": self.analyze_customers(df),
@@ -267,53 +295,59 @@ class PandasBusinessAnalyzer:
         - Professional styling
         """
         fig = make_subplots(
-            rows=2, cols=2,
+            rows=2,
+            cols=2,
             subplot_titles=(
-                'Top 10 Customers by Revenue',
-                'Top 10 Products by Revenue',
-                'Category Performance',
-                'Revenue Trend'
+                "Top 10 Customers by Revenue",
+                "Top 10 Products by Revenue",
+                "Category Performance",
+                "Revenue Trend",
             ),
             specs=[
                 [{"type": "bar"}, {"type": "bar"}],
-                [{"type": "bar"}, {"type": "scatter"}]
-            ]
+                [{"type": "bar"}, {"type": "scatter"}],
+            ],
         )
 
         # Top customers
-        customers = pd.DataFrame(analysis['customer_analytics']['top_customers'][:10])
+        customers = pd.DataFrame(analysis["customer_analytics"]["top_customers"][:10])
         fig.add_trace(
             go.Bar(
-                x=customers['customer_name'],
-                y=customers['total_revenue'],
-                name='Customers',
-                marker_color='#2E86AB'
+                x=customers["customer_name"],
+                y=customers["total_revenue"],
+                name="Customers",
+                marker_color="#2E86AB",
             ),
-            row=1, col=1
+            row=1,
+            col=1,
         )
 
         # Top products
-        products = pd.DataFrame(analysis['product_analytics']['top_products'][:10])
+        products = pd.DataFrame(analysis["product_analytics"]["top_products"][:10])
         fig.add_trace(
             go.Bar(
-                x=products['product_name'],
-                y=products['total_revenue'],
-                name='Products',
-                marker_color='#A23B72'
+                x=products["product_name"],
+                y=products["total_revenue"],
+                name="Products",
+                marker_color="#A23B72",
             ),
-            row=1, col=2
+            row=1,
+            col=2,
         )
 
         # Categories
-        categories = pd.DataFrame(analysis['category_analytics']['category_performance'])
+        categories = pd.DataFrame(
+            analysis["category_analytics"]["category_performance"]
+        )
         fig.add_trace(
             go.Bar(
-                x=categories['category'],
-                y=categories['profit_margin'],
-                name='Margin %',
-                marker_color='#F18F01'
+                x=categories["category"],
+                y=categories["profit_margin"],
+                name="Margin %",
+                marker_color="#F18F01",
             ),
-            row=2, col=1
+            row=2,
+            col=1,
         )
 
         # Update layout
@@ -321,7 +355,7 @@ class PandasBusinessAnalyzer:
             height=800,
             showlegend=False,
             title_text="Business Performance Dashboard",
-            title_font_size=24
+            title_font_size=24,
         )
 
         return fig
@@ -332,24 +366,24 @@ class PandasBusinessAnalyzer:
 
         Pandas makes this trivial - original code had no Excel support!
         """
-        with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+        with pd.ExcelWriter(filename, engine="openpyxl") as writer:
             # Financial summary
-            financial = pd.DataFrame([analysis['financial_metrics']['revenue']])
-            financial.to_excel(writer, sheet_name='Financial Summary', index=False)
+            financial = pd.DataFrame([analysis["financial_metrics"]["revenue"]])
+            financial.to_excel(writer, sheet_name="Financial Summary", index=False)
 
             # Customers
-            customers = pd.DataFrame(analysis['customer_analytics']['top_customers'])
-            customers.to_excel(writer, sheet_name='Top Customers', index=False)
+            customers = pd.DataFrame(analysis["customer_analytics"]["top_customers"])
+            customers.to_excel(writer, sheet_name="Top Customers", index=False)
 
             # Products
-            products = pd.DataFrame(analysis['product_analytics']['top_products'])
-            products.to_excel(writer, sheet_name='Top Products', index=False)
+            products = pd.DataFrame(analysis["product_analytics"]["top_products"])
+            products.to_excel(writer, sheet_name="Top Products", index=False)
 
             # Categories
             categories = pd.DataFrame(
-                analysis['category_analytics']['category_performance']
+                analysis["category_analytics"]["category_performance"]
             )
-            categories.to_excel(writer, sheet_name='Categories', index=False)
+            categories.to_excel(writer, sheet_name="Categories", index=False)
 
         print(f"✓ Excel report saved: {filename}")
 

@@ -15,9 +15,9 @@ Usage:
 """
 
 from .customer import CustomerAnalyzer
-from .product import ProductAnalyzer
 from .financial import FinancialAnalyzer
 from .inventory import InventoryAnalyzer
+from .product import ProductAnalyzer
 
 __all__ = [
     "CustomerAnalyzer",

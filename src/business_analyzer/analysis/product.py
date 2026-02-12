@@ -17,9 +17,9 @@ Usage:
     product_metrics = analyzer.analyze()
 """
 
-from typing import List, Dict, Any
 from collections import defaultdict
 from decimal import Decimal
+from typing import Any, Dict, List
 
 from ...config import ProfitabilityConfig
 

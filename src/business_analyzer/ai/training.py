@@ -4,7 +4,7 @@ Training module for AI package.
 Contains schema training logic for Vanna AI.
 """
 
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 
 def train_on_schema(vn, schema_name: str = "SmartBusiness"):

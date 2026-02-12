@@ -2,21 +2,22 @@
 Tests for AI package base module.
 """
 
-import sys
 import os
+import sys
+
 import pytest
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
 from business_analyzer.ai.base import (
-    Config,
-    SUPPORTED_PROVIDERS,
     DEFAULT_PROVIDER,
-    require_env,
-    get_env_or_test_default,
-    retry_on_failure,
+    SUPPORTED_PROVIDERS,
+    Config,
     create_ai_client,
+    get_env_or_test_default,
+    require_env,
+    retry_on_failure,
 )
 
 

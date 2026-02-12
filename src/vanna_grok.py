@@ -20,16 +20,17 @@ import sys
 # Add src to path for imports
 sys.path.insert(0, "/home/yderf/depotru_database/src")
 
+import pandas as pd
+from vanna.legacy.flask import VannaFlaskApp
+
 # Import from the new modular ai package
 from business_analyzer.ai import (
     AIVanna,
     Config,
     format_dataframe,
-    generate_insights,
     full_training,
+    generate_insights,
 )
-from vanna.legacy.flask import VannaFlaskApp
-import pandas as pd
 
 
 def train_vanna(vn: AIVanna):

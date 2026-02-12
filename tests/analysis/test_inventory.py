@@ -3,6 +3,7 @@ Tests for inventory analysis module.
 """
 
 import pytest
+
 from src.business_analyzer.analysis.inventory import InventoryAnalyzer, extract_value
 
 

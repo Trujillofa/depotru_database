@@ -13,12 +13,13 @@ Tests cover:
 All tests use mocking - no real database connection required.
 """
 
-import pytest
-import sys
 import os
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, mock_open
+import sys
 from contextlib import contextmanager
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, mock_open, patch
+
+import pytest
 
 # Setup path and mocks BEFORE importing business_analyzer
 src_path = Path(__file__).parent.parent.parent / "src"
@@ -55,17 +56,16 @@ sys.modules["config"] = mock_config_module
 
 # Now import the database module - this MUST be after all the mocks are in place
 from business_analyzer.core.database import (
-    Database,
-    ConnectionType,
-    DatabaseError,
     ConnectionError,
+    ConnectionType,
+    Database,
+    DatabaseError,
     QueryError,
+    decrypt_navicat_password,
     get_db_connection,
     load_connections,
-    decrypt_navicat_password,
     validate_sql_identifier,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -263,9 +263,7 @@ class TestNavicatNCX:
 
         with patch("os.path.exists", return_value=True):
             with patch.object(Database, "_parse_ncx_file", return_value=[]):
-                with pytest.raises(
-                    ConnectionError, match="No valid connections found"
-                ):
+                with pytest.raises(ConnectionError, match="No valid connections found"):
                     db._load_navicat_connection()
 
     def test_parse_ncx_file_success(self, mock_config):
@@ -351,21 +349,19 @@ class TestNavicatNCX:
                 side_effect=Exception("Decrypt failed"),
             ):
                 connections = Database._parse_ncx_file("/test.ncx")
-                assert len(connections) == 0  # Should skip connections with decrypt errors
+                assert (
+                    len(connections) == 0
+                )  # Should skip connections with decrypt errors
 
     def test_parse_ncx_file_parse_error(self, mock_config):
         """Test parsing invalid NCX file"""
-        with patch(
-            "xml.etree.ElementTree.parse", side_effect=Exception("Parse error")
-        ):
+        with patch("xml.etree.ElementTree.parse", side_effect=Exception("Parse error")):
             connections = Database._parse_ncx_file("/test.ncx")
             assert connections == []
 
     def test_decrypt_navicat_password_with_navicat_cipher(self, mock_config):
         """Test password decryption using NavicatCipher"""
-        with patch(
-            "business_analyzer.core.database.NAVICAT_CIPHER_AVAILABLE", True
-        ):
+        with patch("business_analyzer.core.database.NAVICAT_CIPHER_AVAILABLE", True):
             with patch(
                 "business_analyzer.core.database.Navicat12Crypto"
             ) as mock_crypto:
@@ -378,16 +374,10 @@ class TestNavicatNCX:
 
     def test_decrypt_navicat_password_with_crypto_fallback(self, mock_config):
         """Test password decryption using pycryptodome fallback"""
-        with patch(
-            "business_analyzer.core.database.NAVICAT_CIPHER_AVAILABLE", False
-        ):
-            with patch(
-                "business_analyzer.core.database.CRYPTO_AVAILABLE", True
-            ):
+        with patch("business_analyzer.core.database.NAVICAT_CIPHER_AVAILABLE", False):
+            with patch("business_analyzer.core.database.CRYPTO_AVAILABLE", True):
                 with patch("business_analyzer.core.database.AES") as mock_aes:
-                    with patch(
-                        "business_analyzer.core.database.unpad"
-                    ) as mock_unpad:
+                    with patch("business_analyzer.core.database.unpad") as mock_unpad:
                         mock_cipher = Mock()
                         mock_cipher.decrypt.return_value = b"padded_password"
                         mock_aes.new.return_value = mock_cipher
@@ -400,13 +390,9 @@ class TestNavicatNCX:
 
     def test_decrypt_navicat_password_no_method_available(self, mock_config):
         """Test password decryption fails when no method available"""
-        with patch(
-            "business_analyzer.core.database.NAVICAT_CIPHER_AVAILABLE", False
-        ):
+        with patch("business_analyzer.core.database.NAVICAT_CIPHER_AVAILABLE", False):
             with patch("business_analyzer.core.database.CRYPTO_AVAILABLE", False):
-                with pytest.raises(
-                    ImportError, match="No decryption method available"
-                ):
+                with pytest.raises(ImportError, match="No decryption method available"):
                     Database._decrypt_navicat_password("encrypted")
 
 
@@ -585,9 +571,7 @@ class TestDatabaseConnection:
 
     def test_close_with_error(self, mock_config, mock_pymssql):
         """Test close handles errors gracefully"""
-        mock_pymssql.connect.return_value.close.side_effect = Exception(
-            "Close error"
-        )
+        mock_pymssql.connect.return_value.close.side_effect = Exception("Close error")
 
         db = Database(connection_type=ConnectionType.DIRECT)
         db.connect()
@@ -763,9 +747,7 @@ class TestFetchData:
         db = Database(connection_type=ConnectionType.DIRECT)
         db.connect()
 
-        db.fetch_data(
-            table="test_table", limit=10, excluded_codes=["XY", "AB"]
-        )
+        db.fetch_data(table="test_table", limit=10, excluded_codes=["XY", "AB"])
 
         call_args = mock_cursor.execute.call_args
         assert "NOT IN" in call_args[0][0]
@@ -1097,7 +1079,8 @@ class TestIntegration:
                     Database, "_decrypt_navicat_password", return_value="decrypted_pass"
                 ):
                     with Database(
-                        connection_type=ConnectionType.NAVICAT, ncx_file_path="/test.ncx"
+                        connection_type=ConnectionType.NAVICAT,
+                        ncx_file_path="/test.ncx",
                     ) as db:
                         assert db.is_connected()
                         # Verify connection was made with correct credentials

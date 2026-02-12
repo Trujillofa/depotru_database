@@ -2,36 +2,38 @@
 """
 Diagnose and fix styles-m.css compilation issue
 """
-import paramiko
 import os
 import sys
 import time
+
+import paramiko
 
 # SECURITY: Load server credentials from environment variables
 # Set these before running:
 #   export MAGENTO_HOST="your-server"
 #   export MAGENTO_USER="your-user"
 #   export MAGENTO_PASSWORD="your-password"
-hostname = os.environ.get('MAGENTO_HOST')
-username = os.environ.get('MAGENTO_USER')
-password = os.environ.get('MAGENTO_PASSWORD')
-magento_root = os.environ.get('MAGENTO_ROOT')  # No default - must be provided
+hostname = os.environ.get("MAGENTO_HOST")
+username = os.environ.get("MAGENTO_USER")
+password = os.environ.get("MAGENTO_PASSWORD")
+magento_root = os.environ.get("MAGENTO_ROOT")  # No default - must be provided
 
 if not all([hostname, username, password, magento_root]):
     print("ERROR: Missing required environment variables")
     print("Please set: MAGENTO_HOST, MAGENTO_USER, MAGENTO_PASSWORD, MAGENTO_ROOT")
     sys.exit(1)
 
+
 def run_command(ssh, command, description):
     """Execute command via SSH and return output"""
     print(f"\n{'='*60}")
     print(f"EXECUTING: {description}")
     print(f"COMMAND: {command}")
-    print('='*60)
+    print("=" * 60)
 
     stdin, stdout, stderr = ssh.exec_command(command)
-    output = stdout.read().decode('utf-8')
-    error = stderr.read().decode('utf-8')
+    output = stdout.read().decode("utf-8")
+    error = stderr.read().decode("utf-8")
 
     if output:
         print("OUTPUT:")
@@ -42,6 +44,7 @@ def run_command(ssh, command, description):
 
     return output, error
 
+
 try:
     # Connect to server
     print("Connecting to server...")
@@ -51,23 +54,25 @@ try:
     print("✓ Connected successfully")
 
     # Step 1: Check styles-m.less content
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("STEP 1: Examining styles-m.less")
-    print("="*60)
-    cmd = f"cat {magento_root}/app/design/frontend/Olegnax/athlete2/web/css/styles-m.less"
+    print("=" * 60)
+    cmd = (
+        f"cat {magento_root}/app/design/frontend/Olegnax/athlete2/web/css/styles-m.less"
+    )
     run_command(ssh, cmd, "Read styles-m.less")
 
     # Step 2: Check _reset.less content
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("STEP 2: Examining source/_reset.less")
-    print("="*60)
+    print("=" * 60)
     cmd = f"head -30 {magento_root}/app/design/frontend/Olegnax/athlete2/web/css/source/_reset.less"
     run_command(ssh, cmd, "Read first 30 lines of _reset.less")
 
     # Step 3: Create PHP script to test LESS compilation
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("STEP 3: Testing manual LESS compilation")
-    print("="*60)
+    print("=" * 60)
 
     php_test_script = """<?php
 require '/home/deptrujillob2c/public_html/vendor/autoload.php';
@@ -127,7 +132,7 @@ echo "\\n=== Test Complete ===\\n";
 """
 
     # Write test script to server
-    cmd = f'cat > {magento_root}/test_less_compilation.php << \'PHPEOF\'\n{php_test_script}\nPHPEOF'
+    cmd = f"cat > {magento_root}/test_less_compilation.php << 'PHPEOF'\n{php_test_script}\nPHPEOF"
     run_command(ssh, cmd, "Create PHP test script")
 
     # Run the test script
@@ -135,16 +140,16 @@ echo "\\n=== Test Complete ===\\n";
     output, error = run_command(ssh, cmd, "Execute LESS compilation test")
 
     # Step 4: Check current deployment mode
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("STEP 4: Checking Magento mode")
-    print("="*60)
+    print("=" * 60)
     cmd = f"cd {magento_root} && /usr/local/bin/php bin/magento deploy:mode:show 2>&1"
     run_command(ssh, cmd, "Check deployment mode")
 
     # Step 5: Check if CSS files exist
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("STEP 5: Checking for existing CSS files")
-    print("="*60)
+    print("=" * 60)
     cmd = f"find {magento_root}/pub/static/frontend/Olegnax/athlete2 -name 'styles-*.css' 2>/dev/null | head -20"
     run_command(ssh, cmd, "Find styles CSS files")
 
@@ -152,9 +157,9 @@ echo "\\n=== Test Complete ===\\n";
     cmd = f"rm {magento_root}/test_less_compilation.php"
     ssh.exec_command(cmd)
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("DIAGNOSIS COMPLETE")
-    print("="*60)
+    print("=" * 60)
 
     ssh.close()
 
@@ -162,4 +167,5 @@ except Exception as e:
     print(f"\nConnection Error: {e}")
     print(f"Type: {type(e).__name__}")
     import traceback
+
     traceback.print_exc()

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Check document codes and revenue breakdown"""
-import pymssql
 import os
 import sys
+
+import pymssql
 
 # SECURITY: Load credentials from environment variables instead of hardcoding
 # Set these in your environment before running:
@@ -37,9 +38,9 @@ conn = pymssql.connect(
 
 cursor = conn.cursor()
 
-print("="*80)
+print("=" * 80)
 print("DOCUMENT CODES ANALYSIS - 2024")
-print("="*80)
+print("=" * 80)
 
 # Check all document codes and their revenue
 sql = """
@@ -57,14 +58,16 @@ ORDER BY SUM(TotalMasIva) DESC
 
 cursor.execute(sql)
 print("\nDocument Codes Breakdown:")
-print("-"*80)
-print(f"{'Code':<10} {'Records':>12} {'Revenue (IVA)':>20} {'Revenue (No IVA)':>20} {'Quantity':>15}")
-print("-"*80)
+print("-" * 80)
+print(
+    f"{'Code':<10} {'Records':>12} {'Revenue (IVA)':>20} {'Revenue (No IVA)':>20} {'Quantity':>15}"
+)
+print("-" * 80)
 
 total_all = 0
 total_filtered = 0
-excluded_codes = ['XY', 'AS', 'TS']
-important_codes = ['DDD','DDT','DVD','DVE','FDD','FDT','FED','FET']
+excluded_codes = ["XY", "AS", "TS"]
+important_codes = ["DDD", "DDT", "DVD", "DVE", "FDD", "FDT", "FED", "FET"]
 
 for row in cursor.fetchall():
     code = row[0]
@@ -83,23 +86,28 @@ for row in cursor.fetchall():
     elif code in important_codes:
         marker = " [IMPORTANT]"
 
-    print(f"{code:<10} {records:>12,} ${revenue_iva:>18,.0f} ${revenue_sin_iva:>18,.0f} {qty:>15,.0f}{marker}")
+    print(
+        f"{code:<10} {records:>12,} ${revenue_iva:>18,.0f} ${revenue_sin_iva:>18,.0f} {qty:>15,.0f}{marker}"
+    )
 
-print("-"*80)
+print("-" * 80)
 print(f"{'TOTAL ALL':<10} ${total_all:>31,.0f}")
 print(f"{'FILTERED':<10} ${total_filtered:>31,.0f} (excluding XY, AS, TS)")
-print("="*80)
+print("=" * 80)
 
 # Check if important codes exist
 print("\n\nIMPORTANT CODES CHECK:")
-print("-"*80)
+print("-" * 80)
 for code in important_codes:
     # SECURITY: Use parameterized query to prevent SQL injection
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT COUNT(*), SUM(TotalMasIva)
         FROM [dbo].[banco_datos]
         WHERE ano = 2024 AND DocumentosCodigo = %s
-    """, (code,))
+    """,
+        (code,),
+    )
     row = cursor.fetchone()
     count = row[0] if row[0] else 0
     revenue = float(row[1]) if row[1] else 0
@@ -108,54 +116,70 @@ for code in important_codes:
 
 # Check total revenue with different filters
 print("\n\nREVENUE COMPARISON:")
-print("-"*80)
+print("-" * 80)
 
 # No filter
-cursor.execute("""
+cursor.execute(
+    """
     SELECT SUM(TotalMasIva), SUM(TotalSinIva)
     FROM [dbo].[banco_datos]
     WHERE ano = 2024
-""")
+"""
+)
 row = cursor.fetchone()
-print(f"NO FILTER (all codes):            ${float(row[0]):>18,.0f} (con IVA)  ${float(row[1]):>18,.0f} (sin IVA)")
+print(
+    f"NO FILTER (all codes):            ${float(row[0]):>18,.0f} (con IVA)  ${float(row[1]):>18,.0f} (sin IVA)"
+)
 
 # Current filter (NOT IN XY, AS, TS)
-cursor.execute("""
+cursor.execute(
+    """
     SELECT SUM(TotalMasIva), SUM(TotalSinIva)
     FROM [dbo].[banco_datos]
     WHERE ano = 2024 AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
-""")
+"""
+)
 row = cursor.fetchone()
-print(f"CURRENT FILTER (NOT XY,AS,TS):    ${float(row[0]):>18,.0f} (con IVA)  ${float(row[1]):>18,.0f} (sin IVA)")
+print(
+    f"CURRENT FILTER (NOT XY,AS,TS):    ${float(row[0]):>18,.0f} (con IVA)  ${float(row[1]):>18,.0f} (sin IVA)"
+)
 
 # With periodo filter
-cursor.execute("""
+cursor.execute(
+    """
     SELECT SUM(TotalMasIva), SUM(TotalSinIva)
     FROM [dbo].[banco_datos]
     WHERE periodo BETWEEN 202401 AND 202412 AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
-""")
+"""
+)
 row = cursor.fetchone()
 if row[0]:
-    print(f"WITH PERIODO 202401-202412:       ${float(row[0]):>18,.0f} (con IVA)  ${float(row[1]):>18,.0f} (sin IVA)")
+    print(
+        f"WITH PERIODO 202401-202412:       ${float(row[0]):>18,.0f} (con IVA)  ${float(row[1]):>18,.0f} (sin IVA)"
+    )
 
 # Check periodo values
 print("\n\nPERIODO ANALYSIS:")
-print("-"*80)
-cursor.execute("""
+print("-" * 80)
+cursor.execute(
+    """
     SELECT MIN(periodo), MAX(periodo), COUNT(DISTINCT periodo)
     FROM [dbo].[banco_datos]
     WHERE ano = 2024
-""")
+"""
+)
 row = cursor.fetchone()
 print(f"2024 Periodo range: {row[0]} to {row[1]} ({row[2]} distinct values)")
 
-cursor.execute("""
+cursor.execute(
+    """
     SELECT periodo, COUNT(*), SUM(TotalMasIva)
     FROM [dbo].[banco_datos]
     WHERE ano = 2024
     GROUP BY periodo
     ORDER BY periodo
-""")
+"""
+)
 print("\nMonthly breakdown 2024:")
 for row in cursor.fetchall():
     print(f"  Periodo {row[0]}: {row[1]:,} records, ${float(row[2]):,.0f}")

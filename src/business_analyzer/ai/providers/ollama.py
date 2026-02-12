@@ -2,7 +2,7 @@
 Ollama (local) provider for AI package.
 """
 
-from typing import Tuple, Optional, Any
+from typing import Any, Optional, Tuple
 
 from ..base import Config
 

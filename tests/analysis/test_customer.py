@@ -3,10 +3,11 @@ Tests for customer analysis module.
 """
 
 import pytest
+
 from src.business_analyzer.analysis.customer import (
     CustomerAnalyzer,
-    safe_divide,
     extract_value,
+    safe_divide,
 )
 
 

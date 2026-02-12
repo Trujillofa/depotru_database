@@ -219,7 +219,7 @@ This is expected if you haven't installed the full dependencies. Tests requiring
 ### "No tests collected"
 Make sure you're in the repository root directory and pytest can find the `tests/` folder.
 
-**Solution**: 
+**Solution**:
 ```bash
 cd /path/to/depotru_database
 pytest tests/ -v

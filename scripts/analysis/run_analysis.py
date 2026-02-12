@@ -4,28 +4,30 @@ Business Analysis Report - Category/Subcategory Analysis
 Periodo: 202401-202512 (Jan 2024 - Dec 2025)
 """
 
-import pymssql
 import json
 import os
 import sys
 from datetime import datetime
 from decimal import Decimal
 
+import pymssql
+
 # SECURITY: Load credentials from environment variables
 # Set these before running:
 #   export DB_SERVER="your-server"
 #   export DB_USER="your-user"
 #   export DB_PASSWORD="your-password"
-db_host = os.environ.get('DB_SERVER')
-db_port = int(os.environ.get('DB_PORT', '1433'))
-db_username = os.environ.get('DB_USER')
-db_password = os.environ.get('DB_PASSWORD')
-database = os.environ.get('DB_NAME', 'SmartBusiness')
+db_host = os.environ.get("DB_SERVER")
+db_port = int(os.environ.get("DB_PORT", "1433"))
+db_username = os.environ.get("DB_USER")
+db_password = os.environ.get("DB_PASSWORD")
+database = os.environ.get("DB_NAME", "SmartBusiness")
 
 if not all([db_host, db_username, db_password]):
     print("ERROR: Missing required environment variables")
     print("Please set: DB_SERVER, DB_USER, DB_PASSWORD")
     sys.exit(1)
+
 
 def get_connection():
     print(f"🔗 Connecting directly to {db_host}:{db_port}...")
@@ -41,10 +43,12 @@ def get_connection():
     print(f"✅ Connected to database: {database}")
     return conn
 
+
 def decimal_to_float(obj):
     if isinstance(obj, Decimal):
         return float(obj)
     raise TypeError
+
 
 def run_query(conn, sql, description):
     print(f"\n📊 Running: {description}")
@@ -54,6 +58,7 @@ def run_query(conn, sql, description):
     results = cursor.fetchall()
     cursor.close()
     return columns, results
+
 
 def main():
     conn = None
@@ -93,7 +98,11 @@ def main():
         """
         cols, rows = run_query(conn, sql_yearly, "Yearly Totals")
         for row in rows:
-            report["yearly_totals"].append(dict(zip(cols, [float(x) if isinstance(x, Decimal) else x for x in row])))
+            report["yearly_totals"].append(
+                dict(
+                    zip(cols, [float(x) if isinstance(x, Decimal) else x for x in row])
+                )
+            )
 
         # 2. CATEGORY TOTALS BY YEAR
         sql_cat = """
@@ -117,7 +126,11 @@ def main():
         """
         cols, rows = run_query(conn, sql_cat, "Category Totals by Year")
         for row in rows:
-            report["category_totals"].append(dict(zip(cols, [float(x) if isinstance(x, Decimal) else x for x in row])))
+            report["category_totals"].append(
+                dict(
+                    zip(cols, [float(x) if isinstance(x, Decimal) else x for x in row])
+                )
+            )
 
         # 3. BESTSELLERS BY CATEGORY/SUBCATEGORY
         sql_best = """
@@ -164,7 +177,11 @@ def main():
         """
         cols, rows = run_query(conn, sql_best, "Bestsellers by Category/Subcategory")
         for row in rows:
-            report["bestsellers"].append(dict(zip(cols, [float(x) if isinstance(x, Decimal) else x for x in row])))
+            report["bestsellers"].append(
+                dict(
+                    zip(cols, [float(x) if isinstance(x, Decimal) else x for x in row])
+                )
+            )
 
         # 4. MOST PROFITABLE BY CATEGORY/SUBCATEGORY
         sql_profit = """
@@ -211,9 +228,15 @@ def main():
         WHERE rank_profit = 1
         ORDER BY marca, subcategoria, ano
         """
-        cols, rows = run_query(conn, sql_profit, "Most Profitable by Category/Subcategory")
+        cols, rows = run_query(
+            conn, sql_profit, "Most Profitable by Category/Subcategory"
+        )
         for row in rows:
-            report["most_profitable"].append(dict(zip(cols, [float(x) if isinstance(x, Decimal) else x for x in row])))
+            report["most_profitable"].append(
+                dict(
+                    zip(cols, [float(x) if isinstance(x, Decimal) else x for x in row])
+                )
+            )
 
         # 5. AVERAGE TICKET BY CATEGORY/SUBCATEGORY
         sql_ticket = """
@@ -234,24 +257,30 @@ def main():
         GROUP BY marca, subcategoria, ano
         ORDER BY marca, subcategoria, ano
         """
-        cols, rows = run_query(conn, sql_ticket, "Average Ticket by Category/Subcategory")
+        cols, rows = run_query(
+            conn, sql_ticket, "Average Ticket by Category/Subcategory"
+        )
         for row in rows:
-            report["avg_ticket_by_category"].append(dict(zip(cols, [float(x) if isinstance(x, Decimal) else x for x in row])))
+            report["avg_ticket_by_category"].append(
+                dict(
+                    zip(cols, [float(x) if isinstance(x, Decimal) else x for x in row])
+                )
+            )
 
         # Save report
         output_file = "reports/data/analysis_report.json"
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
 
         print(f"\n✅ Report saved to: {output_file}")
 
         # Print summary
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("ANALYSIS REPORT SUMMARY - Periodo 202401-202512")
-        print("="*80)
+        print("=" * 80)
 
         print("\n📅 YEARLY TOTALS:")
-        print("-"*60)
+        print("-" * 60)
         for y in report["yearly_totals"]:
             print(f"  Year {y['year']}:")
             print(f"    Revenue: ${y['net_revenue']:,.2f}")
@@ -261,7 +290,9 @@ def main():
             print(f"    Avg Ticket: ${y['avg_ticket']:,.2f}")
             print(f"    Transactions: {y['total_transactions']:,}")
 
-        print(f"\n📦 CATEGORIES ANALYZED: {len(set(c['marca'] for c in report['category_totals']))}")
+        print(
+            f"\n📦 CATEGORIES ANALYZED: {len(set(c['marca'] for c in report['category_totals']))}"
+        )
         print(f"📁 SUBCATEGORIES: {len(report['avg_ticket_by_category'])}")
         print(f"🏆 BESTSELLERS FOUND: {len(report['bestsellers'])}")
         print(f"💰 PROFITABLE PRODUCTS: {len(report['most_profitable'])}")
@@ -271,11 +302,13 @@ def main():
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         if conn:
             conn.close()
             print("\n🔒 Connection closed")
+
 
 if __name__ == "__main__":
     main()

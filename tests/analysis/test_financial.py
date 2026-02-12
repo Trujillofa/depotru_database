@@ -3,10 +3,11 @@ Tests for financial analysis module.
 """
 
 import pytest
+
 from src.business_analyzer.analysis.financial import (
     FinancialAnalyzer,
-    safe_divide,
     extract_value,
+    safe_divide,
 )
 
 

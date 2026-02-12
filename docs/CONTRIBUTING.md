@@ -45,11 +45,15 @@ pip install -r requirements.txt
 # 4. Install development dependencies
 pip install black flake8 mypy isort pytest pytest-cov
 
-# 5. Configure environment
+# 5. Install pre-commit hooks (optional but recommended)
+pip install pre-commit
+pre-commit install
+
+# 6. Configure environment
 cp .env.example .env
 # Edit .env with your credentials (never commit this file)
 
-# 6. Verify setup
+# 7. Verify setup
 python run_tests.py --quick
 ```
 
@@ -99,7 +103,30 @@ flake8 src/ tests/
 mypy src/
 ```
 
-### 4. Commit Your Changes
+### 4. Run Pre-commit Hooks (Optional)
+
+If you installed pre-commit hooks, they will run automatically on commit. To run them manually:
+
+```bash
+# Run all hooks on all files
+pre-commit run --all-files
+
+# Run specific hook
+pre-commit run black
+
+# Skip hooks for a specific commit (not recommended)
+git commit -m "message" --no-verify
+```
+
+**Pre-commit hooks include:**
+- **Trailing whitespace** - Removes trailing whitespace
+- **End of file fixer** - Ensures files end with a newline
+- **Black** - Code formatting
+- **isort** - Import sorting
+- **flake8** - Linting
+- **mypy** - Type checking
+
+### 5. Commit Your Changes
 
 ```bash
 git add .
@@ -117,7 +144,7 @@ Detailed explanation of changes"
 - `test:` — Adding or updating tests
 - `chore:` — Maintenance tasks
 
-### 5. Push and Create Pull Request
+### 6. Push and Create Pull Request
 
 ```bash
 git push origin feature/your-feature-name
@@ -164,11 +191,11 @@ def calculate_metrics(
     limit: Optional[int] = None
 ) -> Dict[str, float]:
     """Calculate business metrics from data.
-    
+
     Args:
         data: List of dictionaries containing business data
         limit: Optional limit on number of records to process
-        
+
     Returns:
         Dictionary with calculated metrics
     """
@@ -183,18 +210,18 @@ All functions must have docstrings:
 ```python
 def format_number(value: float, column_name: str) -> str:
     """Format number with Colombian formatting.
-    
+
     Args:
         value: Number to format
         column_name: Name of column (used to determine format type)
-        
+
     Returns:
         Formatted string (e.g., "$1.234.567" or "45,6%")
-        
+
     Examples:
         >>> format_number(1234567, "TotalMasIva")
         '$1.234.567'
-        
+
         >>> format_number(45.6, "Margen")
         '45,6%'
     """
@@ -357,14 +384,15 @@ Before committing:
 
 - [ ] Code runs without errors
 - [ ] All tests pass: `pytest tests/ -v`
-- [ ] Code formatted: `black src/ tests/`
-- [ ] No flake8 errors: `flake8 src/ tests/`
+- [ ] Code formatted: `black src/ tests/` (or use pre-commit)
+- [ ] No flake8 errors: `flake8 src/ tests/` (or use pre-commit)
 - [ ] Type hints added for new functions
 - [ ] Docstrings added/updated
 - [ ] No hardcoded credentials
 - [ ] Tests added for new features
 - [ ] Documentation updated
 - [ ] `.env` file NOT committed
+- [ ] Pre-commit hooks pass: `pre-commit run --all-files` (if installed)
 
 ---
 
@@ -517,6 +545,31 @@ python tests/test_metabase_connection.py
 black src/ tests/ examples/
 isort src/ tests/ examples/
 ```
+
+#### Pre-commit hook failures
+
+If pre-commit hooks fail during commit:
+
+```bash
+# Run hooks manually to see detailed errors
+pre-commit run --all-files
+
+# Fix specific hook
+pre-commit run black
+pre-commit run flake8
+
+# Skip hooks temporarily (not recommended for production)
+git commit -m "message" --no-verify
+
+# Update hooks to latest versions
+pre-commit autoupdate
+```
+
+**Common pre-commit issues:**
+- **Black formatting**: Run `black src/ tests/` to auto-fix
+- **isort imports**: Run `isort src/ tests/` to auto-fix
+- **flake8 errors**: Fix manually or adjust line length
+- **mypy type errors**: Add type hints or ignore with `# type: ignore`
 
 ---
 

@@ -3,9 +3,10 @@
 Tests for error handling and retry logic.
 """
 
-import pytest
 import time
 from unittest.mock import patch
+
+import pytest
 
 
 class TestRetryDecorator:
@@ -110,7 +111,7 @@ class TestSecurityValidation:
             pytest.skip("vanna_grok not available")
 
         # Test with non-existent variable
-        with patch.dict('os.environ', {}, clear=True):
+        with patch.dict("os.environ", {}, clear=True):
             with pytest.raises(SystemExit):
                 require_env("NONEXISTENT_VAR")
 
@@ -122,15 +123,17 @@ class TestSecurityValidation:
             pytest.skip("vanna_grok not available")
 
         # Test with validation function
-        with patch.dict('os.environ', {'TEST_VAR': 'valid_value'}):
-            result = require_env('TEST_VAR', validation_func=lambda x: x.startswith('valid'))
-            assert result == 'valid_value'
+        with patch.dict("os.environ", {"TEST_VAR": "valid_value"}):
+            result = require_env(
+                "TEST_VAR", validation_func=lambda x: x.startswith("valid")
+            )
+            assert result == "valid_value"
 
         # Test with failing validation
-        with patch.dict('os.environ', {'TEST_VAR': 'invalid_value'}):
+        with patch.dict("os.environ", {"TEST_VAR": "invalid_value"}):
             with pytest.raises(SystemExit):
-                require_env('TEST_VAR', validation_func=lambda x: x.startswith('valid'))
+                require_env("TEST_VAR", validation_func=lambda x: x.startswith("valid"))
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

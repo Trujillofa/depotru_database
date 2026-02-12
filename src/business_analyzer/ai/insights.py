@@ -4,8 +4,9 @@ Insights module for AI package.
 Contains AI-powered insights generation for query results.
 """
 
+from typing import Any, Optional
+
 import pandas as pd
-from typing import Optional, Any
 
 from .base import Config, retry_on_failure
 

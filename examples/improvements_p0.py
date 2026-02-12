@@ -9,20 +9,21 @@ Issues addressed:
 3. Missing input validation
 """
 
-import pymssql
 from datetime import datetime
-from typing import Dict, Any, List, Tuple
+from typing import Any, Dict, List, Tuple
 
+import pymssql
 
 # ============================================================================
 # Fix #1: Safe Database Connection with proper cleanup
 # ============================================================================
 
+
 def fetch_banco_datos_safe(
     conn_details: Dict[str, Any],
     limit: int = 1000,
     start_date: str = None,
-    end_date: str = None
+    end_date: str = None,
 ) -> List[Dict[str, Any]]:
     """
     Fetch data with proper connection handling.
@@ -74,6 +75,7 @@ def fetch_banco_datos_safe(
 # Fix #2: Safe Division Helper
 # ============================================================================
 
+
 def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:
     """
     Perform division with zero-check.
@@ -100,10 +102,7 @@ def calculate_profit_margin_safe(revenue: float, cost: float) -> Dict[str, float
     profit = revenue - cost
     margin = safe_divide(profit, revenue, default=0.0) * 100
 
-    return {
-        "profit": round(profit, 2),
-        "margin": round(margin, 2)
-    }
+    return {"profit": round(profit, 2), "margin": round(margin, 2)}
 
 
 # Example usage in financial metrics
@@ -128,11 +127,7 @@ def calculate_financial_metrics_safe(data: List[Dict]) -> Dict[str, Any]:
     metrics = calculate_profit_margin_safe(total_revenue, total_cost)
 
     # CRITICAL FIX: Safe average calculation
-    avg_order = safe_divide(
-        sum(revenues_with_iva),
-        len(revenues_with_iva),
-        default=0.0
-    )
+    avg_order = safe_divide(sum(revenues_with_iva), len(revenues_with_iva), default=0.0)
 
     return {
         "revenue": {
@@ -143,13 +138,14 @@ def calculate_financial_metrics_safe(data: List[Dict]) -> Dict[str, Any]:
         "costs": {
             "total_cost": round(total_cost, 2),
         },
-        "profit": metrics
+        "profit": metrics,
     }
 
 
 # ============================================================================
 # Fix #3: Input Validation
 # ============================================================================
+
 
 def validate_date_range(start_date: str, end_date: str) -> Tuple[datetime, datetime]:
     """
@@ -238,9 +234,7 @@ def validate_cli_arguments(args) -> None:
     # Validate dates
     if args.start_date or args.end_date:
         if not (args.start_date and args.end_date):
-            errors.append(
-                "Both --start-date and --end-date must be provided together"
-            )
+            errors.append("Both --start-date and --end-date must be provided together")
         else:
             try:
                 validate_date_range(args.start_date, args.end_date)

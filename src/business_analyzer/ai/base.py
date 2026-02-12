@@ -4,9 +4,9 @@ Base module for AI package.
 Contains configuration, security utilities, and the AIVanna base class.
 """
 
+import inspect
 import os
 import sys
-import inspect
 import warnings
 from functools import wraps
 from typing import Any, Callable, Optional

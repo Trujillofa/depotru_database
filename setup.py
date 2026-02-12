@@ -3,8 +3,9 @@
 Setup configuration for Business Data Analyzer package.
 """
 
-from setuptools import setup, find_packages
 from pathlib import Path
+
+from setuptools import find_packages, setup
 
 # Read long description from README
 this_directory = Path(__file__).parent

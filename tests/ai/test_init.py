@@ -2,8 +2,9 @@
 Tests for AI package initialization and exports.
 """
 
-import sys
 import os
+import sys
+
 import pytest
 
 # Add src to path
@@ -16,10 +17,10 @@ class TestAIPackageImports:
     def test_import_base_classes(self):
         """Test importing base classes."""
         from business_analyzer.ai import (
+            DEFAULT_PROVIDER,
+            SUPPORTED_PROVIDERS,
             AIVanna,
             Config,
-            SUPPORTED_PROVIDERS,
-            DEFAULT_PROVIDER,
         )
 
         assert AIVanna is not None
@@ -30,11 +31,11 @@ class TestAIPackageImports:
     def test_import_formatting(self):
         """Test importing formatting functions."""
         from business_analyzer.ai import (
-            format_number,
-            format_dataframe,
             format_currency,
-            format_percentage,
+            format_dataframe,
             format_integer,
+            format_number,
+            format_percentage,
         )
 
         assert format_number is not None
@@ -46,11 +47,11 @@ class TestAIPackageImports:
     def test_import_training(self):
         """Test importing training functions."""
         from business_analyzer.ai import (
+            full_training,
+            generate_training_data,
+            get_default_training_examples,
             train_on_schema,
             train_with_examples,
-            get_default_training_examples,
-            generate_training_data,
-            full_training,
         )
 
         assert train_on_schema is not None
@@ -68,10 +69,10 @@ class TestAIPackageImports:
     def test_import_providers(self):
         """Test importing providers."""
         from business_analyzer.ai import (
-            GrokProvider,
-            OpenAIProvider,
             AnthropicProvider,
+            GrokProvider,
             OllamaProvider,
+            OpenAIProvider,
         )
 
         assert GrokProvider is not None

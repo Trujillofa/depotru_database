@@ -3,10 +3,11 @@
 Tests for number formatting functions (Colombian format).
 """
 
-import pytest
-import pandas as pd
 import sys
 from pathlib import Path
+
+import pandas as pd
+import pytest
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -61,7 +62,7 @@ class TestNumberFormatting:
         # Test various null representations
         assert format_number(None, "TotalMasIva") == "-"
         assert format_number(pd.NA, "Revenue") == "-"
-        assert format_number(float('nan'), "Cantidad") == "-"
+        assert format_number(float("nan"), "Cantidad") == "-"
 
     def test_format_dataframe(self):
         """Test formatting entire DataFrame"""
@@ -71,19 +72,21 @@ class TestNumberFormatting:
             pytest.skip("vanna_grok not available")
 
         # Create test DataFrame
-        df = pd.DataFrame({
-            'TotalMasIva': [1234567.89, 9876543.21],
-            'Margen_Promedio_Pct': [45.6, 23.4],
-            'Cantidad': [1234, 5678]
-        })
+        df = pd.DataFrame(
+            {
+                "TotalMasIva": [1234567.89, 9876543.21],
+                "Margen_Promedio_Pct": [45.6, 23.4],
+                "Cantidad": [1234, 5678],
+            }
+        )
 
         # Format it
         df_formatted = format_dataframe(df)
 
         # Verify formatting
-        assert df_formatted.iloc[0]['TotalMasIva'] == "$1.234.568"
-        assert df_formatted.iloc[0]['Margen_Promedio_Pct'] == "45,6%"
-        assert df_formatted.iloc[0]['Cantidad'] == "1.234"
+        assert df_formatted.iloc[0]["TotalMasIva"] == "$1.234.568"
+        assert df_formatted.iloc[0]["Margen_Promedio_Pct"] == "45,6%"
+        assert df_formatted.iloc[0]["Cantidad"] == "1.234"
 
     def test_format_dataframe_row_limit(self):
         """Test that format_dataframe respects MAX_DISPLAY_ROWS"""
@@ -93,9 +96,7 @@ class TestNumberFormatting:
             pytest.skip("vanna_grok not available")
 
         # Create large DataFrame (200 rows)
-        df = pd.DataFrame({
-            'Value': range(200)
-        })
+        df = pd.DataFrame({"Value": range(200)})
 
         # Format with limit of 50
         df_formatted = format_dataframe(df, max_rows=50)
@@ -104,5 +105,5 @@ class TestNumberFormatting:
         assert len(df_formatted) == 50
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

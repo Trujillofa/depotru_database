@@ -3,34 +3,35 @@
 Upload fix scripts to server and execute them
 Uses subprocess with sshpass or ssh-keygen alternatives
 """
+import os
 import subprocess
 import sys
-import os
 
 # SECURITY: Load server details from environment variables
 # Set these before running:
 #   export MAGENTO_HOST="your-server"
 #   export MAGENTO_USER="your-user"
 #   export MAGENTO_PASSWORD="your-password"
-HOST = os.environ.get('MAGENTO_HOST')
-USER = os.environ.get('MAGENTO_USER')
-PASS = os.environ.get('MAGENTO_PASSWORD')
-MAGENTO_ROOT = os.environ.get('MAGENTO_ROOT')  # No default - must be provided
+HOST = os.environ.get("MAGENTO_HOST")
+USER = os.environ.get("MAGENTO_USER")
+PASS = os.environ.get("MAGENTO_PASSWORD")
+MAGENTO_ROOT = os.environ.get("MAGENTO_ROOT")  # No default - must be provided
 
 if not all([HOST, USER, PASS, MAGENTO_ROOT]):
     print("ERROR: Missing required environment variables")
     print("Please set: MAGENTO_HOST, MAGENTO_USER, MAGENTO_PASSWORD, MAGENTO_ROOT")
     sys.exit(1)
 
+
 def run_ssh_command(command, description):
     """Run SSH command using various methods"""
     print(f"\n{'='*70}")
     print(f"EXECUTING: {description}")
-    print('='*70)
+    print("=" * 70)
 
     # Method 1: Try using SSH with password from environment
     env = os.environ.copy()
-    env['SSHPASS'] = PASS
+    env["SSHPASS"] = PASS
 
     # Try different SSH methods
     methods = [
@@ -44,12 +45,7 @@ def run_ssh_command(command, description):
         try:
             print(f"Trying method {i}...")
             result = subprocess.run(
-                cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=120,
-                env=env
+                cmd, shell=True, capture_output=True, text=True, timeout=120, env=env
             )
 
             if result.returncode == 0 or "command not found" not in result.stderr:
@@ -70,10 +66,11 @@ def run_ssh_command(command, description):
     print("All SSH methods failed. Manual intervention required.")
     return False
 
+
 def main():
-    print("="*70)
+    print("=" * 70)
     print("  CSS Compilation Fix - Automated Deployment")
-    print("="*70)
+    print("=" * 70)
 
     # Step 1: Try to upload PHP diagnostic script
     print("\nStep 1: Uploading diagnostic script...")
@@ -86,9 +83,9 @@ def main():
         print(f"Command: {upload_cmd}")
 
         # Print manual instructions
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("MANUAL UPLOAD INSTRUCTIONS")
-        print("="*70)
+        print("=" * 70)
         print("\nIf automatic upload fails, please run these commands manually:\n")
         print(f"1. Upload the PHP script:")
         print(f"   scp {php_script} {USER}@{HOST}:{MAGENTO_ROOT}/")
@@ -108,7 +105,7 @@ def main():
         "rm -rf pub/static/frontend/Olegnax/*",
         "rm -rf var/view_preprocessed/*",
         "/usr/local/bin/php bin/magento setup:static-content:deploy en_US -f --theme Olegnax/athlete2",
-        "/usr/local/bin/php bin/magento cache:flush"
+        "/usr/local/bin/php bin/magento cache:flush",
     ]
 
     combined_command = " && ".join(fix_commands)
@@ -116,16 +113,17 @@ def main():
     success = run_ssh_command(combined_command, "Deploy static content and fix CSS")
 
     if not success:
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("MANUAL FIX INSTRUCTIONS")
-        print("="*70)
+        print("=" * 70)
         print("\nSSH into the server and run these commands:\n")
         print(f"ssh {USER}@{HOST}")
         for cmd in fix_commands:
             print(f"  {cmd}")
         print("\nOr run the deployment script:")
         print(f"  bash {MAGENTO_ROOT}/deploy_css_fix.sh")
-        print("="*70)
+        print("=" * 70)
+
 
 if __name__ == "__main__":
     main()

@@ -2,16 +2,17 @@
 Tests for AI package training module.
 """
 
-import sys
 import os
+import sys
+
 import pytest
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
 from business_analyzer.ai.training import (
-    get_default_training_examples,
     generate_training_data,
+    get_default_training_examples,
 )
 
 

@@ -14,12 +14,7 @@ __version__ = "2.0.0"
 __author__ = "Business Data Analyzer Team"
 
 # Make key classes and functions available at package level
-from .config import (
-    Config,
-    CustomerSegmentation,
-    InventoryConfig,
-    ProfitabilityConfig,
-)
+from .config import Config, CustomerSegmentation, InventoryConfig, ProfitabilityConfig
 
 __all__ = [
     "Config",

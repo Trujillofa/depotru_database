@@ -5,8 +5,9 @@ Contains number formatting utilities for Colombian pesos, percentages, and thous
 """
 
 import locale
-import pandas as pd
 from typing import Any, List, Optional
+
+import pandas as pd
 
 # Set Colombian locale for number formatting (fallback to Spanish/default)
 try:

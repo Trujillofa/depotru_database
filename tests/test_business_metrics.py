@@ -6,18 +6,22 @@ Demonstrates proper testing practices.
 Run with: pytest test_business_metrics.py -v
 """
 
-import pytest
-from decimal import Decimal
 from datetime import datetime
+from decimal import Decimal
+
+import pytest
 
 # Skip all tests in this module if dependencies are missing
 pymssql = pytest.importorskip("pymssql", reason="pymssql not installed")
-pytest.importorskip("examples.improvements_p0", reason="improvements_p0 requires pymssql")
+pytest.importorskip(
+    "examples.improvements_p0", reason="improvements_p0 requires pymssql"
+)
 
 
 # ============================================================================
 # Test Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def sample_data():
@@ -31,7 +35,7 @@ def sample_data():
             "TercerosNombres": "Customer A",
             "ArticulosNombre": "Product 1",
             "categoria": "Category 1",
-            "Fecha": datetime(2025, 1, 15)
+            "Fecha": datetime(2025, 1, 15),
         },
         {
             "TotalMasIva": 232.0,
@@ -41,7 +45,7 @@ def sample_data():
             "TercerosNombres": "Customer A",
             "ArticulosNombre": "Product 2",
             "categoria": "Category 1",
-            "Fecha": datetime(2025, 1, 16)
+            "Fecha": datetime(2025, 1, 16),
         },
         {
             "TotalMasIva": 174.0,
@@ -51,8 +55,8 @@ def sample_data():
             "TercerosNombres": "Customer B",
             "ArticulosNombre": "Product 1",
             "categoria": "Category 2",
-            "Fecha": datetime(2025, 1, 17)
-        }
+            "Fecha": datetime(2025, 1, 17),
+        },
     ]
 
 
@@ -90,13 +94,14 @@ def null_data():
             "TotalSinIva": None,
             "ValorCosto": 80.0,
             "Cantidad": None,
-        }
+        },
     ]
 
 
 # ============================================================================
 # Test Safe Division
 # ============================================================================
+
 
 def test_safe_divide_normal():
     """Test safe division with valid numbers"""
@@ -128,6 +133,7 @@ def test_safe_divide_negative():
 # ============================================================================
 # Test Date Validation
 # ============================================================================
+
 
 def test_validate_date_range_valid():
     """Test date validation with valid inputs"""
@@ -179,6 +185,7 @@ def test_validate_date_range_unreasonable_year():
 # Test Limit Validation
 # ============================================================================
 
+
 def test_validate_limit_valid():
     """Test limit validation with valid inputs"""
     from examples.improvements_p0 import validate_limit
@@ -219,6 +226,7 @@ def test_validate_limit_out_of_range():
 # Test Profit Margin Calculation
 # ============================================================================
 
+
 def test_calculate_profit_margin_safe_normal():
     """Test profit margin calculation with normal data"""
     from examples.improvements_p0 import calculate_profit_margin_safe
@@ -250,6 +258,7 @@ def test_calculate_profit_margin_safe_negative():
 # ============================================================================
 # Test Financial Metrics Calculation
 # ============================================================================
+
 
 def test_calculate_financial_metrics_safe_normal(sample_data):
     """Test financial metrics with normal data"""
@@ -305,6 +314,7 @@ def test_calculate_financial_metrics_safe_null(null_data):
 # Test Customer Segmentation
 # ============================================================================
 
+
 def test_customer_segmentation():
     """Test customer segmentation logic"""
     # Import the actual BusinessMetricsCalculator if needed
@@ -334,6 +344,7 @@ def test_customer_segmentation():
 # Integration Test
 # ============================================================================
 
+
 def test_full_pipeline_with_sample_data(sample_data):
     """Test complete analysis pipeline with known data"""
     from examples.improvements_p0 import calculate_financial_metrics_safe
@@ -356,6 +367,7 @@ def test_full_pipeline_with_sample_data(sample_data):
 # ============================================================================
 # Edge Cases
 # ============================================================================
+
 
 def test_edge_case_single_record():
     """Test with single record"""

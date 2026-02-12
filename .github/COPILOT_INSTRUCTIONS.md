@@ -155,11 +155,11 @@ def process_data(data):
         # Validate input
         if not data:
             raise ValueError("Data cannot be empty")
-        
+
         # Process
         result = do_something(data)
         return result
-        
+
     except ValueError as e:
         logging.error(f"Validation error: {e}")
         raise

@@ -4,10 +4,11 @@ Pytest Configuration and Shared Fixtures
 This file configures pytest for the Business Data Analyzer test suite.
 """
 
-import pytest
 import sys
 from pathlib import Path
 from unittest.mock import Mock
+
+import pytest
 
 # =============================================================================
 # Path Setup

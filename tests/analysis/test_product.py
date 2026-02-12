@@ -3,10 +3,11 @@ Tests for product analysis module.
 """
 
 import pytest
+
 from src.business_analyzer.analysis.product import (
     ProductAnalyzer,
-    safe_divide,
     extract_value,
+    safe_divide,
 )
 
 

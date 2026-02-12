@@ -171,7 +171,7 @@ src/business_analyzer/
 **Exports**:
 - `Config` - Main configuration class
 - `CustomerSegmentation` - Segmentation thresholds
-- `InventoryConfig` - Inventory thresholds  
+- `InventoryConfig` - Inventory thresholds
 - `ProfitabilityConfig` - Margin thresholds
 
 **Dependencies**: None (bottom layer)
@@ -552,16 +552,16 @@ from .reporting.magento import generate_magento_strategies
 
 class BusinessAnalyzer:
     """Main business analysis orchestrator.
-    
+
     Coordinates multiple specialized analyzers to provide comprehensive
     business intelligence. Replaces the monolithic BusinessMetricsCalculator.
-    
+
     Example:
         >>> from business_analyzer import BusinessAnalyzer
         >>> analyzer = BusinessAnalyzer(data)
         >>> metrics = analyzer.analyze_all()
     """
-    
+
     def __init__(self, data: List[Dict[str, Any]]):
         self.data = data
         # Initialize specialized analyzers
@@ -574,7 +574,7 @@ class BusinessAnalyzer:
         self._profitability = ProfitabilityAnalyzer(data)
         self._risk = RiskAnalyzer(data)
         self._operational = OperationalAnalyzer(data)
-    
+
     def analyze_all(self) -> Dict[str, Any]:
         """Run all analyses and return comprehensive metrics."""
         return {
@@ -588,15 +588,15 @@ class BusinessAnalyzer:
             "risk_metrics": self._risk.calculate(),
             "operational_efficiency": self._operational.calculate(),
         }
-    
+
     def analyze_financial(self) -> Dict[str, Any]:
         """Run financial analysis only."""
         return self._financial.calculate()
-    
+
     def analyze_customers(self) -> Dict[str, Any]:
         """Run customer analysis only."""
         return self._customer.analyze()
-    
+
     # ... additional partial analysis methods
 ```
 
@@ -977,7 +977,7 @@ from business_analyzer.analysis.financial import FinancialAnalyzer
 
 class TestFinancialAnalyzer:
     """Test financial metrics calculation."""
-    
+
     @pytest.fixture
     def sample_data(self):
         return [
@@ -994,18 +994,18 @@ class TestFinancialAnalyzer:
                 "Cantidad": 4,
             },
         ]
-    
+
     def test_calculate_revenue(self, sample_data):
         analyzer = FinancialAnalyzer(sample_data)
         result = analyzer.calculate()
-        
+
         assert result["revenue"]["total_with_iva"] == 3000.0
         assert result["revenue"]["total_without_iva"] == 2520.0
-    
+
     def test_calculate_profit(self, sample_data):
         analyzer = FinancialAnalyzer(sample_data)
         result = analyzer.calculate()
-        
+
         expected_profit = 2520.0 - 1500.0  # revenue - cost
         assert result["profit"]["gross_profit"] == expected_profit
 ```
@@ -1021,7 +1021,7 @@ from business_analyzer.core.database import fetch_banco_datos
 
 class TestDatabase:
     """Test database connectivity with mocked connections."""
-    
+
     @pytest.fixture
     def conn_details(self):
         return {
@@ -1031,7 +1031,7 @@ class TestDatabase:
             "Password": "test-pass",
             "Database": "TestDB",
         }
-    
+
     @patch("business_analyzer.core.database.pymssql")
     def test_fetch_banco_datos_success(self, mock_pymssql, conn_details):
         # Setup mock
@@ -1041,10 +1041,10 @@ class TestDatabase:
         mock_cursor.__iter__ = Mock(return_value=iter([{"col": "val"}]))
         mock_conn.cursor.return_value = mock_cursor
         mock_pymssql.connect.return_value = mock_conn
-        
+
         # Execute
         result = fetch_banco_datos(conn_details, limit=10)
-        
+
         # Assert
         assert len(result) == 1
         mock_pymssql.connect.assert_called_once()
@@ -1223,8 +1223,8 @@ from business_analyzer import validate_date_range, validate_limit
 try:
     validate_date_range("2025-01-01", "2025-12-31")
     validate_limit(5000)
-    data = fetch_banco_datos(conn, limit=5000, 
-                            start_date="2025-01-01", 
+    data = fetch_banco_datos(conn, limit=5000,
+                            start_date="2025-01-01",
                             end_date="2025-12-31")
 except ValueError as e:
     print(f"Invalid input: {e}")
@@ -1259,7 +1259,7 @@ def migrate_imports(file_path: str) -> str:
     """Update imports from old to new structure."""
     with open(file_path, 'r') as f:
         content = f.read()
-    
+
     # Old import patterns → New import patterns
     replacements = [
         # BusinessMetricsCalculator
@@ -1325,10 +1325,10 @@ def migrate_imports(file_path: str) -> str:
             'from business_analyzer import ProfitabilityConfig'
         ),
     ]
-    
+
     for old, new in replacements:
         content = re.sub(old, new, content)
-    
+
     return content
 
 
@@ -1336,15 +1336,15 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python migrate.py <file_to_migrate.py>")
         sys.exit(1)
-    
+
     file_path = sys.argv[1]
     new_content = migrate_imports(file_path)
-    
+
     # Write to new file
     new_path = file_path.replace('.py', '_migrated.py')
     with open(new_path, 'w') as f:
         f.write(new_content)
-    
+
     print(f"✅ Migrated: {file_path} → {new_path}")
     print("Review the changes and test before replacing the original.")
 
@@ -1355,7 +1355,7 @@ if __name__ == "__main__":
 
 ---
 
-**Document Version**: 1.0.0  
-**Last Updated**: 2026-02-12  
-**Author**: Architecture Design Task  
+**Document Version**: 1.0.0
+**Last Updated**: 2026-02-12
+**Author**: Architecture Design Task
 **Status**: Ready for Implementation

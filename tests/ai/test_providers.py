@@ -2,18 +2,19 @@
 Tests for AI package providers.
 """
 
-import sys
 import os
+import sys
+
 import pytest
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
 from business_analyzer.ai.providers import (
-    GrokProvider,
-    OpenAIProvider,
     AnthropicProvider,
+    GrokProvider,
     OllamaProvider,
+    OpenAIProvider,
 )
 
 
@@ -103,10 +104,10 @@ class TestProviderExports:
     def test_all_providers_exported(self):
         """Test that all providers can be imported."""
         from business_analyzer.ai.providers import (
-            GrokProvider,
-            OpenAIProvider,
             AnthropicProvider,
+            GrokProvider,
             OllamaProvider,
+            OpenAIProvider,
         )
 
         assert GrokProvider is not None

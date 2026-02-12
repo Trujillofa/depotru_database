@@ -4,29 +4,31 @@ PRODUCTOS SIKA Analysis - Comprehensive Report
 Focus: Customers, Vendors, Monthly Trends (2024 vs 2025)
 """
 
-import pymssql
 import json
 import os
 import sys
+from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
-from collections import defaultdict
+
+import pymssql
 
 # SECURITY: Load credentials from environment variables
 # Set these before running:
 #   export DB_SERVER="your-server"
 #   export DB_USER="your-user"
 #   export DB_PASSWORD="your-password"
-db_host = os.environ.get('DB_SERVER')
-db_port = int(os.environ.get('DB_PORT', '1433'))
-db_username = os.environ.get('DB_USER')
-db_password = os.environ.get('DB_PASSWORD')
-database = os.environ.get('DB_NAME', 'SmartBusiness')
+db_host = os.environ.get("DB_SERVER")
+db_port = int(os.environ.get("DB_PORT", "1433"))
+db_username = os.environ.get("DB_USER")
+db_password = os.environ.get("DB_PASSWORD")
+database = os.environ.get("DB_NAME", "SmartBusiness")
 
 if not all([db_host, db_username, db_password]):
     print("ERROR: Missing required environment variables")
     print("Please set: DB_SERVER, DB_USER, DB_PASSWORD")
     sys.exit(1)
+
 
 def get_connection():
     print(f"🔗 Connecting to {db_host}:{db_port}...")
@@ -42,6 +44,7 @@ def get_connection():
     print(f"✅ Connected to database: {database}")
     return conn
 
+
 def run_query(conn, sql, description):
     print(f"\n📊 {description}...")
     cursor = conn.cursor()
@@ -51,12 +54,14 @@ def run_query(conn, sql, description):
     cursor.close()
     return columns, results
 
+
 def to_float(val):
     if val is None:
         return 0.0
     if isinstance(val, Decimal):
         return float(val)
     return float(val)
+
 
 def main():
     conn = None
@@ -73,7 +78,7 @@ def main():
         "bestsellers": [],
         "most_profitable": [],
         "subcategory_performance": [],
-        "insights": []
+        "insights": [],
     }
 
     try:
@@ -105,8 +110,16 @@ def main():
         """
         cols, rows = run_query(conn, sql_summary, "Overall Summary")
         for row in rows:
-            summary = dict(zip(cols, [to_float(x) if isinstance(x, (Decimal, float)) else x for x in row]))
-            report["summary"][int(summary['year'])] = summary
+            summary = dict(
+                zip(
+                    cols,
+                    [
+                        to_float(x) if isinstance(x, (Decimal, float)) else x
+                        for x in row
+                    ],
+                )
+            )
+            report["summary"][int(summary["year"])] = summary
 
         # 2. MONTHLY SALES COMPARISON
         sql_monthly = """
@@ -129,7 +142,17 @@ def main():
         """
         cols, rows = run_query(conn, sql_monthly, "Monthly Sales")
         for row in rows:
-            report["monthly_sales"].append(dict(zip(cols, [to_float(x) if isinstance(x, (Decimal, float)) else x for x in row])))
+            report["monthly_sales"].append(
+                dict(
+                    zip(
+                        cols,
+                        [
+                            to_float(x) if isinstance(x, (Decimal, float)) else x
+                            for x in row
+                        ],
+                    )
+                )
+            )
 
         # 3. TOP CUSTOMERS BY REVENUE
         sql_customers = """
@@ -154,7 +177,21 @@ def main():
         """
         cols, rows = run_query(conn, sql_customers, "Top Customers")
         for row in rows:
-            report["top_customers"].append(dict(zip(cols, [to_float(x) if isinstance(x, (Decimal, float)) else str(x) if not isinstance(x, (int, str, type(None))) else x for x in row])))
+            report["top_customers"].append(
+                dict(
+                    zip(
+                        cols,
+                        [
+                            to_float(x)
+                            if isinstance(x, (Decimal, float))
+                            else str(x)
+                            if not isinstance(x, (int, str, type(None)))
+                            else x
+                            for x in row
+                        ],
+                    )
+                )
+            )
 
         # 4. CUSTOMER SEGMENTATION
         sql_segments = """
@@ -201,7 +238,17 @@ def main():
         """
         cols, rows = run_query(conn, sql_segments, "Customer Segmentation")
         for row in rows:
-            report["customer_segments"].append(dict(zip(cols, [to_float(x) if isinstance(x, (Decimal, float)) else x for x in row])))
+            report["customer_segments"].append(
+                dict(
+                    zip(
+                        cols,
+                        [
+                            to_float(x) if isinstance(x, (Decimal, float)) else x
+                            for x in row
+                        ],
+                    )
+                )
+            )
 
         # 5. BESTSELLERS BY SUBCATEGORY
         sql_bestsellers = """
@@ -243,7 +290,17 @@ def main():
         """
         cols, rows = run_query(conn, sql_bestsellers, "Bestsellers by Subcategory")
         for row in rows:
-            report["bestsellers"].append(dict(zip(cols, [to_float(x) if isinstance(x, (Decimal, float)) else x for x in row])))
+            report["bestsellers"].append(
+                dict(
+                    zip(
+                        cols,
+                        [
+                            to_float(x) if isinstance(x, (Decimal, float)) else x
+                            for x in row
+                        ],
+                    )
+                )
+            )
 
         # 6. MOST PROFITABLE PRODUCTS
         sql_profitable = """
@@ -268,7 +325,17 @@ def main():
         """
         cols, rows = run_query(conn, sql_profitable, "Most Profitable Products")
         for row in rows:
-            report["most_profitable"].append(dict(zip(cols, [to_float(x) if isinstance(x, (Decimal, float)) else x for x in row])))
+            report["most_profitable"].append(
+                dict(
+                    zip(
+                        cols,
+                        [
+                            to_float(x) if isinstance(x, (Decimal, float)) else x
+                            for x in row
+                        ],
+                    )
+                )
+            )
 
         # 7. SUBCATEGORY PERFORMANCE
         sql_subcat = """
@@ -292,25 +359,37 @@ def main():
         """
         cols, rows = run_query(conn, sql_subcat, "Subcategory Performance")
         for row in rows:
-            report["subcategory_performance"].append(dict(zip(cols, [to_float(x) if isinstance(x, (Decimal, float)) else x for x in row])))
+            report["subcategory_performance"].append(
+                dict(
+                    zip(
+                        cols,
+                        [
+                            to_float(x) if isinstance(x, (Decimal, float)) else x
+                            for x in row
+                        ],
+                    )
+                )
+            )
 
         # Save JSON report
         output_json = "reports/data/sika_analysis_report.json"
-        with open(output_json, 'w', encoding='utf-8') as f:
+        with open(output_json, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
         print(f"\n✅ JSON Report saved to: {output_json}")
 
         # Generate insights
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("PRODUCTOS SIKA ANALYSIS - KEY METRICS")
-        print("="*80)
+        print("=" * 80)
 
         for year in [2024, 2025]:
             if year in report["summary"]:
                 s = report["summary"][year]
                 print(f"\n📅 YEAR {year}:")
                 print(f"  Revenue: ${s['net_revenue']:,.0f}")
-                print(f"  Profit: ${s['net_profit']:,.0f} (Margin: {(s['net_profit']/s['net_revenue']*100):.1f}%)")
+                print(
+                    f"  Profit: ${s['net_profit']:,.0f} (Margin: {(s['net_profit']/s['net_revenue']*100):.1f}%)"
+                )
                 print(f"  Customers: {int(s['unique_customers']):,}")
                 print(f"  Vendors: {int(s['unique_vendors']):,}")
                 print(f"  Transactions: {int(s['transactions']):,}")
@@ -320,9 +399,17 @@ def main():
         if 2024 in report["summary"] and 2025 in report["summary"]:
             s24 = report["summary"][2024]
             s25 = report["summary"][2025]
-            rev_growth = ((s25['net_revenue'] - s24['net_revenue']) / s24['net_revenue'] * 100)
-            profit_growth = ((s25['net_profit'] - s24['net_profit']) / s24['net_profit'] * 100)
-            cust_growth = ((s25['unique_customers'] - s24['unique_customers']) / s24['unique_customers'] * 100)
+            rev_growth = (
+                (s25["net_revenue"] - s24["net_revenue"]) / s24["net_revenue"] * 100
+            )
+            profit_growth = (
+                (s25["net_profit"] - s24["net_profit"]) / s24["net_profit"] * 100
+            )
+            cust_growth = (
+                (s25["unique_customers"] - s24["unique_customers"])
+                / s24["unique_customers"]
+                * 100
+            )
 
             print(f"\n📈 YoY GROWTH (2024→2025):")
             print(f"  Revenue: {rev_growth:+.1f}%")
@@ -330,19 +417,25 @@ def main():
             print(f"  Customers: {cust_growth:+.1f}%")
 
         print(f"\n📦 Product Portfolio:")
-        print(f"  Subcategories: {len(set(p['subcategoria'] for p in report['subcategory_performance']))}")
-        print(f"  Total SKUs: {report['summary'][2024]['unique_products'] if 2024 in report['summary'] else 0}")
+        print(
+            f"  Subcategories: {len(set(p['subcategoria'] for p in report['subcategory_performance']))}"
+        )
+        print(
+            f"  Total SKUs: {report['summary'][2024]['unique_products'] if 2024 in report['summary'] else 0}"
+        )
 
         return report
 
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         if conn:
             conn.close()
             print("\n🔒 Connection closed")
+
 
 if __name__ == "__main__":
     main()

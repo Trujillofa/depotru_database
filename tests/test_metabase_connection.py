@@ -13,6 +13,7 @@ import pytest
 pytest.importorskip("pymssql")
 
 import pymssql
+
 from config import Config
 
 # YOUR CONNECTION DETAILS - Match what you use in Metabase!
@@ -22,9 +23,9 @@ USER = "your-username"  # Replace with your username
 PASSWORD = "your-password"  # Replace with your password
 DATABASE = Config.DB_NAME  # Should be 'SmartBusiness'
 
-print("="*70)
+print("=" * 70)
 print("METABASE CONNECTION DIAGNOSTIC TOOL")
-print("="*70)
+print("=" * 70)
 print()
 print("Testing connection with settings:")
 print(f"  Host: {HOST}")
@@ -38,11 +39,7 @@ print()
 try:
     print("[1/5] Connecting to SQL Server...")
     conn = pymssql.connect(
-        server=HOST,
-        port=PORT,
-        user=USER,
-        password=PASSWORD,
-        database=DATABASE
+        server=HOST, port=PORT, user=USER, password=PASSWORD, database=DATABASE
     )
     print("  ✓ Connection successful!")
     print()
@@ -53,7 +50,7 @@ try:
     print("[2/5] Checking current database...")
     cursor.execute("SELECT DB_NAME() as current_db")
     result = cursor.fetchone()
-    current_db = result['current_db']
+    current_db = result["current_db"]
     print(f"  Current database: {current_db}")
 
     if current_db != DATABASE:
@@ -65,7 +62,8 @@ try:
 
     # Check 2: List all tables
     print("[3/5] Listing all tables in current database...")
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT
             TABLE_SCHEMA,
             TABLE_NAME,
@@ -73,7 +71,8 @@ try:
         FROM INFORMATION_SCHEMA.TABLES
         WHERE TABLE_TYPE = 'BASE TABLE'
         ORDER BY TABLE_SCHEMA, TABLE_NAME
-    """)
+    """
+    )
 
     tables = cursor.fetchall()
     print(f"  Found {len(tables)} tables:")
@@ -87,9 +86,7 @@ try:
 
     # Check 3: Verify banco_datos exists
     print("[4/5] Checking banco_datos table...")
-    banco_datos_exists = any(
-        t['TABLE_NAME'] == 'banco_datos' for t in tables
-    )
+    banco_datos_exists = any(t["TABLE_NAME"] == "banco_datos" for t in tables)
 
     if banco_datos_exists:
         print("  ✓ banco_datos table found!")
@@ -97,17 +94,19 @@ try:
         # Get row count
         cursor.execute("SELECT COUNT(*) as total FROM banco_datos")
         total_result = cursor.fetchone()
-        total_rows = total_result['total']
+        total_rows = total_result["total"]
         print(f"  Total rows: {total_rows:,}")
 
         # Get filtered count (excluding XY, AS, TS)
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT COUNT(*) as filtered
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
-        """)
+        """
+        )
         filtered_result = cursor.fetchone()
-        filtered_rows = filtered_result['filtered']
+        filtered_rows = filtered_result["filtered"]
         print(f"  Filtered rows (excl. XY/AS/TS): {filtered_rows:,}")
 
         # Get sample data
@@ -122,25 +121,27 @@ try:
 
     # Check 4: List all databases
     print("[5/5] Listing all available databases...")
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT name FROM sys.databases
         WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb')
         ORDER BY name
-    """)
+    """
+    )
     databases = cursor.fetchall()
     print(f"  Available databases:")
     for db in databases:
-        marker = " ← YOU ARE HERE" if db['name'] == current_db else ""
-        marker += " ← METABASE SHOULD USE THIS" if db['name'] == 'SmartBusiness' else ""
+        marker = " ← YOU ARE HERE" if db["name"] == current_db else ""
+        marker += " ← METABASE SHOULD USE THIS" if db["name"] == "SmartBusiness" else ""
         print(f"    - {db['name']}{marker}")
     print()
 
     conn.close()
 
     # Final diagnosis
-    print("="*70)
+    print("=" * 70)
     print("DIAGNOSIS")
-    print("="*70)
+    print("=" * 70)
     print()
 
     if current_db == DATABASE and banco_datos_exists:
@@ -178,7 +179,7 @@ try:
         print(f"  - Verify table exists: SELECT * FROM {DATABASE}.dbo.banco_datos")
 
     print()
-    print("="*70)
+    print("=" * 70)
 
 except pymssql.OperationalError as e:
     print(f"❌ Connection failed: {e}")
@@ -198,6 +199,7 @@ except pymssql.OperationalError as e:
 except Exception as e:
     print(f"❌ Unexpected error: {e}")
     import traceback
+
     traceback.print_exc()
 
 print()

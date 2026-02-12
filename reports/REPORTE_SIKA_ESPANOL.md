@@ -191,11 +191,11 @@
 ### 🛍️ Portafolio de Productos
 
 - **SKUs Activos:** 224 productos
-- **Producto Estrella (2024):** SIKA MASTIC CANECA X 28 KG 
+- **Producto Estrella (2024):** SIKA MASTIC CANECA X 28 KG
   - Ingresos: $261,972,759 (5.7% del total)
-- **Producto Estrella (2025):** SIKA MULTI-SEAL 10CM X ROLLO 10 MTRS ALUMINIO 
+- **Producto Estrella (2025):** SIKA MULTI-SEAL 10CM X ROLLO 10 MTRS ALUMINIO
   - Ingresos: $363,031,233
-  - 📊 **Cambio en liderazgo:** SIKA MULTI-SEAL 10CM X ROLLO 10 MTRS ALU superó a SIKA MASTIC CANECA X 28 KG 
+  - 📊 **Cambio en liderazgo:** SIKA MULTI-SEAL 10CM X ROLLO 10 MTRS ALU superó a SIKA MASTIC CANECA X 28 KG
 
 ### 💡 Recomendaciones Estratégicas
 
