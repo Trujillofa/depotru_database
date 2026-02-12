@@ -21,7 +21,8 @@ HOST = "your-server"  # Replace with your server
 PORT = 1433
 USER = "your-username"  # Replace with your username
 PASSWORD = "your-password"  # Replace with your password
-DATABASE = Config.DB_NAME  # Should be 'SmartBusiness'
+# Use getattr to handle both real Config and mocked Config in tests
+DATABASE = getattr(Config, "DB_NAME", "SmartBusiness")  # Should be 'SmartBusiness'
 
 print("=" * 70)
 print("METABASE CONNECTION DIAGNOSTIC TOOL")

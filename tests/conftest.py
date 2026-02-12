@@ -19,8 +19,17 @@ src_path = Path(__file__).parent.parent / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
+
 # Mock external dependencies before any imports from business_analyzer
-sys.modules["pymssql"] = Mock()
+# Create pymssql mock with OperationalError as a proper exception class
+class MockOperationalError(Exception):
+    pass
+
+
+mock_pymssql = Mock()
+mock_pymssql.OperationalError = MockOperationalError
+sys.modules["pymssql"] = mock_pymssql
+
 sys.modules["pyodbc"] = Mock()
 sys.modules["NavicatCipher"] = Mock()
 sys.modules["Crypto"] = Mock()
@@ -43,6 +52,7 @@ mock_config.Config.DB_TIMEOUT = 10
 mock_config.Config.DB_TDS_VERSION = "7.4"
 mock_config.Config.DEFAULT_LIMIT = 1000
 mock_config.Config.EXCLUDED_DOCUMENT_CODES = ["XY", "AS"]
+mock_config.Config.LOG_LEVEL = "INFO"  # Must be string for getattr(logging, ...)
 mock_config.Config.has_direct_db_config = Mock(return_value=True)
 mock_config.Config.ensure_output_dir = Mock(return_value=Path("/tmp"))
 
