@@ -203,26 +203,29 @@ def test_with_dependency():
 
 ### Current Coverage Status
 
-**Overall Coverage: ~54%** (Target: ≥80%)
+**Overall Coverage: ~47%** (Target: ≥80%)
 
-| Module | Coverage | Status |
-|--------|----------|--------|
-| src/config.py | 98.21% | ✅ |
-| src/business_analyzer/analysis/customer.py | 90.77% | ✅ |
-| src/business_analyzer/analysis/financial.py | 91.80% | ✅ |
-| src/business_analyzer/analysis/inventory.py | 88.89% | ✅ |
-| src/business_analyzer/analysis/product.py | 85.96% | ✅ |
-| src/business_analyzer/core/database.py | 88.57% | ✅ |
-| src/business_analyzer/ai/formatting.py | 82.19% | ✅ |
-| src/business_analyzer/ai/providers/grok.py | 71.43% | ⚠️ |
-| src/business_analyzer/ai/providers/openai.py | 68.42% | ⚠️ |
-| src/business_analyzer/ai/providers/anthropic.py | 59.09% | ⚠️ |
-| src/business_analyzer/ai/providers/ollama.py | 55.00% | ⚠️ |
-| src/business_analyzer/ai/training.py | 48.39% | ⚠️ |
-| src/business_analyzer_combined.py | 43.38% | ❌ |
-| src/business_analyzer/ai/insights.py | 20.59% | ❌ |
-| src/vanna_grok.py | 6.45% | ❌ |
-| src/business_analyzer/ai/base.py | 0.00% | ❌ |
+| Module | Coverage | Status | Notes |
+|--------|----------|--------|-------|
+| src/config.py | 98.21% | ✅ | Excellent coverage |
+| src/business_analyzer/analysis/customer.py | 90.77% | ✅ | Well tested |
+| src/business_analyzer/analysis/financial.py | 91.80% | ✅ | Well tested |
+| src/business_analyzer/analysis/inventory.py | 88.89% | ✅ | Well tested |
+| src/business_analyzer/analysis/product.py | 85.96% | ✅ | Well tested |
+| src/business_analyzer/core/database.py | 90.00% | ✅ | Well tested |
+| src/business_analyzer/ai/formatting.py | 83.56% | ✅ | Good coverage |
+| src/business_analyzer/ai/providers/grok.py | 71.43% | ⚠️ | Needs more tests |
+| src/business_analyzer/ai/providers/openai.py | 68.42% | ⚠️ | Needs more tests |
+| src/business_analyzer/ai/providers/anthropic.py | 59.09% | ⚠️ | Needs more tests |
+| src/business_analyzer/ai/providers/ollama.py | 55.00% | ⚠️ | Needs more tests |
+| src/business_analyzer/ai/training.py | 48.39% | ⚠️ | Partial coverage |
+| src/business_analyzer_combined.py | 43.38% | ❌ | Legacy module, needs tests |
+| src/business_analyzer/ai/insights.py | 20.59% | ❌ | Needs comprehensive tests |
+| src/vanna_grok.py | 14.52% | ❌ | CLI wrapper, needs tests |
+| src/business_analyzer/ai/base.py | 0.00% | ❌ | Core AI module, needs tests |
+| src/business_analyzer/analysis/customer_optimized.py | 0.00% | ❌ | Optimized version needs tests |
+| src/business_analyzer/analysis/financial_optimized.py | 0.00% | ❌ | Optimized version needs tests |
+| src/business_analyzer/analysis/unified.py | 0.00% | ❌ | Unified analyzer needs tests |
 
 ### Running Coverage Reports
 
@@ -237,9 +240,23 @@ pytest tests/ --cov=src --cov-report=term-missing
 
 # Run coverage for specific module
 pytest tests/ --cov=src.business_analyzer_combined --cov-report=term-missing
+
+# Run coverage with terminal summary (recommended for CI)
+pytest tests/ --cov=src --cov-report=term
 ```
 
 View the HTML report by opening `htmlcov/index.html` in your browser.
+
+### Coverage Commands Reference
+
+| Command | Purpose |
+|---------|---------|
+| `pytest tests/ --cov=src` | Run tests with coverage tracking |
+| `pytest tests/ --cov=src --cov-report=term` | Terminal summary only |
+| `pytest tests/ --cov=src --cov-report=term-missing` | Show missing lines |
+| `pytest tests/ --cov=src --cov-report=html` | Generate HTML report |
+| `pytest tests/ --cov=src --cov-report=xml` | Generate XML report for CI |
+| `pytest tests/ --cov-fail-under=80` | Fail if coverage < 80% |
 
 ### Coverage Goals
 

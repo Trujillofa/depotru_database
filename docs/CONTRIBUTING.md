@@ -103,28 +103,106 @@ flake8 src/ tests/
 mypy src/
 ```
 
-### 4. Run Pre-commit Hooks (Optional)
+### 4. Run Pre-commit Hooks (Recommended)
 
-If you installed pre-commit hooks, they will run automatically on commit. To run them manually:
+Pre-commit hooks automatically check and fix code quality issues before each commit. This ensures all code meets project standards.
+
+#### Installation
 
 ```bash
-# Run all hooks on all files
+# Install pre-commit framework
+pip install pre-commit
+
+# Install git hooks (one-time setup)
+pre-commit install
+
+# Verify installation
+pre-commit --version
+```
+
+#### Usage
+
+```bash
+# Run all hooks on all files (useful for checking entire codebase)
 pre-commit run --all-files
 
 # Run specific hook
 pre-commit run black
+pre-commit run flake8
+pre-commit run mypy
+
+# Run on specific files only
+pre-commit run --files src/my_module.py
 
 # Skip hooks for a specific commit (not recommended)
 git commit -m "message" --no-verify
+
+# Update hooks to latest versions
+pre-commit autoupdate
 ```
 
-**Pre-commit hooks include:**
-- **Trailing whitespace** - Removes trailing whitespace
-- **End of file fixer** - Ensures files end with a newline
-- **Black** - Code formatting
-- **isort** - Import sorting
-- **flake8** - Linting
-- **mypy** - Type checking
+#### Pre-commit Hooks Configuration
+
+The project uses the following hooks (configured in `.pre-commit-config.yaml`):
+
+**General File Checks:**
+- **trailing-whitespace** - Removes trailing whitespace from all files
+- **end-of-file-fixer** - Ensures files end with a single newline
+- **check-yaml** - Validates YAML file syntax
+- **check-json** - Validates JSON file syntax
+- **check-added-large-files** - Prevents accidentally adding large files (>500KB)
+- **check-merge-conflict** - Detects merge conflict markers
+- **check-case-conflict** - Detects case-insensitive filename conflicts
+- **detect-private-key** - Detects private keys in files
+- **mixed-line-ending** - Normalizes line endings to LF
+
+**Python Code Quality:**
+- **Black** (v23.12.1) - Code formatting (line length: 88, Python 3.8-3.11)
+- **isort** (v5.13.2) - Import sorting (black profile)
+- **flake8** (v7.0.0) - Linting with pyproject.toml support
+- **mypy** (v1.8.0) - Static type checking (Python 3.8)
+- **bandit** (v1.7.7) - Security vulnerability scanning
+
+All tool configurations are synchronized with `pyproject.toml` settings.
+
+#### Troubleshooting Pre-commit Issues
+
+**Hook fails during commit:**
+```bash
+# Run hooks manually to see detailed errors
+pre-commit run --all-files
+
+# Fix specific issues
+pre-commit run black          # Auto-fixes formatting
+pre-commit run isort          # Auto-fixes imports
+pre-commit run flake8         # Shows linting errors (manual fix needed)
+pre-commit run mypy           # Shows type errors (manual fix needed)
+```
+
+**Common issues:**
+- **Black formatting**: Run `pre-commit run black` to auto-fix
+- **isort imports**: Run `pre-commit run isort` to auto-fix
+- **flake8 errors**: Fix manually or adjust line length in pyproject.toml
+- **mypy type errors**: Add type hints or use `# type: ignore` for complex cases
+- **Large files**: Remove or add to .gitignore if necessary
+
+**Update failing hooks:**
+```bash
+# Update all hooks to latest versions
+pre-commit autoupdate
+
+# Clean pre-commit cache if issues persist
+pre-commit clean
+```
+
+**Disable hooks temporarily:**
+```bash
+# Skip all hooks for one commit (emergencies only)
+git commit -m "message" --no-verify
+
+# Uninstall hooks completely
+pre-commit uninstall
+```
 
 ### 5. Commit Your Changes
 
