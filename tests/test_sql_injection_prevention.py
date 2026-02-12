@@ -1,9 +1,13 @@
 """
 Test SQL injection prevention measures
 """
+
 import pytest
 
-# Use proper relative imports instead of path manipulation
+# Skip all tests if pymssql is not available (required by business_analyzer_combined)
+pytest.importorskip("pymssql", reason="pymssql not installed")
+
+# Import after skip check to avoid ModuleNotFoundError during collection
 from src.business_analyzer_combined import validate_sql_identifier
 
 
@@ -13,19 +17,19 @@ class TestSQLInjectionPrevention:
     def test_validate_sql_identifier_valid_names(self):
         """Test that valid SQL identifiers are accepted"""
         valid_names = [
-            'SmartBusiness',
-            'banco_datos',
-            'test_table',
-            'MyDatabase',
-            'table-name',
-            'ABC123',
-            'XY',
-            'AS',
-            'TS'
+            "SmartBusiness",
+            "banco_datos",
+            "test_table",
+            "MyDatabase",
+            "table-name",
+            "ABC123",
+            "XY",
+            "AS",
+            "TS",
         ]
-        
+
         for name in valid_names:
-            result = validate_sql_identifier(name, 'test')
+            result = validate_sql_identifier(name, "test")
             assert result == name, f"Valid name '{name}' should be accepted"
 
     def test_validate_sql_identifier_rejects_injection(self):
@@ -34,7 +38,7 @@ class TestSQLInjectionPrevention:
             "'; DROP TABLE users--",
             "table; DELETE FROM users",
             "../../../etc/passwd",
-            "table\"; DROP TABLE users--",
+            'table"; DROP TABLE users--',
             "' OR '1'='1",
             "table/*comment*/name",
             "table name",  # space
@@ -44,24 +48,24 @@ class TestSQLInjectionPrevention:
             "table(name)",  # parentheses
             "table[name]",  # brackets
         ]
-        
+
         for attempt in injection_attempts:
             with pytest.raises(ValueError, match="Invalid.*SQL identifiers"):
-                validate_sql_identifier(attempt, 'table')
+                validate_sql_identifier(attempt, "table")
 
     def test_validate_sql_identifier_rejects_empty(self):
         """Test that empty identifiers are rejected"""
         with pytest.raises(ValueError, match="cannot be empty"):
-            validate_sql_identifier('', 'table')
+            validate_sql_identifier("", "table")
 
     def test_validate_sql_identifier_rejects_too_long(self):
         """Test that overly long identifiers are rejected"""
-        long_name = 'a' * 129  # 129 characters
+        long_name = "a" * 129  # 129 characters
         with pytest.raises(ValueError, match="too long"):
-            validate_sql_identifier(long_name, 'table')
+            validate_sql_identifier(long_name, "table")
 
     def test_validate_sql_identifier_max_length_accepted(self):
         """Test that 128 character identifiers are accepted"""
-        max_length_name = 'a' * 128
-        result = validate_sql_identifier(max_length_name, 'table')
+        max_length_name = "a" * 128
+        result = validate_sql_identifier(max_length_name, "table")
         assert result == max_length_name
