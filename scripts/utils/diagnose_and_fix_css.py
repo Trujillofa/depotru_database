@@ -4,7 +4,6 @@ Diagnose and fix styles-m.css compilation issue
 """
 import os
 import sys
-import time
 
 import paramiko
 
@@ -57,16 +56,16 @@ try:
     print("\n" + "=" * 60)
     print("STEP 1: Examining styles-m.less")
     print("=" * 60)
-    cmd = (
-        f"cat {magento_root}/app/design/frontend/Olegnax/athlete2/web/css/styles-m.less"
-    )
+    less_path = "app/design/frontend/Olegnax/athlete2/web/css/styles-m.less"
+    cmd = f"cat {magento_root}/{less_path}"
     run_command(ssh, cmd, "Read styles-m.less")
 
     # Step 2: Check _reset.less content
     print("\n" + "=" * 60)
     print("STEP 2: Examining source/_reset.less")
     print("=" * 60)
-    cmd = f"head -30 {magento_root}/app/design/frontend/Olegnax/athlete2/web/css/source/_reset.less"
+    reset_path = "app/design/frontend/Olegnax/athlete2/web/css/source/_reset.less"
+    cmd = f"head -30 {magento_root}/{reset_path}"
     run_command(ssh, cmd, "Read first 30 lines of _reset.less")
 
     # Step 3: Create PHP script to test LESS compilation
@@ -74,14 +73,14 @@ try:
     print("STEP 3: Testing manual LESS compilation")
     print("=" * 60)
 
-    php_test_script = """<?php
-require '/home/deptrujillob2c/public_html/vendor/autoload.php';
+    php_test_script = f"""<?php
+require '{magento_root}/vendor/autoload.php';
 
 echo "\\n=== Testing LESS Compilation ===\\n\\n";
 
 // Test 1: Compile styles-m.less
 echo "Test 1: Compiling styles-m.less...\\n";
-try {
+try {{
     $options = [
         'compress' => false,
         'sourceMap' => false,
@@ -95,44 +94,45 @@ try {
         'media-target' => 'mobile'
     ]);
 
-    $parser->parseFile('/home/deptrujillob2c/public_html/app/design/frontend/Olegnax/athlete2/web/css/styles-m.less');
+    $parser->parseFile('{magento_root}/app/design/frontend/Olegnax/athlete2/web/css/styles-m.less');
     $css = $parser->getCss();
 
     echo "SUCCESS! Compiled " . strlen($css) . " bytes\\n";
 
-    if (strlen($css) > 0) {
+    if (strlen($css) > 0) {{
         echo "First 500 characters:\\n";
         echo substr($css, 0, 500) . "...\\n";
-    } else {
+    }} else {{
         echo "WARNING: CSS output is empty!\\n";
-    }
-} catch (Exception $e) {
+    }}
+}} catch (Exception $e) {{
     echo "ERROR: " . $e->getMessage() . "\\n";
     echo "Exception class: " . get_class($e) . "\\n";
-    if (method_exists($e, 'getTraceAsString')) {
+    if (method_exists($e, 'getTraceAsString')) {{
         echo "Stack trace:\\n" . $e->getTraceAsString() . "\\n";
-    }
-}
+    }}
+}}
 
 echo "\\n";
 
 // Test 2: Compile styles-l.less for comparison
 echo "Test 2: Compiling styles-l.less (for comparison)...\\n";
-try {
+try {{
     $parser2 = new \\Less_Parser();
-    $parser2->parseFile('/home/deptrujillob2c/public_html/app/design/frontend/Olegnax/athlete2/web/css/styles-l.less');
+    $parser2->parseFile('{magento_root}/app/design/frontend/Olegnax/athlete2/web/css/styles-l.less');
     $css2 = $parser2->getCss();
 
     echo "SUCCESS! Compiled " . strlen($css2) . " bytes\\n";
-} catch (Exception $e) {
+}} catch (Exception $e) {{
     echo "ERROR: " . $e->getMessage() . "\\n";
-}
+}}
 
 echo "\\n=== Test Complete ===\\n";
 """
 
     # Write test script to server
-    cmd = f"cat > {magento_root}/test_less_compilation.php << 'PHPEOF'\n{php_test_script}\nPHPEOF"
+    script_path = f"{magento_root}/test_less_compilation.php"
+    cmd = f"cat > {script_path} << 'PHPEOF'\n{php_test_script}\nPHPEOF"
     run_command(ssh, cmd, "Create PHP test script")
 
     # Run the test script
@@ -150,7 +150,8 @@ echo "\\n=== Test Complete ===\\n";
     print("\n" + "=" * 60)
     print("STEP 5: Checking for existing CSS files")
     print("=" * 60)
-    cmd = f"find {magento_root}/pub/static/frontend/Olegnax/athlete2 -name 'styles-*.css' 2>/dev/null | head -20"
+    find_path = "pub/static/frontend/Olegnax/athlete2"
+    cmd = f"find {magento_root}/{find_path} -name 'styles-*.css' 2>/dev/null | head -20"
     run_command(ssh, cmd, "Find styles CSS files")
 
     # Clean up test script
