@@ -1,0 +1,228 @@
+# Agent Configuration Template
+# Copy this file to .agents/config.yml and customize for your needs
+
+# Agent Definitions
+agents:
+  claude:
+    name: "Claude Code"
+    provider: "anthropic"
+    role: "architect"
+    priority: 1
+    capabilities:
+      - refactoring
+      - architecture
+      - debugging
+      - security_audit
+      - code_review
+      - design_patterns
+    branch_prefix: "agent/claude"
+    config_file: ".agents/claude/CLAUDE.md"
+    
+  gemini:
+    name: "Gemini CLI"
+    provider: "google"
+    role: "implementer"
+    priority: 2
+    capabilities:
+      - implementation
+      - research
+      - documentation
+      - testing
+      - code_generation
+      - web_search
+    branch_prefix: "agent/gemini"
+    config_file: ".agents/gemini/GEMINI.md"
+    
+  opencode:
+    name: "OpenCode/Sisyphus"
+    provider: "opencode"
+    role: "coordinator"
+    priority: 0
+    capabilities:
+      - coordination
+      - task_routing
+      - conflict_resolution
+      - project_management
+      - quality_assurance
+    branch_prefix: "agent/opencode"
+    config_file: ".agents/opencode/SISYPHUS.md"
+
+# Task Routing Rules
+# Defines which agents should handle different types of tasks
+routing:
+  architecture:
+    agents: [claude]
+    confidence_threshold: 0.8
+    description: "Complex refactoring, design patterns, structural changes"
+    
+  implementation:
+    agents: [gemini, claude]
+    confidence_threshold: 0.7
+    description: "Feature implementation, code writing"
+    
+  debugging:
+    agents: [claude]
+    confidence_threshold: 0.8
+    description: "Bug fixes, error investigation, troubleshooting"
+    
+  testing:
+    agents: [gemini, claude]
+    confidence_threshold: 0.6
+    description: "Unit tests, integration tests, test coverage"
+    
+  documentation:
+    agents: [gemini]
+    confidence_threshold: 0.6
+    description: "README updates, guides, code comments"
+    
+  research:
+    agents: [gemini]
+    confidence_threshold: 0.7
+    description: "Technology research, best practices, comparisons"
+    
+  review:
+    agents: [claude, gemini]
+    confidence_threshold: 0.7
+    description: "Code review, PR review, quality checks"
+
+# Consensus Settings
+# How multiple agents reach agreement on decisions
+consensus:
+  method: "weighted_voting"  # Options: majority, weighted_voting, unanimous
+  min_agents: 2
+  threshold: 0.7
+  escalate_to_human: true
+  max_deliberation_rounds: 3
+  
+  # Agent weights for weighted voting
+  weights:
+    claude: 0.4
+    gemini: 0.3
+    opencode: 0.3
+  
+  # Special rules for specific decision types
+  special_rules:
+    security:
+      method: "unanimous"
+      min_agents: 2
+      description: "All agents must agree on security decisions"
+    
+    performance:
+      method: "expert_weighted"
+      weights:
+        claude: 0.5
+        gemini: 0.2
+        opencode: 0.3
+      description: "Architect has more say in performance decisions"
+    
+    breaking_changes:
+      method: "unanimous"
+      escalate_to_human: true
+      description: "Breaking API changes require consensus + human approval"
+
+# Workflow Settings
+# How the multi-agent system operates
+workflow:
+  # Pull Request Settings
+  require_pr: true
+  require_review: true
+  min_reviewers: 1
+  auto_merge: false
+  
+  # Branch Settings
+  default_base_branch: "main"
+  delete_merged_branches: true
+  
+  # Quality Gates
+  require_tests: true
+  min_test_coverage: 80
+  require_linting: true
+  
+  # Coordination
+  max_parallel_tasks_per_agent: 3
+  enable_cross_review: true
+  
+# Communication Settings
+communication:
+  # PR Labels
+  label_prefix: "agent:"
+  
+  # Auto-labeling rules
+  auto_label:
+    - pattern: "agent/claude/*"
+      label: "agent:claude"
+    - pattern: "agent/gemini/*"
+      label: "agent:gemini"
+    - pattern: "hotfix/*"
+      label: "hotfix"
+      priority: "critical"
+  
+  # Notification settings
+  notify_on:
+    - task_assigned
+    - pr_created
+    - review_requested
+    - conflict_detected
+
+# Integration Settings
+integrations:
+  github:
+    enabled: true
+    use_checks: true
+    require_status_checks:
+      - "ci/tests"
+      - "ci/lint"
+    
+  slack:
+    enabled: false
+    webhook_url: ""  # Set via environment variable
+    channel: "#dev-agents"
+    
+  discord:
+    enabled: false
+    webhook_url: ""  # Set via environment variable
+
+# Advanced Settings
+advanced:
+  # Logging
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_file: ".agents/logs/agent_activity.log"
+  
+  # Caching
+  enable_caching: true
+  cache_ttl: 3600  # seconds
+  
+  # Performance
+  parallel_execution: true
+  max_workers: 4
+  
+  # Safety
+  dry_run_mode: false  # Set to true to test without making changes
+  backup_before_changes: true
+  
+# Custom Agent Instructions
+# Add custom instructions for specific agents
+instructions:
+  claude:
+    style: "analytical"
+    detail_level: "high"
+    preferred_patterns:
+      - "Type hints"
+      - "Docstrings"
+      - "Comprehensive error handling"
+    
+  gemini:
+    style: "pragmatic"
+    detail_level: "medium"
+    preferred_patterns:
+      - "Fast iteration"
+      - "Tests with implementation"
+      - "Documentation updates"
+    
+  opencode:
+    style: "coordinative"
+    detail_level: "high"
+    preferred_patterns:
+      - "Task decomposition"
+      - "Parallel execution"
+      - "Quality gates"
