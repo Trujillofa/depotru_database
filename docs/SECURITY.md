@@ -69,7 +69,7 @@ A comprehensive security audit was performed using [Bandit](https://bandit.readt
 2. **B110: Try-Except-Pass Patterns**
    - **Files:** `src/business_analyzer/ai/insights.py`, `src/vanna_grok.py`
    - **Issue:** Bare `except: pass` patterns suppress all exceptions
-   - **Resolution:** 
+   - **Resolution:**
      - Changed to `except Exception:` to catch only standard exceptions
      - Added `# nosec B110` comments with detailed justification
      - Added explanatory comments explaining why silent failure is acceptable
