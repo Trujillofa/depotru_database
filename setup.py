@@ -84,7 +84,7 @@ setup(
         "console_scripts": [
             "business-analyzer=src.business_analyzer_combined:main",
             "vanna-grok=src.vanna_grok:main",
-            "vanna-chat=src.vanna_chat:main",
+            "vanna-chat=src.vanna_grok:main",
         ],
     },
     include_package_data=True,

@@ -140,7 +140,7 @@ all = [
 # CLI Entry Points
 business-analyzer = "src.business_analyzer_combined:main"
 vanna-grok = "src.vanna_grok:main"
-vanna-chat = "src.vanna_chat:main"
+vanna-chat = "src.vanna_grok:main"
 
 [project.urls]
 Homepage = "https://github.com/Trujillofa/coding_omarchy"

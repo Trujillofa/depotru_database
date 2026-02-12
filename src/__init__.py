@@ -5,7 +5,7 @@ Main application source code for business intelligence and analytics.
 
 Modules:
 - business_analyzer_combined: Main business analyzer with comprehensive metrics
-- vanna_chat: Natural language SQL interface using Vanna AI
+- vanna_grok: Natural language SQL interface using Vanna AI (multi-provider)
 - config: Configuration management and environment variables
 - utils: Utility functions and helpers
 """

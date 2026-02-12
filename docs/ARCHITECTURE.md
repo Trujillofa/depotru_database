@@ -1,6 +1,6 @@
 # Architecture Documentation
 
-> **Comprehensive guide to the Business Data Analyzer architecture, design decisions, and technical organization.**
+> **Technical design, system organization, and implementation details for the Business Data Analyzer.**
 
 ---
 
@@ -14,16 +14,18 @@
 6. [Design Patterns](#design-patterns)
 7. [Security Architecture](#security-architecture)
 8. [Deployment Options](#deployment-options)
+9. [AI Integration](#ai-integration)
+10. [Performance Considerations](#performance-considerations)
 
 ---
 
 ## Overview
 
-The Business Data Analyzer is a comprehensive business intelligence platform built with Python, designed for hardware store operations. It provides three primary interfaces:
+The Business Data Analyzer is a Python-based business intelligence platform for hardware store operations. It provides three primary interfaces:
 
-1. **Traditional Script-based Analysis** - Command-line Python script
-2. **AI-Powered Natural Language Queries** - Vanna AI integration with Grok support
-3. **Interactive Web Dashboards** - Streamlit-based UI
+1. **AI Natural Language Queries** — Ask questions in plain English/Spanish via web chat
+2. **Traditional Script Analysis** — Command-line Python for automated reports
+3. **Interactive Web Dashboard** — Streamlit-based UI for teams
 
 ### Design Goals
 
@@ -38,61 +40,41 @@ The Business Data Analyzer is a comprehensive business intelligence platform bui
 ## Repository Structure
 
 ```
-coding_omarchy/
-│
+depotru_database/
 ├── src/                              # Source code
-│   ├── __init__.py                   # Package initialization
-│   ├── business_analyzer_combined.py # Main analyzer (1,500+ lines)
-│   ├── vanna_chat.py                 # AI natural language interface
+│   ├── vanna_grok.py                 # AI chat (Grok-optimized, Spanish)
+│   ├── vanna_chat.py                 # AI chat (multi-provider support)
+│   ├── business_analyzer_combined.py # Traditional analyzer (1,500+ lines)
 │   ├── config.py                     # Configuration management
 │   └── utils/                        # Utility functions
-│       └── __init__.py
 │
 ├── tests/                            # Test suite
-│   ├── __init__.py
+│   ├── test_basic.py                 # Repository structure tests
 │   ├── test_business_metrics.py      # Business logic tests
-│   └── test_metabase_connection.py   # Database tests
+│   ├── test_formatting.py            # Number formatting tests
+│   └── test_metabase_connection.py   # Database connection tests
 │
 ├── docs/                             # Documentation
-│   ├── START_HERE.md                 # Entry point
 │   ├── ARCHITECTURE.md               # This file
-│   ├── VANNA_SETUP.md                # AI setup guide
+│   ├── CONTRIBUTING.md               # Developer guide
 │   ├── SECURITY.md                   # Security guidelines
-│   └── ...                           # Additional docs
+│   ├── TESTING.md                    # Testing guide
+│   ├── ROADMAP.md                    # Future plans
+│   └── AI_AGENT_INSTRUCTIONS.md      # AI development guide
 │
 ├── examples/                         # Example implementations
-│   ├── improvements_p0.py            # Critical fixes
-│   ├── pandas_approach.py            # Modern approach
+│   ├── improvements_p0.py           # Critical bug fixes demo
+│   ├── pandas_approach.py            # Modern pandas implementation
 │   └── streamlit_dashboard.py        # Web dashboard
 │
 ├── data/                            # Data files
-│   └── database_explained.json       # Schema documentation
+│   └── database_explained.json      # Schema documentation
 │
 ├── .env.example                      # Environment template
-├── requirements.txt                  # Dependencies
+├── requirements.txt                  # Python dependencies
+├── pyproject.toml                    # Modern Python packaging
 └── README.md                         # Main documentation
 ```
-
-### Why This Structure?
-
-| Directory | Purpose | Rationale |
-|-----------|---------|-----------|
-| `src/` | Source code | Standard Python package structure |
-| `tests/` | Test suite | Separate tests from source (pytest convention) |
-| `docs/` | Documentation | Centralize all documentation |
-| `examples/` | Example code | Keep examples separate from main code |
-| `data/` | Data files | Separate data from code |
-
-**Previous issues:**
-- 10 documentation files scattered in root
-- Main scripts mixed with config/test files
-- No clear separation of concerns
-
-**Current benefits:**
-- Clear organization
-- Easy to navigate
-- Standard Python conventions
-- Scales well as project grows
 
 ---
 
@@ -100,104 +82,107 @@ coding_omarchy/
 
 ### 1. Configuration Management (`src/config.py`)
 
-**Purpose**: Centralized configuration with environment variable support.
+Centralized configuration with environment variable support:
 
 ```python
 class Config:
     """Application configuration"""
-    NCX_FILE_PATH = os.getenv('NCX_FILE_PATH', '...')
-    DB_HOST = os.getenv('DB_HOST', None)
-    DB_PASSWORD = os.getenv('DB_PASSWORD', None)
+    DB_HOST = os.getenv('DB_HOST', 'localhost')
+    DB_PASSWORD = os.getenv('DB_PASSWORD')
+    GROK_API_KEY = os.getenv('GROK_API_KEY')
     # ... more config
 ```
 
 **Features:**
 - Environment variable support (`.env` files via `python-dotenv`)
-- Fallback defaults
-- Validation logic
-- Security warnings
+- Fallback defaults for optional settings
+- Validation logic for required credentials
+- Security warnings for missing credentials
 
-**Configuration Classes:**
-- `Config` - Main application settings
-- `CustomerSegmentation` - Thresholds for customer categorization
-- `InventoryConfig` - Inventory velocity thresholds
-- `ProfitabilityConfig` - Profit margin thresholds
+### 2. AI Chat Interface (`src/vanna_grok.py`)
 
----
+Production-ready natural language to SQL conversion:
 
-### 2. Main Business Analyzer (`src/business_analyzer_combined.py`)
+**Key Features:**
+- **Grok (xAI) optimized** — Best for Spanish queries
+- **Colombian formatting** — $1.234.567, 45,6%
+- **AI insights** — Automatic business recommendations
+- **Production server** — Waitress for concurrent users
+- **Connection validation** — Ping test on startup
 
-**Purpose**: Core analytics engine for business metrics.
+**Architecture:**
+```
+User Question → Vanna AI → SQL Query → SQL Server → Results → Format → Display
+                ↓
+            Grok API (xAI)
+```
+
+**Usage:**
+```bash
+python src/vanna_grok.py
+# → http://localhost:8084
+```
+
+### 3. Traditional Analyzer (`src/business_analyzer_combined.py`)
+
+Core analytics engine for business metrics:
 
 **Key Functions:**
 
-| Function | Purpose | Lines |
-|----------|---------|-------|
-| `fetch_banco_datos()` | Database connection & query | ~50 |
-| `analyze_financial_metrics()` | Revenue, profit, margins | ~100 |
-| `analyze_customer_segments()` | Customer categorization | ~150 |
-| `analyze_product_performance()` | Top products, margins | ~120 |
-| `analyze_categories()` | Category-level analytics | ~80 |
-| `analyze_inventory()` | Inventory velocity | ~60 |
-| `generate_visualizations()` | PNG report generation | ~200 |
-
-**P0 Fixes Applied:**
-- ✅ Safe division (`safe_divide()` function)
-- ✅ Connection cleanup (`finally` block)
-- ✅ Input validation (`validate_date_format()`, etc.)
+| Function | Purpose |
+|----------|---------|
+| `fetch_banco_datos()` | Database connection & query |
+| `analyze_financial_metrics()` | Revenue, profit, margins |
+| `analyze_customer_segments()` | Customer categorization |
+| `analyze_product_performance()` | Top products, margins |
+| `analyze_categories()` | Category-level analytics |
+| `analyze_inventory()` | Inventory velocity |
+| `generate_visualizations()` | PNG report generation |
 
 **Usage:**
 ```bash
 python src/business_analyzer_combined.py --limit 5000
 ```
 
----
+### 4. Multi-Provider AI (`src/vanna_chat.py`)
 
-### 3. Vanna AI Integration (`src/vanna_chat.py`)
+Alternative AI interface supporting multiple providers:
 
-**Purpose**: Natural language to SQL conversion with web interface.
+**Supported Providers:**
+- OpenAI GPT-4
+- Grok (xAI)
+- Anthropic Claude
+- Ollama (local)
 
-**Supported AI Providers:**
-
-```python
-# Option 1: OpenAI GPT-4
-USE_OPENAI = True
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# Option 2: Grok (xAI) 🆕
-USE_GROK = True
-GROK_API_KEY = os.getenv("GROK_API_KEY")
-
-# Option 3: Anthropic Claude
-USE_ANTHROPIC = True
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-
-# Option 4: Ollama (local)
-USE_OLLAMA = True
-OLLAMA_MODEL = "mistral"
-```
-
-**Key Functions:**
-- `create_vanna_instance()` - Creates AI instance
-- `connect_to_database()` - Connects to SQL Server
-- `train_vanna_on_schema()` - Trains on database schema
-- `run_chat_interface()` - Launches Flask web UI
-
-**Architecture:**
-```
-User Question → Vanna AI → SQL Query → SQL Server → Results → User
-```
-
-**Usage:**
-```bash
-export GROK_API_KEY='xai-...'
-python src/vanna_chat.py
-# Open http://localhost:8084
-```
+**Use case:** Testing different AI providers or when Grok is unavailable.
 
 ---
 
 ## Data Flow
+
+### AI Chat Flow
+
+```
+┌─────────────┐
+│   User      │
+│ (Natural    │
+│  Language)  │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────┐
+│ vanna_grok.py           │
+│ (Flask Web UI)          │
+└──────┬──────────────────┘
+       │
+       ├──► Grok API ───────────► Generate SQL
+       │
+       ├──► SQL Server ──────────► Execute Query
+       │
+       ├──► Format Results ─────► Colombian formatting
+       │
+       └──► AI Insights ────────► Business recommendations
+```
 
 ### Traditional Analysis Flow
 
@@ -213,56 +198,13 @@ python src/vanna_chat.py
 │ combined.py             │
 └──────┬──────────────────┘
        │
-       ├──► Config (.env) ────► NCX File / Direct DB Config
+       ├──► Config (.env) ────► Database credentials
        │
        ├──► SQL Server ───────► banco_datos table
        │
        ├──► Analytics Engine ──► JSON Output
        │
        └──► Visualization ─────► PNG Report
-```
-
-### Vanna AI Flow
-
-```
-┌─────────────┐
-│   User      │
-│ (Natural    │
-│  Language)  │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────────────┐
-│ vanna_chat.py           │
-│ (Flask Web UI)          │
-└──────┬──────────────────┘
-       │
-       ├──► Grok/OpenAI/Claude ──► Generate SQL
-       │
-       ├──► SQL Server ──────────► Execute Query
-       │
-       └──► Format Results ───────► Display to User
-```
-
-### Streamlit Dashboard Flow
-
-```
-┌─────────────┐
-│   User      │
-│ (Web UI)    │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────────────┐
-│ streamlit_dashboard.py  │
-│ (Interactive Web App)   │
-└──────┬──────────────────┘
-       │
-       ├──► Pandas ────────────► Data Processing
-       │
-       ├──► Plotly ────────────► Interactive Charts
-       │
-       └──► SQL Server ────────► Real-time Data
 ```
 
 ---
@@ -274,27 +216,27 @@ python src/vanna_chat.py
 | Technology | Purpose | Version |
 |------------|---------|---------|
 | **Python** | Programming language | 3.8+ |
-| **pymssql** | SQL Server connection | 2.2.0+ |
+| **pymssql/pyodbc** | SQL Server connection | 2.2.0+ |
 | **python-dotenv** | Environment variables | 0.19.0+ |
+| **pandas** | Data manipulation | 1.3.0+ |
 | **matplotlib** | Static visualizations | 3.5.0+ |
-| **numpy** | Numerical computing | 1.21.0+ |
 
 ### AI/ML Stack
 
 | Technology | Purpose | Version |
 |------------|---------|---------|
-| **Vanna** | Natural language to SQL | 0.3.0+ |
+| **Vanna** | Natural language to SQL | 2.0.1 (legacy) |
 | **ChromaDB** | Vector database | 0.4.0+ |
 | **OpenAI** | GPT-4 API | 1.0.0+ |
 | **Anthropic** | Claude API | 0.7.0+ |
-| **Grok** | xAI API (OpenAI-compatible) | - |
 
 ### Web Framework Stack
 
 | Technology | Purpose | Version |
 |------------|---------|---------|
 | **Streamlit** | Web dashboards | 1.20.0+ |
-| **Flask** | Lightweight web server | 2.0.0+ |
+| **Flask** | Web server | 2.0.0+ |
+| **Waitress** | Production WSGI | 2.1.0+ |
 | **Plotly** | Interactive charts | 5.0.0+ |
 
 ### Development Stack
@@ -312,48 +254,24 @@ python src/vanna_chat.py
 
 ### 1. Configuration Pattern
 
-**Pattern**: Environment-based configuration with fallbacks
+Environment-based configuration with fallbacks:
 
 ```python
-# Bad (Hardcoded)
-DB_HOST = "192.168.1.100"
-DB_PASSWORD = "secret123"
-
 # Good (Environment-based)
 DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
+DB_PASSWORD = os.getenv('DB_PASSWORD')  # Required, no default
+
+# Validation function
+def require_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise ValueError(f"{name} is required")
+    return value
 ```
 
-**Benefits:**
-- Secure (no credentials in code)
-- Flexible (different configs for dev/prod)
-- Standard practice
+### 2. Safe Operations Pattern
 
----
-
-### 2. Dependency Injection Pattern
-
-**Pattern**: Pass dependencies as parameters
-
-```python
-# Instead of global connection
-def analyze_data():
-    conn = create_connection()  # Creates connection inside
-    # ...
-
-# Use dependency injection
-def analyze_data(connection):
-    # Use provided connection
-    # ...
-
-# Easier to test, mock, and reuse
-```
-
----
-
-### 3. Safe Operations Pattern
-
-**Pattern**: Wrapper functions for risky operations
+Wrapper functions for risky operations:
 
 ```python
 def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:
@@ -364,40 +282,47 @@ def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> f
 profit_margin = safe_divide(profit, revenue, 0.0)
 ```
 
-**Applied to:**
-- Division by zero (21 locations)
-- Date parsing
-- Database operations
+### 3. Factory Pattern
 
----
-
-### 4. Factory Pattern
-
-**Pattern**: Create different AI provider instances
+Create different AI provider instances:
 
 ```python
 def create_vanna_instance():
     """Factory for creating Vanna AI instance"""
-    if USE_OPENAI:
-        return create_openai_vanna()
-    elif USE_GROK:
+    if USE_GROK:
         return create_grok_vanna()
-    elif USE_ANTHROPIC:
-        return create_anthropic_vanna()
-    elif USE_OLLAMA:
-        return create_ollama_vanna()
+    elif USE_OPENAI:
+        return create_openai_vanna()
+    # ... etc
 ```
 
-**Benefits:**
-- Easy to add new providers
-- Single point of configuration
-- Runtime selection
+### 4. Retry Pattern
+
+Exponential backoff for API calls:
+
+```python
+from functools import wraps
+
+def retry_on_failure(max_attempts=3, delay=2):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_attempts - 1:
+                        raise
+                    time.sleep(delay * (attempt + 1))
+        return wrapper
+    return decorator
+```
 
 ---
 
 ## Security Architecture
 
-### 1. Credential Management
+### Credential Management
 
 **Layers of Security:**
 
@@ -419,11 +344,9 @@ def create_vanna_instance():
 - ✅ `Config` class validates credentials
 - ✅ Warnings for missing credentials
 
----
+### Input Validation
 
-### 2. Input Validation
-
-**Pattern**: Validate all user input
+Validate all user input:
 
 ```python
 def validate_date_format(date_str: str, param_name: str) -> datetime:
@@ -437,16 +360,8 @@ def validate_date_format(date_str: str, param_name: str) -> datetime:
         raise ValueError(f"Invalid {param_name}: {e}")
 ```
 
-**Validates:**
-- Date formats (YYYY-MM-DD)
-- Date ranges (start <= end)
-- Numeric limits (1 <= limit <= 1,000,000)
+### Database Security
 
----
-
-### 3. Database Security
-
-**Best Practices:**
 - Use parameterized queries (prevent SQL injection)
 - Least-privilege database accounts
 - Connection timeouts
@@ -466,14 +381,25 @@ cp .env.example .env
 # Edit .env with credentials
 
 # Run
-python src/business_analyzer_combined.py
+python src/vanna_grok.py
 ```
 
 **Best for**: Development, testing
 
----
+### Option 2: Production Server
 
-### Option 2: Docker Deployment
+```bash
+# Install with production dependencies
+pip install vanna chromadb pyodbc openai python-dotenv waitress
+
+# Run with production server
+PRODUCTION_MODE=true python src/vanna_grok.py
+# → Uses Waitress (handles 10-50 concurrent users)
+```
+
+**Best for**: Production deployment
+
+### Option 3: Docker Deployment
 
 ```dockerfile
 FROM python:3.10-slim
@@ -485,37 +411,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY .env .
 
-CMD ["python", "src/business_analyzer_combined.py"]
+CMD ["python", "src/vanna_grok.py"]
 ```
 
-**Best for**: Production, consistency
-
----
-
-### Option 3: Vanna AI Web Service
-
-```bash
-# Setup
-pip install vanna chromadb pyodbc openai
-export GROK_API_KEY='xai-...'
-
-# Run
-python src/vanna_chat.py
-
-# Deploy with
-gunicorn --bind 0.0.0.0:8084 src.vanna_chat:app
-```
-
-**Best for**: Business users, self-service
-
----
+**Best for**: Consistent deployments
 
 ### Option 4: Streamlit Cloud
 
 ```bash
-# Setup
-pip install streamlit pandas plotly
-
 # Run locally
 streamlit run examples/streamlit_dashboard.py
 
@@ -525,7 +428,69 @@ streamlit run examples/streamlit_dashboard.py
 # 3. Deploy!
 ```
 
-**Best for**: Teams, interactive dashboards
+**Best for**: Team dashboards
+
+---
+
+## AI Integration
+
+### Vanna AI Architecture
+
+Vanna uses **Retrieval Augmented Generation (RAG)**:
+
+1. **Training Phase**:
+   - Database schema (DDL) → ChromaDB
+   - Documentation → ChromaDB
+   - Example SQL queries → ChromaDB
+
+2. **Query Phase**:
+   - User question → Embedding
+   - Search ChromaDB for similar examples
+   - Generate SQL using context + LLM
+   - Execute SQL against database
+   - Return formatted results
+
+### Training Data
+
+The system includes pre-configured training for SmartBusiness database:
+
+```python
+# Schema training
+vn.train(ddl="""
+    CREATE TABLE banco_datos (
+        Fecha DATE,
+        TotalMasIva DECIMAL(18,2),
+        TotalSinIva DECIMAL(18,2),
+        ValorCosto DECIMAL(18,2),
+        TercerosNombres NVARCHAR(200),
+        ArticulosNombre NVARCHAR(200),
+        categoria NVARCHAR(100)
+    );
+""")
+
+# Documentation training
+vn.train(documentation="""
+    - TotalMasIva = revenue WITH tax (IVA)
+    - TotalSinIva = revenue WITHOUT tax
+    - Profit = TotalSinIva - ValorCosto
+    - Always exclude DocumentosCodigo IN ('XY', 'AS', 'TS')
+""")
+
+# Example queries (Spanish)
+examples = [
+    ("Top 10 productos más vendidos", "SELECT ..."),
+    ("Ganancias por categoría", "SELECT ..."),
+]
+```
+
+### AI Providers
+
+| Provider | Setup | Best For |
+|----------|-------|----------|
+| **Grok (xAI)** | `GROK_API_KEY=xai-...` | Production, Spanish |
+| **OpenAI** | `OPENAI_API_KEY=sk-...` | Accuracy |
+| **Claude** | `ANTHROPIC_API_KEY=sk-ant-...` | Complex queries |
+| **Ollama** | Local installation | Privacy, free |
 
 ---
 
@@ -560,77 +525,42 @@ df = pd.read_sql(query, conn)
 - Less memory usage
 - Leverages database indexes
 
+### Resource Optimization
+
+1. **Single AI client** — Reuse Grok client across requests
+2. **Limit AI context** — Send only top 15 rows for insights
+3. **Connection pooling** — Reuse database connections
+4. **Caching** — Cache frequent queries (future enhancement)
+
+### Performance Targets
+
+| Operation | Target | Current |
+|-----------|--------|---------|
+| SQL query generation | < 2s | ~1.5s |
+| DataFrame formatting (1000 rows) | < 0.5s | ~0.3s |
+| AI insights generation | < 5s | ~3s |
+| Page load time | < 3s | ~2s |
+
 ---
 
 ## Future Enhancements
 
-### Planned Improvements
+See [ROADMAP.md](ROADMAP.md) for detailed planning:
 
-1. **API Layer**
-   - RESTful API for programmatic access
-   - JWT authentication
-   - Rate limiting
-
-2. **Real-time Analytics**
-   - WebSocket connections
-   - Live dashboard updates
-   - Real-time alerts
-
-3. **Advanced AI**
-   - Predictive analytics
-   - Anomaly detection
-   - Automated insights
-
-4. **Multi-tenant Support**
-   - Multiple database support
-   - User authentication
-   - Role-based access control
-
----
-
-## Contributing to Architecture
-
-### Adding a New AI Provider
-
-1. Add configuration in `src/vanna_chat.py`:
-```python
-USE_NEW_PROVIDER = False
-NEW_PROVIDER_API_KEY = os.getenv("NEW_PROVIDER_API_KEY")
-```
-
-2. Add factory case in `create_vanna_instance()`:
-```python
-elif USE_NEW_PROVIDER:
-    from vanna.new_provider import NewProvider_Chat
-    # ... implementation
-```
-
-3. Update `.env.example`
-4. Update documentation
-
----
-
-### Adding a New Metric
-
-1. Add function in `src/business_analyzer_combined.py`:
-```python
-def analyze_new_metric(data):
-    """Analyze new metric"""
-    # ... implementation
-    return results
-```
-
-2. Call in main analysis flow
-3. Add visualization if needed
-4. Add tests in `tests/test_business_metrics.py`
-5. Update documentation
+1. **API Layer** — RESTful API for programmatic access
+2. **Query Caching** — Redis integration to reduce API costs
+3. **Authentication** — User accounts and access control
+4. **Scheduled Reports** — Daily/weekly automated reports
+5. **Smart Alerts** — Threshold-based notifications
+6. **Multi-tenancy** — Support multiple companies/stores
 
 ---
 
 ## References
 
-- [Python Best Practices](https://docs.python-guide.org/)
 - [Vanna AI Documentation](https://vanna.ai/docs/)
+- [Grok API Reference](https://docs.x.ai/)
+- [Pandas Documentation](https://pandas.pydata.org/docs/)
 - [Streamlit Documentation](https://docs.streamlit.io/)
 - [SQL Server Best Practices](https://docs.microsoft.com/sql/)
 

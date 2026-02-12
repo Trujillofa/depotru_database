@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
-vanna_grok.py (Vanna 2.0.1 Legacy Fixed – MSSQL + Grok Ready)
+vanna_ai.py (Vanna 2.0.1 Multi-Provider – MSSQL + AI Ready)
 Production-ready: Natural language → SQL → Charts for SmartBusiness.
-Features: Robust formatting, AI insights, security hardening, error handling.
+Features: Multi-provider AI support, robust formatting, AI insights, security hardening.
 Run: python src/vanna_grok.py → http://localhost:8084
+
+Supported AI Providers (set via AI_PROVIDER env var):
+- grok (default): xAI Grok via OpenAI-compatible API
+- openai: OpenAI GPT-4
+- anthropic: Anthropic Claude
+- ollama: Local Ollama (free, private)
 """
 
 import os
@@ -13,11 +19,11 @@ import time
 import inspect  # For safe frame inspection
 import warnings  # For better logging control
 import pandas as pd
-from typing import Any, List
+from typing import Any, List, Optional
 from functools import wraps
 from dotenv import load_dotenv
 
-# Vanna 2.0.1 legacy imports (stable for custom Grok/ChromaDB/MSSQL)
+# Vanna 2.0.1 legacy imports (stable for custom LLM endpoints)
 from vanna.legacy.chromadb.chromadb_vector import ChromaDB_VectorStore
 from vanna.legacy.openai import OpenAI_Chat
 from vanna.legacy.flask import VannaFlaskApp
@@ -31,6 +37,10 @@ load_dotenv()
 
 # Maximum stack depth to search for test file indicators (safety limit)
 MAX_STACK_FRAME_DEPTH = 20
+
+# Supported AI providers
+SUPPORTED_PROVIDERS = ["grok", "openai", "anthropic", "ollama"]
+DEFAULT_PROVIDER = "grok"
 
 # Set Colombian locale for number formatting (fallback to Spanish/default)
 try:
@@ -47,6 +57,7 @@ except locale.Error:
 # =============================================================================
 # SECURITY - Required Environment Variables (No Defaults!)
 # =============================================================================
+
 
 def require_env(name: str, validation_func=None, error_msg: str = None) -> str:
     """
@@ -78,9 +89,11 @@ def require_env(name: str, validation_func=None, error_msg: str = None) -> str:
 
     return value
 
+
 # =============================================================================
 # CONFIGURATION (All required from .env – No defaults for security!)
 # =============================================================================
+
 
 def _is_testing_env() -> bool:
     """
@@ -90,11 +103,11 @@ def _is_testing_env() -> bool:
     # Check if pytest is imported
     if "pytest" in sys.modules:
         return True
-    
+
     # Check for TESTING environment variable
     if os.getenv("TESTING", "false").lower() == "true":
         return True
-    
+
     # Check if running from a test file (using inspect for safety)
     current_frame = None  # Store original frame for cleanup
     try:
@@ -102,8 +115,8 @@ def _is_testing_env() -> bool:
         frame = current_frame  # Working pointer for traversal
         depth = 0
         while frame and depth < MAX_STACK_FRAME_DEPTH:
-            filename = frame.f_globals.get('__file__', '')
-            if 'test' in filename.lower() or 'pytest' in filename.lower():
+            filename = frame.f_globals.get("__file__", "")
+            if "test" in filename.lower() or "pytest" in filename.lower():
                 return True
             frame = frame.f_back
             depth += 1
@@ -113,7 +126,7 @@ def _is_testing_env() -> bool:
         # Clean up original frame reference to prevent memory leaks
         if current_frame is not None:
             del current_frame
-    
+
     return False
 
 
@@ -122,34 +135,34 @@ def get_env_or_test_default(
     test_default: str,
     validation_func=None,
     error_msg: str = None,
-    warn_on_test_default: bool = True
+    warn_on_test_default: bool = True,
 ) -> str:
     """
     Get environment variable with testing support.
-    
+
     In production: uses require_env() with validation and exits on failure.
     In testing: returns environment variable or test default with optional warning.
-    
+
     Note: In testing mode, validation_func and error_msg are NOT applied
     to allow tests to run with mock/dummy values. This is intentional to
     prevent tests from failing due to missing production credentials.
-    
+
     To force production behavior:
     - Set environment variable: TESTING="false" (lowercase)
     - Or ensure pytest is not in sys.modules
-    
+
     Args:
         name: Environment variable name
         test_default: Default value to use in testing mode
         validation_func: Validation function (production mode only)
         error_msg: Error message for validation failures (production mode only)
         warn_on_test_default: If True, issue warning when using test default
-    
+
     Returns:
         Environment variable value (validated in production, raw in testing)
     """
     is_testing = _is_testing_env()
-    
+
     if is_testing:
         value = os.getenv(name, test_default)
         # Issue warning when using test defaults to help catch config issues
@@ -157,7 +170,7 @@ def get_env_or_test_default(
             warnings.warn(
                 f"Testing mode: Using default value for {name}",
                 category=UserWarning,
-                stacklevel=2
+                stacklevel=2,
             )
         return value
     else:
@@ -165,17 +178,52 @@ def get_env_or_test_default(
 
 
 class Config:
-    # Required API keys and credentials
+    # AI Provider selection (grok, openai, anthropic, ollama)
+    AI_PROVIDER = os.getenv("AI_PROVIDER", DEFAULT_PROVIDER).lower()
+
+    # Validate provider
+    if AI_PROVIDER not in SUPPORTED_PROVIDERS:
+        print(f"❌ ERROR: AI_PROVIDER '{AI_PROVIDER}' no es válido.")
+        print(f"   Proveedores soportados: {', '.join(SUPPORTED_PROVIDERS)}")
+        print(f"   Ejemplo: AI_PROVIDER=grok")
+        sys.exit(1)
+
+    # Provider-specific API keys (only required for chosen provider)
     # Note: test_default values are ONLY used when _is_testing_env() returns True
     # (i.e., when pytest is running or TESTING="true"). In production, require_env()
     # enforces that real credentials must be provided via environment variables.
     # Test defaults intentionally pass validation to avoid masking real issues.
+
+    # Grok (xAI) configuration
     GROK_API_KEY = get_env_or_test_default(
         "GROK_API_KEY",
-        test_default="xai-test-key-for-ci-only",  # Matches xai- prefix for testing
+        test_default="xai-test-key-for-ci-only",
         validation_func=lambda x: x.startswith("xai-"),
-        error_msg="La clave debe comenzar con 'xai-'"
+        error_msg="La clave de Grok debe comenzar con 'xai-'",
+        warn_on_test_default=AI_PROVIDER == "grok",
     )
+
+    # OpenAI configuration
+    OPENAI_API_KEY = get_env_or_test_default(
+        "OPENAI_API_KEY",
+        test_default="sk-test-key-for-ci-only",
+        validation_func=lambda x: x.startswith("sk-"),
+        error_msg="La clave de OpenAI debe comenzar con 'sk-'",
+        warn_on_test_default=AI_PROVIDER == "openai",
+    )
+
+    # Anthropic configuration
+    ANTHROPIC_API_KEY = get_env_or_test_default(
+        "ANTHROPIC_API_KEY",
+        test_default="sk-ant-test-key-for-ci-only",
+        validation_func=lambda x: x.startswith("sk-ant-"),
+        error_msg="La clave de Anthropic debe comenzar con 'sk-ant-'",
+        warn_on_test_default=AI_PROVIDER == "anthropic",
+    )
+
+    # Ollama configuration (local, no API key needed)
+    OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
 
     DB_SERVER = get_env_or_test_default("DB_SERVER", test_default="test-server")
     DB_NAME = get_env_or_test_default("DB_NAME", test_default="TestDB")
@@ -193,20 +241,34 @@ class Config:
 
     # Known currency columns (explicit detection for reliability)
     CURRENCY_COLUMNS = [
-        'TotalMasIva', 'TotalSinIva', 'ValorCosto', 'Facturacion_Total',
-        'Revenue', 'Ganancia', 'Ganancia_Neta', 'total_revenue',
-        'Ticket_Promedio', 'Revenue_Neto', 'Precio', 'Costo'
+        "TotalMasIva",
+        "TotalSinIva",
+        "ValorCosto",
+        "Facturacion_Total",
+        "Revenue",
+        "Ganancia",
+        "Ganancia_Neta",
+        "total_revenue",
+        "Ticket_Promedio",
+        "Revenue_Neto",
+        "Precio",
+        "Costo",
     ]
 
     # Known percentage columns
     PERCENTAGE_COLUMNS = [
-        'Margen_Promedio_Pct', 'profit_margin_pct', 'Margen',
-        'margin_pct', 'percentage'
+        "Margen_Promedio_Pct",
+        "profit_margin_pct",
+        "Margen",
+        "margin_pct",
+        "percentage",
     ]
+
 
 # =============================================================================
 # ROBUST NUMBER FORMATTING (Colombian Pesos, Percentages, Thousands)
 # =============================================================================
+
 
 def format_number(value: Any, column_name: str = "") -> str:
     """
@@ -240,11 +302,11 @@ def format_number(value: Any, column_name: str = "") -> str:
     # 1. EXPLICIT COLUMN MATCH (highest priority)
     if column_name in known_currency_cols:
         # Colombian format: $123.456.789
-        return f"${num:,.0f}".replace(',', '.')
+        return f"${num:,.0f}".replace(",", ".")
 
     if column_name in known_pct_cols:
         # Spanish format: 45,6%
-        return f"{num:,.1f}%".replace('.', ',')
+        return f"{num:,.1f}%".replace(".", ",")
 
     # 2. KEYWORD DETECTION (fallback)
     col_lower = column_name.lower()
@@ -264,19 +326,18 @@ def format_number(value: Any, column_name: str = "") -> str:
         "iva",
     ]
     if any(kw in col_lower for kw in currency_keywords):
-        return f"${num:,.0f}".replace(',', '.')
+        return f"${num:,.0f}".replace(",", ".")
 
     # Percentage keywords
-    percentage_keywords = ['margen', 'margin', 'pct', 'porcentaje', '%']
+    percentage_keywords = ["margen", "margin", "pct", "porcentaje", "%"]
     if any(kw in col_lower for kw in percentage_keywords):
-        return f"{num:,.1f}%".replace('.', ',')
+        return f"{num:,.1f}%".replace(".", ",")
 
     # 3. TYPE-BASED FORMATTING (default)
     if num == int(num):  # Integer - quantities
-        return f"{int(num):,}".replace(',', '.')
+        return f"{int(num):,}".replace(",", ".")
     else:  # Decimal
-        return f"{num:,.2f}".replace(',', 'TEMP').replace('.', ',').replace('TEMP', '.')
-
+        return f"{num:,.2f}".replace(",", "TEMP").replace(".", ",").replace("TEMP", ".")
 
 
 def format_dataframe(df: pd.DataFrame, max_rows: int = None) -> pd.DataFrame:
@@ -292,9 +353,7 @@ def format_dataframe(df: pd.DataFrame, max_rows: int = None) -> pd.DataFrame:
 
     # Apply formatting to each column
     for col in df_display.columns:
-        df_display[col] = df_display[col].apply(
-            lambda x: format_number(x, col)
-        )
+        df_display[col] = df_display[col].apply(lambda x: format_number(x, col))
 
     # Warn if truncated
     if len(df) > max_rows:
@@ -302,9 +361,11 @@ def format_dataframe(df: pd.DataFrame, max_rows: int = None) -> pd.DataFrame:
 
     return df_display
 
+
 # =============================================================================
 # ERROR HANDLING - Retry Logic for API Calls
 # =============================================================================
+
 
 def retry_on_failure(max_attempts: int = 3, delay: int = 2, backoff: int = 2):
     """
@@ -315,6 +376,7 @@ def retry_on_failure(max_attempts: int = 3, delay: int = 2, backoff: int = 2):
         delay: Initial delay in seconds (default 2)
         backoff: Backoff multiplier (default 2 = exponential)
     """
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -334,13 +396,16 @@ def retry_on_failure(max_attempts: int = 3, delay: int = 2, backoff: int = 2):
                     current_delay *= backoff  # Exponential backoff
 
             return None
+
         return wrapper
+
     return decorator
 
 
 # =============================================================================
 # AI INSIGHTS GENERATION (Grok analyzes results and gives recommendations)
 # =============================================================================
+
 
 @retry_on_failure(max_attempts=3, delay=2)
 def generate_insights(
@@ -389,7 +454,7 @@ SQL ejecutado: {sql}
 Resultados (primeras {len(df_preview)} de {len(df)} filas):
 {df_preview.to_string()}
 
-Estadísticas: {summary['stats']}
+Estadísticas: {summary["stats"]}
 
 Por favor proporciona:
 1. 📊 Resumen ejecutivo (1-2 oraciones sobre qué muestran los datos)
@@ -414,7 +479,7 @@ Usa emojis para hacer el análisis más visual."""
         )
 
         insights = response.choices[0].message.content.strip()
-        return f"\n{'='*70}\n🤖 ANÁLISIS INTELIGENTE (Powered by Grok)\n{'='*70}\n\n{insights}\n{'='*70}\n"
+        return f"\n{'=' * 70}\n🤖 ANÁLISIS INTELIGENTE (Powered by Grok)\n{'=' * 70}\n\n{insights}\n{'=' * 70}\n"
 
     except Exception as e:
         # If all retries failed, return error message
@@ -422,26 +487,108 @@ Usa emojis para hacer el análisis más visual."""
 
 
 # =============================================================================
-# CUSTOM VANNA CLASS – Grok + ChromaDB + MSSQL (Resource Optimized)
+# AI PROVIDER FACTORY – Creates appropriate client based on AI_PROVIDER env var
 # =============================================================================
 
 
-class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
+def create_ai_client(provider: str = None):
+    """
+    Create AI client based on provider selection.
+
+    Args:
+        provider: AI provider name (grok, openai, anthropic, ollama)
+                 Defaults to Config.AI_PROVIDER
+
+    Returns:
+        Tuple of (client, config_dict) for Vanna initialization
+    """
+    if provider is None:
+        provider = Config.AI_PROVIDER
+
+    if provider == "grok":
+        # Grok uses OpenAI-compatible API
+        client = OpenAI(api_key=Config.GROK_API_KEY, base_url="https://api.x.ai/v1")
+        config = {"model": "grok-beta", "base_url": "https://api.x.ai/v1"}
+        return client, config, "openai"
+
+    elif provider == "openai":
+        client = OpenAI(api_key=Config.OPENAI_API_KEY)
+        config = {"model": "gpt-4", "api_key": Config.OPENAI_API_KEY}
+        return client, config, "openai"
+
+    elif provider == "anthropic":
+        # Anthropic uses its own client
+        config = {
+            "api_key": Config.ANTHROPIC_API_KEY,
+            "model": "claude-3-sonnet-20240229",
+        }
+        return None, config, "anthropic"
+
+    elif provider == "ollama":
+        # Ollama is local, no client needed
+        config = {"model": Config.OLLAMA_MODEL, "ollama_host": Config.OLLAMA_HOST}
+        return None, config, "ollama"
+
+    else:
+        raise ValueError(f"Proveedor no soportado: {provider}")
+
+
+# =============================================================================
+# CUSTOM VANNA CLASS – Multi-Provider + ChromaDB + MSSQL (Resource Optimized)
+# =============================================================================
+
+
+class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
+    """
+    Multi-provider Vanna AI class supporting Grok, OpenAI, Anthropic, and Ollama.
+
+    Provider selection via AI_PROVIDER environment variable:
+    - grok (default): xAI Grok
+    - openai: OpenAI GPT-4
+    - anthropic: Anthropic Claude
+    - ollama: Local Ollama instance
+    """
+
     def __init__(self):
+        self.provider = Config.AI_PROVIDER
+        self.ai_client, ai_config, provider_type = create_ai_client(self.provider)
+
         # 1. ChromaDB for RAG (local, private, fast)
         ChromaDB_VectorStore.__init__(self, config={})
 
-        # 2. Single shared Grok client (reused for SQL + insights)
-        self.grok_client = OpenAI(
-            api_key=Config.GROK_API_KEY,
-            base_url="https://api.x.ai/v1"
-        )
+        # 2. Initialize based on provider type
+        if provider_type == "openai":
+            # OpenAI-compatible providers (Grok, OpenAI)
+            OpenAI_Chat.__init__(self, client=self.ai_client, config=ai_config)
+        elif provider_type == "anthropic":
+            # For Anthropic, we need to import and use Anthropic_Chat
+            try:
+                from vanna.legacy.anthropic import Anthropic_Chat
+
+                # Initialize Anthropic chat
+                Anthropic_Chat.__init__(self, config=ai_config)
+            except ImportError:
+                print("❌ ERROR: Anthropic support requires 'anthropic' package")
+                print("   Instala con: pip install anthropic")
+                sys.exit(1)
+        elif provider_type == "ollama":
+            # For Ollama, we need to import and use Ollama
+            try:
+                from vanna.legacy.ollama import Ollama
+
+                Ollama.__init__(self, config=ai_config)
+            except ImportError:
+                print("❌ ERROR: Ollama support requires 'ollama' package")
+                print("   Instala con: pip install ollama")
+                sys.exit(1)
+
+        print(f"✓ Proveedor AI configurado: {self.provider.upper()}")
 
         # 3. Initialize OpenAI Chat with shared client
         OpenAI_Chat.__init__(
             self,
             client=self.grok_client,
-            config={"model": "grok-beta"}  # Stable as of Dec 2025
+            config={"model": "grok-beta"},  # Stable as of Dec 2025
         )
 
     def connect_to_mssql_odbc(self):
@@ -473,6 +620,23 @@ class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
             print("   - Linux: sudo apt install unixodbc-dev msodbcsql17")
             print("   - Or reply 'pymssql fallback' for pure Python DB connect")
             sys.exit(1)
+
+    def get_ai_client(self):
+        """Get the AI client for insights generation."""
+        if self.provider in ["grok", "openai"]:
+            return self.ai_client
+        elif self.provider == "anthropic":
+            try:
+                from anthropic import Anthropic
+
+                return Anthropic(api_key=Config.ANTHROPIC_API_KEY)
+            except ImportError:
+                print("⚠️  Anthropic package not installed, skipping insights")
+                return None
+        elif self.provider == "ollama":
+            # Ollama doesn't support insights generation in the same way
+            return None
+        return None
 
     def ask(
         self, question: str = None, print_results: bool = True, auto_train: bool = True
@@ -513,30 +677,22 @@ class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
             # ========== ENHANCEMENT 2: AI Insights (Optional) ==========
             insights = ""
             if Config.ENABLE_AI_INSIGHTS:
-                # Use shared Grok client (resource optimization)
-                insights = generate_insights(
-                    question=question,
-                    sql=sql,
-                    df=df,  # Use original unformatted data for analysis
-                    grok_client=self.grok_client  # ← Reuse shared client!
-                )
-                print(insights)
+                # Get appropriate AI client for insights
+                ai_client = self.get_ai_client()
+                if ai_client:
+                    insights = generate_insights(
+                        question=question,
+                        sql=sql,
+                        df=df,  # Use original unformatted data for analysis
+                        grok_client=ai_client,
+                    )
+                    print(insights)
+                else:
+                    print(
+                        f"\n💡 Insights no disponibles para proveedor: {self.provider}\n"
+                    )
             else:
                 print("\n💡 Insights desactivados (ENABLE_AI_INSIGHTS=false)\n")
-            # ========== ENHANCEMENT 2: AI Insights ==========
-            # Get Grok client for insights
-            grok_client = OpenAI(
-                api_key=Config.GROK_API_KEY, base_url="https://api.x.ai/v1"
-            )
-
-            insights = generate_insights(
-                question=question,
-                sql=sql,
-                df=df,  # Use original unformatted data for analysis
-                grok_client=grok_client,
-            )
-
-            print(insights)
 
             # Auto-train on successful queries (optional)
             if auto_train and df is not None:
@@ -557,7 +713,7 @@ class GrokVanna(ChromaDB_VectorStore, OpenAI_Chat):
 # =============================================================================
 
 
-def train_vanna(vn: GrokVanna):
+def train_vanna(vn: AIVanna):
     print("\nTraining on SmartBusiness schema & rules...")
 
     # 1. DDL (Table Structure)
@@ -665,12 +821,12 @@ def train_vanna(vn: GrokVanna):
 
 def main():
     print("=" * 70)
-    print("🚀 VANNA 2.0.1 + GROK – SMARTBUSINESS BI DASHBOARD")
-    print("   (Legacy Imports Fixed – Ask Away in Español!)")
+    print("🚀 VANNA 2.0.1 MULTI-PROVIDER – SMARTBUSINESS BI DASHBOARD")
+    print(f"   Proveedor AI: {Config.AI_PROVIDER.upper()}")
     print("=" * 70)
 
-    # 1. Instantiate Vanna
-    vn = GrokVanna()
+    # 1. Instantiate Vanna with selected provider
+    vn = AIVanna()
 
     # 2. Connect to DB
     vn.connect_to_mssql_odbc()
@@ -687,8 +843,8 @@ def main():
 
     app = VannaFlaskApp(
         vn,
-        allow_llm_to_see_data=True,  # Grok peeks at results for smarter viz
-        title="SmartBusiness + Grok AI",
+        allow_llm_to_see_data=True,
+        title=f"SmartBusiness + {Config.AI_PROVIDER.upper()} AI",
         subtitle="¡Chatea con tu base de datos en español natural!",
     )
 
