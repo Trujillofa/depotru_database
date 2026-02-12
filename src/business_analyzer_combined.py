@@ -30,8 +30,10 @@ import json
 import logging
 import os
 import re
+
+# nosec B405: xml.etree.ElementTree is used for parsing local Navicat NCX files only
 import statistics
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
@@ -242,8 +244,11 @@ except ImportError:
 
 # Cryptography for password decryption (fallback)
 try:
-    from Crypto.Cipher import AES
-    from Crypto.Util.Padding import unpad
+    # nosec B413: pyCrypto is deprecated but used as fallback for Navicat password decryption
+    # This is acceptable because: 1) It's a fallback only, 2) NavicatCipher is preferred,
+    # 3) The encrypted data is from local NCX files, not external/untrusted sources
+    from Crypto.Cipher import AES  # nosec B413
+    from Crypto.Util.Padding import unpad  # nosec B413
 
     CRYPTO_AVAILABLE = True
 except ImportError:
@@ -537,9 +542,9 @@ class BusinessMetricsCalculator:
             category_data[categoria]["total_revenue"] += revenue
             category_data[categoria]["total_cost"] += cost
             category_data[categoria]["orders"] += 1
-            category_data[categoria]["subcategories"][subcategoria][
-                "revenue"
-            ] += revenue
+            category_data[categoria]["subcategories"][subcategoria]["revenue"] += (
+                revenue
+            )
             category_data[categoria]["subcategories"][subcategoria]["cost"] += cost
             category_data[categoria]["subcategories"][subcategoria]["orders"] += 1
 
@@ -755,7 +760,8 @@ def decrypt_navicat_password(encrypted_password: str) -> str:
 def load_connections(file_path: str) -> List[Dict[str, Any]]:
     """Load and parse connections from a Navicat NCX file."""
     try:
-        tree = ET.parse(file_path)
+        # nosec B314: Parsing local Navicat NCX config files (trusted source)
+        tree = ET.parse(file_path)  # nosec B314
         root = tree.getroot()
         connections = []
 
@@ -845,7 +851,8 @@ def fetch_banco_datos(
 
         # SECURITY: Use validated identifiers in SQL query
         # Note: Table/DB names cannot be parameterized, but we've validated them above
-        cursor.execute(f"SELECT TOP 0 * FROM [{db_name}].[dbo].[{table_name}]")
+        # nosec B608: SQL identifiers validated with validate_sql_identifier()
+        cursor.execute(f"SELECT TOP 0 * FROM [{db_name}].[dbo].[{table_name}]")  # nosec B608
         columns = [desc[0] for desc in cursor.description]
         logger.info(f"Columns in {table_name}: {columns}")
 
@@ -857,11 +864,13 @@ def fetch_banco_datos(
                 ["%s"] * len(Config.EXCLUDED_DOCUMENT_CODES)
             )
             # Query to fetch data with parameterized exclusion list
-            query = f"SELECT TOP %s * FROM [{db_name}].[dbo].[{table_name}] WHERE DocumentosCodigo NOT IN ({excluded_placeholders})"
+            # nosec B608: SQL identifiers validated with validate_sql_identifier()
+            query = f"SELECT TOP %s * FROM [{db_name}].[dbo].[{table_name}] WHERE DocumentosCodigo NOT IN ({excluded_placeholders})"  # nosec B608
             params = [limit] + list(Config.EXCLUDED_DOCUMENT_CODES)
         else:
             # No exclusions - fetch all data
-            query = f"SELECT TOP %s * FROM [{db_name}].[dbo].[{table_name}]"
+            # nosec B608: SQL identifiers validated with validate_sql_identifier()
+            query = f"SELECT TOP %s * FROM [{db_name}].[dbo].[{table_name}]"  # nosec B608
             params = [limit]
 
         if start_date and end_date:
@@ -1330,7 +1339,7 @@ def generate_visualization_report(
         ax6.text(
             bar.get_x() + bar.get_width() / 2.0,
             height / 2,
-            f"${value:,.2f}\n({value/revenue_with_iva*100:.1f}%)",
+            f"${value:,.2f}\n({value / revenue_with_iva * 100:.1f}%)",
             ha="center",
             va="center",
             fontsize=10,
@@ -1355,8 +1364,8 @@ KEY BUSINESS INSIGHTS & RECOMMENDATIONS
 • Total Revenue (with IVA): ${revenue_with_iva:,.2f}
 • Total Revenue (without IVA): ${revenue_without_iva:,.2f}
 • Average Order Value: ${avg_order_value:,.2f}
-• Total Customers: {customers.get('total_customers', 0)}
-• Total Products: {products.get('total_products', 0)}
+• Total Customers: {customers.get("total_customers", 0)}
+• Total Products: {products.get("total_products", 0)}
 
 ⚠️ CRITICAL ISSUES:
 """
@@ -1426,7 +1435,7 @@ def print_detailed_statistics(analysis: Dict[str, Any]):
     trends = metrics["trend_analytics"]
     recommendations = analysis.get("strategic_recommendations", [])
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("DETAILED BUSINESS STATISTICS")
     print("=" * 80)
 
@@ -1660,9 +1669,9 @@ def main():
                 return
 
         # Print summary
-        print(f"\n{'='*80}")
+        print(f"\n{'=' * 80}")
         print("COMPREHENSIVE ANALYSIS COMPLETED")
-        print(f"{'='*80}")
+        print(f"{'=' * 80}")
         print(f"\n📊 Results Summary:")
         print(f"   • Total Records: {analysis['analysis_metadata']['total_records']}")
         print(
@@ -1678,7 +1687,7 @@ def main():
         recommendations = analysis.get("strategic_recommendations", [])
         for i, rec in enumerate(recommendations[:3], 1):
             print(f"   {i}. {rec}")
-        print(f"\n{'='*80}\n")
+        print(f"\n{'=' * 80}\n")
 
         # Generate visualization report automatically if matplotlib is available
         if MATPLOTLIB_AVAILABLE:

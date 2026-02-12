@@ -173,26 +173,29 @@ def generate_training_data(
 
     if include_common_queries:
         # Revenue queries
+        # nosec B608: table_name is validated by caller with validate_sql_identifier()
         examples.append(
             (
                 f"Total revenue from {table_name}",
-                f"SELECT SUM(TotalMasIva) AS Total_Revenue FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')",
+                f"SELECT SUM(TotalMasIva) AS Total_Revenue FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')",  # nosec B608
             )
         )
 
         # Top products
+        # nosec B608: table_name is validated by caller with validate_sql_identifier()
         examples.append(
             (
                 f"Top selling products from {table_name}",
-                f"SELECT TOP 10 ArticulosNombre, SUM(Cantidad) AS Total_Quantity FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') GROUP BY ArticulosNombre ORDER BY Total_Quantity DESC",
+                f"SELECT TOP 10 ArticulosNombre, SUM(Cantidad) AS Total_Quantity FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') GROUP BY ArticulosNombre ORDER BY Total_Quantity DESC",  # nosec B608
             )
         )
 
         # Monthly trends
+        # nosec B608: table_name is validated by caller with validate_sql_identifier()
         examples.append(
             (
                 f"Monthly revenue trends from {table_name}",
-                f"SELECT YEAR(Fecha) AS Year, MONTH(Fecha) AS Month, SUM(TotalMasIva) AS Revenue FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') GROUP BY YEAR(Fecha), MONTH(Fecha) ORDER BY Year, Month",
+                f"SELECT YEAR(Fecha) AS Year, MONTH(Fecha) AS Month, SUM(TotalMasIva) AS Revenue FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') GROUP BY YEAR(Fecha), MONTH(Fecha) ORDER BY Year, Month",  # nosec B608
             )
         )
 

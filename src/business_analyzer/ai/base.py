@@ -216,7 +216,9 @@ class Config:
 
     # Server configuration
     PORT = int(os.getenv("PORT", "8084"))
-    HOST = os.getenv("HOST", "0.0.0.0")
+    # nosec B104: Binding to 0.0.0.0 is intentional for the web server
+    # This allows the server to be accessible from other machines on the network
+    HOST = os.getenv("HOST", "0.0.0.0")  # nosec B104
 
     # Feature toggles
     ENABLE_AI_INSIGHTS = os.getenv("ENABLE_AI_INSIGHTS", "true").lower() == "true"

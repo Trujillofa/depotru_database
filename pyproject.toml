@@ -158,7 +158,7 @@ include-package-data = true
 zip-safe = false
 
 [tool.setuptools.package-data]
-"" = ["*.json", "*.md", "*.txt", "*.yaml", "*.yml"]
+"*" = ["*.json", "*.md", "*.txt", "*.yaml", "*.yml"]
 
 # ============================================================================
 # Pytest Configuration

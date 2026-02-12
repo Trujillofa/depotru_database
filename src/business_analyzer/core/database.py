@@ -1,8 +1,12 @@
 """Database Module for Business Analyzer. Handles connections, queries, security."""
+
 import logging
 import os
 import re
-import xml.etree.ElementTree as ET
+
+# nosec B405: xml.etree.ElementTree is used for parsing local Navicat NCX files only
+# These are trusted configuration files, not external/untrusted XML data
+import xml.etree.ElementTree as ET  # nosec B405
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
@@ -28,8 +32,11 @@ except ImportError:
     NAVICAT_CIPHER_AVAILABLE = False
 
 try:
-    from Crypto.Cipher import AES
-    from Crypto.Util.Padding import unpad
+    # nosec B413: pyCrypto is deprecated but used as fallback for Navicat password decryption
+    # This is acceptable because: 1) It's a fallback only, 2) NavicatCipher is preferred,
+    # 3) The encrypted data is from local NCX files, not external/untrusted sources
+    from Crypto.Cipher import AES  # nosec B413
+    from Crypto.Util.Padding import unpad  # nosec B413
 
     CRYPTO_AVAILABLE = True
 except ImportError:
@@ -133,7 +140,8 @@ class Database:
     def _parse_ncx_file(file_path: str) -> List[Dict[str, Any]]:
         try:
             connections = []
-            for conn in ET.parse(file_path).getroot().findall("Connection"):
+            # nosec B314: Parsing local Navicat NCX config files (trusted source)
+            for conn in ET.parse(file_path).getroot().findall("Connection"):  # nosec B314
                 host, user, encrypted = (
                     conn.get("Host"),
                     conn.get("UserName"),
@@ -297,10 +305,13 @@ class Database:
             else "*"
         )
         if excluded_codes:
-            query = f"SELECT TOP %s {col_str} FROM [{db_name}].[dbo].[{table_name}] WHERE DocumentosCodigo NOT IN ({', '.join(['%s'] * len(excluded_codes))})"
+            # nosec B608: SQL identifiers validated above with validate_sql_identifier()
+            # Parameters use %s placeholders for safe parameterization
+            query = f"SELECT TOP %s {col_str} FROM [{db_name}].[dbo].[{table_name}] WHERE DocumentosCodigo NOT IN ({', '.join(['%s'] * len(excluded_codes))})"  # nosec B608
             params = [limit] + list(excluded_codes)
         else:
-            query = f"SELECT TOP %s {col_str} FROM [{db_name}].[dbo].[{table_name}]"
+            # nosec B608: SQL identifiers validated above with validate_sql_identifier()
+            query = f"SELECT TOP %s {col_str} FROM [{db_name}].[dbo].[{table_name}]"  # nosec B608
             params = [limit]
         if start_date and end_date:
             query += " AND Fecha BETWEEN %s AND %s"
@@ -320,7 +331,8 @@ class Database:
         table_name = self.validate_sql_identifier(table or Config.DB_TABLE, "table")
         db_name = self.validate_sql_identifier(Config.DB_NAME, "database")
         cursor = self._connection.cursor()
-        cursor.execute(f"SELECT TOP 0 * FROM [{db_name}].[dbo].[{table_name}]")
+        # nosec B608: SQL identifiers validated above with validate_sql_identifier()
+        cursor.execute(f"SELECT TOP 0 * FROM [{db_name}].[dbo].[{table_name}]")  # nosec B608
         columns = [desc[0] for desc in cursor.description]
         cursor.close()
         return columns

@@ -59,7 +59,8 @@ def generate_insights(
                     "mean": float(df[col].mean()),
                     "total": float(df[col].sum()) if "sum" in dir(df[col]) else None,
                 }
-        except:
+        except Exception:  # nosec B110
+            # Silently skip columns that can't be processed for statistics
             pass
 
     # Create prompt

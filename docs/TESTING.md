@@ -201,13 +201,59 @@ def test_with_dependency():
 
 ## Coverage Reports
 
+### Current Coverage Status
+
+**Overall Coverage: ~54%** (Target: ≥80%)
+
+| Module | Coverage | Status |
+|--------|----------|--------|
+| src/config.py | 98.21% | ✅ |
+| src/business_analyzer/analysis/customer.py | 90.77% | ✅ |
+| src/business_analyzer/analysis/financial.py | 91.80% | ✅ |
+| src/business_analyzer/analysis/inventory.py | 88.89% | ✅ |
+| src/business_analyzer/analysis/product.py | 85.96% | ✅ |
+| src/business_analyzer/core/database.py | 88.57% | ✅ |
+| src/business_analyzer/ai/formatting.py | 82.19% | ✅ |
+| src/business_analyzer/ai/providers/grok.py | 71.43% | ⚠️ |
+| src/business_analyzer/ai/providers/openai.py | 68.42% | ⚠️ |
+| src/business_analyzer/ai/providers/anthropic.py | 59.09% | ⚠️ |
+| src/business_analyzer/ai/providers/ollama.py | 55.00% | ⚠️ |
+| src/business_analyzer/ai/training.py | 48.39% | ⚠️ |
+| src/business_analyzer_combined.py | 43.38% | ❌ |
+| src/business_analyzer/ai/insights.py | 20.59% | ❌ |
+| src/vanna_grok.py | 6.45% | ❌ |
+| src/business_analyzer/ai/base.py | 0.00% | ❌ |
+
+### Running Coverage Reports
+
 Generate HTML coverage reports:
 
 ```bash
+# Run all tests with coverage
 pytest tests/ --cov=src --cov-report=html
+
+# Run with terminal report showing missing lines
+pytest tests/ --cov=src --cov-report=term-missing
+
+# Run coverage for specific module
+pytest tests/ --cov=src.business_analyzer_combined --cov-report=term-missing
 ```
 
-View the report by opening `htmlcov/index.html` in your browser.
+View the HTML report by opening `htmlcov/index.html` in your browser.
+
+### Coverage Goals
+
+- **Target**: ≥80% overall coverage
+- **Critical modules** (business logic): ≥90%
+- **Utility modules**: ≥70%
+- **CLI/Wrapper modules**: ≥60%
+
+### Coverage in CI
+
+Coverage reports are automatically generated in GitHub Actions:
+- Coverage artifacts uploaded for Python 3.11 runs
+- Reports retained for 30 days
+- Access via Actions tab → Artifacts
 
 ## Troubleshooting
 

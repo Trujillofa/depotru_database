@@ -41,45 +41,81 @@ The Business Data Analyzer is a Python-based business intelligence platform for 
 
 ```
 depotru_database/
-├── src/                              # Source code
-│   ├── vanna_grok.py                 # AI chat (multi-provider, Spanish-optimized)
-│   ├── business_analyzer_combined.py # Traditional analyzer (1,500+ lines)
-│   ├── config.py                     # Configuration management
-│   └── utils/                        # Utility functions
+├── src/                                    # Source code
+│   ├── business_analyzer/                  # Modular business analyzer package
+│   │   ├── core/                           # Foundation modules
+│   │   │   ├── config.py                   # Configuration management
+│   │   │   ├── database.py                 # Database connectivity
+│   │   │   └── validation.py               # Input validation
+│   │   ├── analysis/                       # Business logic analyzers
+│   │   │   ├── customer.py                 # Customer segmentation
+│   │   │   ├── financial.py                # Financial metrics
+│   │   │   ├── product.py                  # Product performance
+│   │   │   ├── inventory.py                # Inventory velocity
+│   │   │   └── unified.py                    # Combined analyzer
+│   │   ├── ai/                             # AI integration
+│   │   │   ├── base.py                     # AIVanna base class
+│   │   │   ├── formatting.py               # Colombian number formatting
+│   │   │   ├── insights.py                 # AI insights generation
+│   │   │   ├── training.py                 # Schema training
+│   │   │   └── providers/                  # AI provider implementations
+│   │   │       ├── grok.py                 # xAI Grok
+│   │   │       ├── openai.py               # OpenAI GPT
+│   │   │       ├── anthropic.py            # Anthropic Claude
+│   │   │       └── ollama.py               # Local Ollama
+│   │   └── __init__.py                     # Package exports
+│   ├── vanna_grok.py                       # AI chat CLI (thin wrapper)
+│   ├── business_analyzer_combined.py       # Legacy analyzer (deprecated)
+│   └── config.py                           # Legacy config (deprecated)
 │
-├── tests/                            # Test suite
-│   ├── test_basic.py                 # Repository structure tests
-│   ├── test_business_metrics.py      # Business logic tests
-│   ├── test_formatting.py            # Number formatting tests
-│   └── test_metabase_connection.py   # Database connection tests
+├── tests/                                  # Test suite
+│   ├── test_basic.py                       # Repository structure tests
+│   ├── test_business_metrics.py            # Business logic tests
+│   ├── test_formatting.py                  # Number formatting tests
+│   ├── test_config.py                      # Configuration tests
+│   ├── analysis/                           # Analyzer module tests
+│   │   ├── test_customer.py
+│   │   ├── test_financial.py
+│   │   ├── test_product.py
+│   │   └── test_inventory.py
+│   └── ai/                                 # AI module tests
+│       └── test_base.py
 │
-├── docs/                             # Documentation
-│   ├── ARCHITECTURE.md               # This file
-│   ├── CONTRIBUTING.md               # Developer guide
-│   ├── SECURITY.md                   # Security guidelines
-│   ├── TESTING.md                    # Testing guide
-│   ├── ROADMAP.md                    # Future plans
-│   └── AI_AGENT_INSTRUCTIONS.md      # AI development guide
+├── docs/                                   # Documentation
+│   ├── ARCHITECTURE.md                     # This file
+│   ├── CONTRIBUTING.md                     # Developer guide
+│   ├── SECURITY.md                         # Security guidelines
+│   ├── TESTING.md                          # Testing guide
+│   ├── PERFORMANCE.md                      # Performance characteristics
+│   ├── ROADMAP.md                          # Future plans
+│   └── AI_AGENT_INSTRUCTIONS.md            # AI development guide
 │
-├── examples/                         # Example implementations
-│   ├── improvements_p0.py           # Critical bug fixes demo
-│   ├── pandas_approach.py            # Modern pandas implementation
-│   └── streamlit_dashboard.py        # Web dashboard
+├── examples/                               # Example implementations
+│   ├── improvements_p0.py                # Critical bug fixes demo
+│   ├── pandas_approach.py                  # Modern pandas implementation
+│   └── streamlit_dashboard.py            # Web dashboard
 │
-├── data/                            # Data files
-│   └── database_explained.json      # Schema documentation
+├── benchmarks/                             # Performance benchmarks
+│   └── performance_benchmark.py
 │
-├── .env.example                      # Environment template
-├── requirements.txt                  # Python dependencies
-├── pyproject.toml                    # Modern Python packaging
-└── README.md                         # Main documentation
+├── .github/workflows/                      # CI/CD pipelines
+│   └── ci.yml                              # Unified CI workflow
+│
+├── data/                                   # Data files
+│   └── database_explained.json           # Schema documentation
+│
+├── .env.example                            # Environment template
+├── requirements.txt                        # Python dependencies
+├── pyproject.toml                          # Modern Python packaging
+├── pytest.ini                              # Test configuration
+└── README.md                               # Main documentation
 ```
 
 ---
 
 ## Core Components
 
-### 1. Configuration Management (`src/config.py`)
+### 1. Configuration Management (`src/business_analyzer/core/config.py`)
 
 Centralized configuration with environment variable support:
 
@@ -97,13 +133,16 @@ class Config:
 - Fallback defaults for optional settings
 - Validation logic for required credentials
 - Security warnings for missing credentials
+- Customer segmentation thresholds
+- Inventory configuration
+- Profitability configuration
 
-### 2. AI Chat Interface (`src/vanna_grok.py`)
+### 2. AI Chat Interface (`src/business_analyzer/ai/`)
 
-Production-ready natural language to SQL conversion:
+Production-ready natural language to SQL conversion with modular architecture:
 
 **Key Features:**
-- **Grok (xAI) optimized** — Best for Spanish queries
+- **Multi-provider support** — Grok (xAI), OpenAI GPT-4, Anthropic Claude, Ollama (local)
 - **Colombian formatting** — $1.234.567, 45,6%
 - **AI insights** — Automatic business recommendations
 - **Production server** — Waitress for concurrent users
@@ -113,37 +152,64 @@ Production-ready natural language to SQL conversion:
 ```
 User Question → Vanna AI → SQL Query → SQL Server → Results → Format → Display
                 ↓
-            Grok API (xAI)
+            AI Provider (Grok/OpenAI/Claude/Ollama)
 ```
+
+**Module Structure:**
+- `base.py` — AIVanna class, Config, security utilities
+- `formatting.py` — Colombian number formatting
+- `insights.py` — AI-powered insights generation
+- `training.py` — Schema training and example generation
+- `providers/` — Provider-specific implementations
 
 **Usage:**
 ```bash
+# Set provider (default: grok)
+export AI_PROVIDER=grok  # or: openai, anthropic, ollama
+
 python src/vanna_grok.py
 # → http://localhost:8084
 ```
 
-### 3. Traditional Analyzer (`src/business_analyzer_combined.py`)
+### 3. Analysis Modules (`src/business_analyzer/analysis/`)
 
-Core analytics engine for business metrics:
+Modular analytics engine for business metrics:
 
-**Key Functions:**
+**Key Modules:**
 
-| Function | Purpose |
-|----------|---------|
-| `fetch_banco_datos()` | Database connection & query |
-| `analyze_financial_metrics()` | Revenue, profit, margins |
-| `analyze_customer_segments()` | Customer categorization |
-| `analyze_product_performance()` | Top products, margins |
-| `analyze_categories()` | Category-level analytics |
-| `analyze_inventory()` | Inventory velocity |
-| `generate_visualizations()` | PNG report generation |
+| Module | Purpose | Key Functions |
+|----------|---------|---------------|
+| `customer.py` | Customer segmentation | `CustomerAnalyzer.analyze()` |
+| `financial.py` | Financial metrics | `FinancialAnalyzer.analyze()` |
+| `product.py` | Product performance | `ProductAnalyzer.analyze()` |
+| `inventory.py` | Inventory velocity | `InventoryAnalyzer.analyze()` |
+| `unified.py` | Combined analysis | `UnifiedAnalyzer.analyze_all()` |
+
+**Legacy Support:**
+- `src/business_analyzer_combined.py` — Original monolithic analyzer (deprecated)
+- `src/config.py` — Legacy configuration (deprecated)
 
 **Usage:**
+```python
+# Modern modular approach
+from business_analyzer.analysis.financial import FinancialAnalyzer
+from business_analyzer.analysis.customer import CustomerAnalyzer
+
+# Analyze data
+financial = FinancialAnalyzer(data).analyze()
+customers = CustomerAnalyzer(data).analyze()
+
+# Or use unified analyzer for combined metrics
+from business_analyzer.analysis.unified import UnifiedAnalyzer
+results = UnifiedAnalyzer(data).analyze_all()
+```
+
+**Legacy CLI:**
 ```bash
 python src/business_analyzer_combined.py --limit 5000
 ```
 
-### 4. Multi-Provider AI Support (`src/vanna_grok.py`)
+### 4. Multi-Provider AI Support (`src/business_analyzer/ai/providers/`)
 
 The Vanna AI module supports multiple AI providers via environment variable:
 
@@ -152,6 +218,12 @@ The Vanna AI module supports multiple AI providers via environment variable:
 - `openai`: OpenAI GPT-4
 - `anthropic`: Anthropic Claude
 - `ollama`: Local Ollama instance (free, private)
+
+**Provider Modules:**
+- `providers/grok.py` — xAI Grok integration
+- `providers/openai.py` — OpenAI GPT integration
+- `providers/anthropic.py` — Anthropic Claude integration
+- `providers/ollama.py` — Local Ollama integration
 
 **Configuration:**
 ```bash
@@ -387,8 +459,16 @@ def validate_date_format(date_str: str, param_name: str) -> datetime:
 
 ```bash
 # Setup
-git clone <repo>
+git clone https://github.com/Trujillofa/depotru_database.git
+cd depotru_database
+
+# Install in development mode (recommended)
+pip install -e ".[dev]"
+
+# Or install from requirements.txt
 pip install -r requirements.txt
+
+# Configure environment
 cp .env.example .env
 # Edit .env with credentials
 
@@ -552,6 +632,17 @@ df = pd.read_sql(query, conn)
 | DataFrame formatting (1000 rows) | < 0.5s | ~0.3s |
 | AI insights generation | < 5s | ~3s |
 | Page load time | < 3s | ~2s |
+| Financial analysis (5000 rows) | < 10ms | ~6.5ms |
+| Combined analysis (5000 rows) | < 30ms | ~24.6ms |
+
+### Benchmarking
+
+Run performance benchmarks:
+```bash
+python benchmarks/performance_benchmark.py
+```
+
+See [docs/PERFORMANCE.md](PERFORMANCE.md) for detailed performance characteristics.
 
 ---
 
@@ -559,12 +650,23 @@ df = pd.read_sql(query, conn)
 
 See [ROADMAP.md](ROADMAP.md) for detailed planning:
 
+### Completed ✓
+1. **Modular Architecture** — Migrated from monolith to business_analyzer package
+2. **Multi-Provider AI** — Support for Grok, OpenAI, Anthropic, Ollama
+3. **CI/CD Pipeline** — GitHub Actions with test, lint, type-check, build
+4. **Pre-commit Hooks** — Black, isort, flake8, mypy
+5. **Security Audit** — Bandit integration, all issues resolved
+6. **Performance Benchmarks** — Comprehensive benchmarking suite
+
+### In Progress
 1. **API Layer** — RESTful API for programmatic access
 2. **Query Caching** — Redis integration to reduce API costs
-3. **Authentication** — User accounts and access control
-4. **Scheduled Reports** — Daily/weekly automated reports
-5. **Smart Alerts** — Threshold-based notifications
-6. **Multi-tenancy** — Support multiple companies/stores
+
+### Planned
+1. **Authentication** — User accounts and access control
+2. **Scheduled Reports** — Daily/weekly automated reports
+3. **Smart Alerts** — Threshold-based notifications
+4. **Multi-tenancy** — Support multiple companies/stores
 
 ---
 

@@ -104,8 +104,9 @@ class EnhancedAIVanna(AIVanna):
             if auto_train and df is not None:
                 try:
                     self.train(question=question, sql=sql)
-                except:
-                    pass  # Silent fail on training
+                except Exception:  # nosec B110
+                    # Silent fail on training - training failures shouldn't break the user experience
+                    pass
 
             return sql, df, insights
 

@@ -21,7 +21,16 @@ from collections import defaultdict
 from decimal import Decimal
 from typing import Any, Dict, List
 
-from ...config import InventoryConfig
+# Handle imports for both package and direct execution contexts
+try:
+    from ...config import InventoryConfig
+except ImportError:
+    # Fallback for direct execution
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from config import InventoryConfig
 
 
 def extract_value(row: Dict, keys: List[str], default=None):

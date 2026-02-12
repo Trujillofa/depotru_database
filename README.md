@@ -2,6 +2,7 @@
 
 > **AI-powered business intelligence for hardware store operations.** Ask questions in plain English, get SQL queries and visualizations automatically.
 
+[![CI](https://github.com/Trujillofa/depotru_database/actions/workflows/ci.yml/badge.svg)](https://github.com/Trujillofa/depotru_database/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
@@ -41,7 +42,14 @@
 ### Option 1: AI Natural Language (Recommended)
 
 ```bash
-# Install dependencies
+# Clone the repository
+git clone https://github.com/Trujillofa/depotru_database.git
+cd depotru_database
+
+# Install in development mode (recommended)
+pip install -e ".[dev]"
+
+# Or install minimal dependencies
 pip install vanna chromadb pyodbc openai python-dotenv pandas
 
 # Configure environment
@@ -101,33 +109,71 @@ streamlit run examples/streamlit_dashboard.py
 
 ```
 depotru_database/
-├── src/                              # Source code
-│   ├── vanna_grok.py                 # AI chat (multi-provider, Spanish-optimized)
-│   ├── business_analyzer_combined.py # Traditional analyzer
-│   └── config.py                     # Configuration management
+├── src/                                    # Source code
+│   ├── business_analyzer/                  # Modular business analyzer package
+│   │   ├── core/                           # Foundation modules
+│   │   │   ├── config.py                   # Configuration management
+│   │   │   ├── database.py                 # Database connectivity
+│   │   │   └── validation.py               # Input validation
+│   │   ├── analysis/                       # Business logic analyzers
+│   │   │   ├── customer.py                 # Customer segmentation
+│   │   │   ├── financial.py                # Financial metrics
+│   │   │   ├── product.py                  # Product performance
+│   │   │   ├── inventory.py                # Inventory velocity
+│   │   │   └── unified.py                    # Combined analyzer
+│   │   ├── ai/                             # AI integration
+│   │   │   ├── base.py                     # AIVanna base class
+│   │   │   ├── formatting.py               # Colombian number formatting
+│   │   │   ├── insights.py                 # AI insights generation
+│   │   │   ├── training.py                 # Schema training
+│   │   │   └── providers/                  # AI provider implementations
+│   │   │       ├── grok.py                 # xAI Grok
+│   │   │       ├── openai.py               # OpenAI GPT
+│   │   │       ├── anthropic.py            # Anthropic Claude
+│   │   │       └── ollama.py               # Local Ollama
+│   │   └── __init__.py                     # Package exports
+│   ├── vanna_grok.py                       # AI chat CLI (thin wrapper)
+│   ├── business_analyzer_combined.py       # Legacy analyzer (deprecated)
+│   └── config.py                           # Legacy config (deprecated)
 │
-├── tests/                            # Test suite
-│   ├── test_basic.py
-│   ├── test_business_metrics.py
-│   └── test_formatting.py
+├── tests/                                  # Test suite
+│   ├── test_basic.py                       # Repository structure tests
+│   ├── test_business_metrics.py            # Business logic tests
+│   ├── test_formatting.py                  # Number formatting tests
+│   ├── test_config.py                      # Configuration tests
+│   ├── analysis/                           # Analyzer module tests
+│   │   ├── test_customer.py
+│   │   ├── test_financial.py
+│   │   ├── test_product.py
+│   │   └── test_inventory.py
+│   └── ai/                                 # AI module tests
+│       └── test_base.py
 │
-├── docs/                             # Documentation
-│   ├── ARCHITECTURE.md               # Technical design
-│   ├── CONTRIBUTING.md               # Developer guide
-│   ├── SECURITY.md                   # Security guidelines
-│   ├── TESTING.md                    # Testing guide
-│   ├── ROADMAP.md                    # Future plans
-│   └── AI_AGENT_INSTRUCTIONS.md      # AI development guide
+├── docs/                                   # Documentation
+│   ├── ARCHITECTURE.md                     # Technical design
+│   ├── CONTRIBUTING.md                     # Developer guide
+│   ├── SECURITY.md                         # Security guidelines
+│   ├── TESTING.md                          # Testing guide
+│   ├── PERFORMANCE.md                      # Performance characteristics
+│   ├── ROADMAP.md                          # Future plans
+│   └── AI_AGENT_INSTRUCTIONS.md            # AI development guide
 │
-├── examples/                         # Example implementations
-│   ├── improvements_p0.py           # Critical fixes demo
-│   ├── pandas_approach.py            # Modern pandas implementation
-│   └── streamlit_dashboard.py        # Web dashboard
+├── examples/                               # Example implementations
+│   ├── improvements_p0.py                # Critical fixes demo
+│   ├── pandas_approach.py                  # Modern pandas implementation
+│   └── streamlit_dashboard.py            # Web dashboard
 │
-├── .env.example                      # Environment template
-├── requirements.txt                  # Python dependencies
-├── pyproject.toml                    # Modern Python packaging
-└── README.md                         # This file
+├── benchmarks/                             # Performance benchmarks
+│   └── performance_benchmark.py
+│
+├── .github/workflows/                      # CI/CD pipelines
+│   └── ci.yml                              # Unified CI workflow
+│
+├── .env.example                            # Environment template
+├── requirements.txt                        # Python dependencies
+├── pyproject.toml                          # Modern Python packaging
+├── pytest.ini                              # Test configuration
+└── README.md                               # This file
 ```
 
 ---
@@ -176,16 +222,16 @@ PORT=8084
 
 ```bash
 # Run all tests
-python run_tests.py
+pytest tests/ -v
 
 # Run quick tests (no dependencies required)
-python run_tests.py --quick
+pytest tests/test_basic.py -v
 
 # Run with coverage
-python run_tests.py --cov
+pytest tests/ -v --cov=src --cov-report=term-missing
 
-# Using pytest directly
-pytest tests/ -v
+# Run specific test file
+pytest tests/analysis/test_financial.py -v
 ```
 
 See [docs/TESTING.md](docs/TESTING.md) for detailed testing guide.
