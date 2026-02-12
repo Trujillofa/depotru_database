@@ -35,9 +35,9 @@ class TestConfig:
 
         for var in required_vars:
             value = os.getenv(var, test_defaults.get(var))
-            assert value is not None, (
-                f"{var} should be set in environment or have test default"
-            )
+            assert (
+                value is not None
+            ), f"{var} should be set in environment or have test default"
             assert len(value) > 0, f"{var} should not be empty"
 
     def test_grok_api_key_format(self):
