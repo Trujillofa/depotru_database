@@ -9,7 +9,7 @@ import os
 import sys
 import warnings
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Callable
 
 # Optional dotenv import
 try:
@@ -41,6 +41,8 @@ try:
 except ImportError:
     OpenAI = None
 
+from .circuit_breaker import CircuitBreakerError, with_circuit_breaker
+
 # =============================================================================
 # CONSTANTS
 # =============================================================================
@@ -70,14 +72,14 @@ def require_env(name: str, validation_func=None, error_msg: str = None) -> str:
         if error_msg:
             print(f"   {error_msg}")
         else:
-            print(f"   Agrega a tu archivo .env:")
-            print(f"   {name}=tu-valor-aqui")
-        print(f"\n   Ejemplo .env completo:")
-        print(f"   GROK_API_KEY=xai-tu-clave")
-        print(f"   DB_SERVER=tu-servidor")
-        print(f"   DB_NAME=SmartBusiness")
-        print(f"   DB_USER=tu-usuario")
-        print(f"   DB_PASSWORD=tu-contraseña")
+            print("   Agrega a tu archivo .env:")
+        print(f"   {name}=tu-valor-aqui")
+        print("\n   Ejemplo .env completo:")
+        print("   GROK_API_KEY=xai-tu-clave")
+        print("   DB_SERVER=tu-servidor")
+        print("   DB_NAME=SmartBusiness")
+        print("   DB_USER=tu-usuario")
+        print("   DB_PASSWORD=tu-contraseña")
         sys.exit(1)
 
     if validation_func and not validation_func(value):
@@ -357,6 +359,37 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
                 sys.exit(1)
 
         print(f"✓ Proveedor AI configurado: {self.provider.upper()}")
+
+    @retry_on_failure(max_attempts=2, delay=1)
+    def generate_sql(
+        self, question: str, allow_llm_to_see_data: bool = True, **kwargs
+    ) -> str:
+        """
+        Generate SQL with circuit breaker and retry logic.
+        """
+        try:
+            # Apply circuit breaker based on provider
+            decorator = with_circuit_breaker(self.provider)
+            decorated_gen = decorator(super().generate_sql)
+            return decorated_gen(
+                question=question, allow_llm_to_see_data=allow_llm_to_see_data, **kwargs
+            )
+        except CircuitBreakerError as e:
+            print(f"🛑 AI Provider {self.provider.upper()} is currently offline: {e}")
+            return None
+        except Exception as e:
+            print(f"⚠️ Error generating SQL with {self.provider.upper()}: {e}")
+            raise
+
+    def run_sql(self, sql: str, **kwargs):
+        """
+        Execute SQL with improved error handling.
+        """
+        try:
+            return super().run_sql(sql, **kwargs)
+        except Exception as e:
+            print(f"❌ Database error executing SQL: {e}")
+            return None
 
     def connect_to_mssql_odbc(self):
         """Connect & test via ODBC (Vanna's go-to for MSSQL)"""

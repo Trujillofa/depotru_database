@@ -4,7 +4,7 @@ Training module for AI package.
 Contains schema training logic for Vanna AI.
 """
 
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 
 def train_on_schema(vn, schema_name: str = "SmartBusiness"):
@@ -78,62 +78,104 @@ def train_with_examples(vn, examples: List[Tuple[str, str]] = None):
 
 def get_default_training_examples() -> List[Tuple[str, str]]:
     """
-    Get default training examples for SmartBusiness database.
-
-    Returns:
-        List of (question, sql) tuples
+    Get expanded hardware-specific training examples for SmartBusiness.
+    Covers sales, inventory, customers, and temporal trends.
     """
     return [
         (
             "Top 10 productos más vendidos este año",
             """
-            SELECT TOP 10
-                ArticulosNombre AS Producto,
-                SUM(Cantidad) AS Unidades_Vendidas,
-                SUM(TotalMasIva) AS Revenue
-            FROM banco_datos
-            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
-              AND YEAR(Fecha) = YEAR(GETDATE())
-            GROUP BY ArticulosNombre
-            ORDER BY Revenue DESC
-        """,
+            SELECT TOP 10 ArticulosNombre AS Producto, SUM(Cantidad) AS Unidades_Vendidas,
+            SUM(TotalMasIva) AS Revenue FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            GROUP BY ArticulosNombre ORDER BY Revenue DESC
+            """,
         ),
         (
             "Ganancias por categoría en el último mes",
             """
-            SELECT
-                categoria,
-                SUM(TotalSinIva - ValorCosto) AS Ganancia_Neta
-            FROM banco_datos
-            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
-              AND Fecha >= DATEADD(MONTH, -1, GETDATE())
-            GROUP BY categoria
-            ORDER BY Ganancia_Neta DESC
-        """,
+            SELECT categoria, SUM(TotalSinIva - ValorCosto) AS Ganancia_Neta FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND Fecha >= DATEADD(MONTH, -1, GETDATE())
+            GROUP BY categoria ORDER BY Ganancia_Neta DESC
+            """,
         ),
         (
             "Top 10 clientes por facturación total",
             """
-            SELECT TOP 10
-                TercerosNombres AS Cliente,
-                SUM(TotalMasIva) AS Facturacion_Total
-            FROM banco_datos
-            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
-            GROUP BY TercerosNombres
-            ORDER BY Facturacion_Total DESC
-        """,
+            SELECT TOP 10 TercerosNombres AS Cliente, SUM(TotalMasIva) AS Facturacion_Total
+            FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            GROUP BY TercerosNombres ORDER BY Facturacion_Total DESC
+            """,
         ),
         (
             "Margen de ganancia promedio por subcategoría",
             """
-            SELECT
-                subcategoria,
-                AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0)) AS Margen_Promedio_Pct
-            FROM banco_datos
-            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') AND TotalSinIva > 0
-            GROUP BY subcategoria
-            ORDER BY Margen_Promedio_Pct DESC
-        """,
+            SELECT subcategoria, AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0))
+            AS Margen_Promedio_Pct FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND TotalSinIva > 0 GROUP BY subcategoria ORDER BY Margen_Promedio_Pct DESC
+            """,
+        ),
+        (
+            "Productos con margen de ganancia inferior al 10%",
+            """
+            SELECT ArticulosNombre, categoria, AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0))
+            AS Margen FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND TotalSinIva > 0 GROUP BY ArticulosNombre, categoria
+            HAVING AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0)) < 10 ORDER BY Margen ASC
+            """,
+        ),
+        (
+            "Ventas mensuales comparando este año vs año pasado",
+            """
+            SELECT YEAR(Fecha) AS Ano, MONTH(Fecha) AS Mes, SUM(TotalMasIva) AS Ventas
+            FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND YEAR(Fecha) >= YEAR(GETDATE()) - 1 GROUP BY YEAR(Fecha), MONTH(Fecha) ORDER BY Mes, Ano
+            """,
+        ),
+        (
+            "Clientes que no han comprado en los últimos 90 días",
+            """
+            SELECT TercerosNombres, MAX(Fecha) AS Ultima_Compra FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            GROUP BY TercerosNombres HAVING MAX(Fecha) < DATEADD(DAY, -90, GETDATE())
+            ORDER BY Ultima_Compra DESC
+            """,
+        ),
+        (
+            "Categorías que representan el 80% de la facturación",
+            """
+            SELECT categoria, SUM(TotalMasIva) AS Facturacion FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            GROUP BY categoria ORDER BY Facturacion DESC
+            """,
+        ),
+        (
+            "Ticket promedio por mes",
+            """
+            SELECT YEAR(Fecha) AS Ano, MONTH(Fecha) AS Mes,
+            SUM(TotalMasIva) / COUNT(DISTINCT NumeroDocumento) AS Ticket_Promedio
+            FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            GROUP BY YEAR(Fecha), MONTH(Fecha) ORDER BY Ano DESC, Mes DESC
+            """,
+        ),
+        (
+            "Días de la semana con mayor volumen de ventas",
+            """
+            SELECT DATENAME(WEEKDAY, Fecha) AS Dia, SUM(TotalMasIva) AS Ventas
+            FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            GROUP BY DATENAME(WEEKDAY, Fecha), DATEPART(WEEKDAY, Fecha) ORDER BY DATEPART(WEEKDAY, Fecha)
+            """,
+        ),
+        (
+            "Ranking de proveedores por rentabilidad",
+            """
+            SELECT subcategoria AS Proveedor, SUM(TotalSinIva - ValorCosto) AS Ganancia_Total
+            FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            GROUP BY subcategoria ORDER BY Ganancia_Total DESC
+            """,
         ),
     ]
 
@@ -174,30 +216,30 @@ def generate_training_data(
     if include_common_queries:
         # Revenue queries
         # nosec B608: table_name is validated by caller with validate_sql_identifier()
-        examples.append(
-            (
-                f"Total revenue from {table_name}",
-                f"SELECT SUM(TotalMasIva) AS Total_Revenue FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')",  # nosec B608
-            )
+        rev_query = (
+            f"SELECT SUM(TotalMasIva) AS Total_Revenue FROM {table_name} "
+            f"WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')"
         )
+        examples.append((f"Total revenue from {table_name}", rev_query))
 
         # Top products
         # nosec B608: table_name is validated by caller with validate_sql_identifier()
-        examples.append(
-            (
-                f"Top selling products from {table_name}",
-                f"SELECT TOP 10 ArticulosNombre, SUM(Cantidad) AS Total_Quantity FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') GROUP BY ArticulosNombre ORDER BY Total_Quantity DESC",  # nosec B608
-            )
+        prod_query = (
+            f"SELECT TOP 10 ArticulosNombre, SUM(Cantidad) AS Total_Quantity "
+            f"FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') "
+            f"GROUP BY ArticulosNombre ORDER BY Total_Quantity DESC"
         )
+        examples.append((f"Top selling products from {table_name}", prod_query))
 
         # Monthly trends
         # nosec B608: table_name is validated by caller with validate_sql_identifier()
-        examples.append(
-            (
-                f"Monthly revenue trends from {table_name}",
-                f"SELECT YEAR(Fecha) AS Year, MONTH(Fecha) AS Month, SUM(TotalMasIva) AS Revenue FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') GROUP BY YEAR(Fecha), MONTH(Fecha) ORDER BY Year, Month",  # nosec B608
-            )
+        trend_query = (
+            f"SELECT YEAR(Fecha) AS Year, MONTH(Fecha) AS Month, "
+            f"SUM(TotalMasIva) AS Revenue FROM {table_name} "
+            f"WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') "
+            f"GROUP BY YEAR(Fecha), MONTH(Fecha) ORDER BY Year, Month"
         )
+        examples.append((f"Monthly revenue trends from {table_name}", trend_query))
 
     return examples
 
