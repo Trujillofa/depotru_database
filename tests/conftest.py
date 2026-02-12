@@ -56,6 +56,42 @@ mock_config.Config.LOG_LEVEL = "INFO"  # Must be string for getattr(logging, ...
 mock_config.Config.has_direct_db_config = Mock(return_value=True)
 mock_config.Config.ensure_output_dir = Mock(return_value=Path("/tmp"))
 
+# AI package config attributes
+mock_config.Config.AI_PROVIDER = "grok"
+mock_config.Config.GROK_API_KEY = "xai-test-key"
+mock_config.Config.OPENAI_API_KEY = "sk-test-key"
+mock_config.Config.ANTHROPIC_API_KEY = "sk-ant-test-key"
+mock_config.Config.OLLAMA_HOST = "http://localhost:11434"
+mock_config.Config.OLLAMA_MODEL = "mistral"
+mock_config.Config.HOST = "0.0.0.0"
+mock_config.Config.PORT = 8084
+mock_config.Config.ENABLE_AI_INSIGHTS = True
+mock_config.Config.INSIGHTS_MAX_ROWS = 15
+mock_config.Config.MAX_DISPLAY_ROWS = 100
+
+# AI package module-level constants
+mock_config.SUPPORTED_PROVIDERS = ["grok", "openai", "anthropic", "ollama"]
+mock_config.DEFAULT_PROVIDER = "grok"
+
+# Customer segmentation thresholds
+mock_config.CustomerSegmentation = Mock()
+mock_config.CustomerSegmentation.VIP_REVENUE_THRESHOLD = 500000
+mock_config.CustomerSegmentation.VIP_ORDERS_THRESHOLD = 5
+mock_config.CustomerSegmentation.HIGH_VALUE_THRESHOLD = 200000
+mock_config.CustomerSegmentation.FREQUENT_ORDERS_THRESHOLD = 10
+mock_config.CustomerSegmentation.REGULAR_REVENUE_THRESHOLD = 50000
+
+# Inventory velocity thresholds
+mock_config.InventoryConfig = Mock()
+mock_config.InventoryConfig.FAST_MOVER_THRESHOLD = 5
+mock_config.InventoryConfig.SLOW_MOVER_THRESHOLD = 2
+
+# Profitability thresholds
+mock_config.ProfitabilityConfig = Mock()
+mock_config.ProfitabilityConfig.LOW_MARGIN_THRESHOLD = 10
+mock_config.ProfitabilityConfig.STAR_PRODUCT_MARGIN = 30
+mock_config.ProfitabilityConfig.CRITICAL_MARGIN = 0
+
 # Insert the mock config into sys.modules BEFORE importing business_analyzer
 sys.modules["config"] = mock_config
 

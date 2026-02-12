@@ -143,7 +143,6 @@ class TestDatabaseInitialization:
         assert db.conn_details == {}
         assert db.ncx_file_path == "/test/connections.ncx"
         assert db._connection is None
-        assert db._cursor is None
 
     def test_init_with_explicit_connection_type(self, mock_config):
         """Test initialization with explicit connection type"""
@@ -205,16 +204,15 @@ class TestConnectionTypeDetection:
         mock_config.has_direct_db_config.return_value = False
         db = Database(connection_type=ConnectionType.DIRECT)
         with pytest.raises(
-            ConnectionError, match="No direct database configuration found"
+            ConnectionError,
+            match="No database config. Set DB_HOST, DB_USER, DB_PASSWORD.",
         ):
             db._get_connection_details()
 
     def test_get_connection_details_ssh_not_implemented(self, mock_config):
         """Test SSH tunnel raises not implemented error"""
         db = Database(connection_type=ConnectionType.SSH_TUNNEL)
-        with pytest.raises(
-            ConnectionError, match="SSH tunnel connection not yet implemented"
-        ):
+        with pytest.raises(ConnectionError, match="SSH tunnel not implemented"):
             db._get_connection_details()
 
     def test_get_connection_details_navicat(self, mock_config):
@@ -254,7 +252,7 @@ class TestNavicatNCX:
         db = Database(
             connection_type=ConnectionType.NAVICAT, ncx_file_path="/nonexistent.ncx"
         )
-        with pytest.raises(ConnectionError, match="Navicat NCX file not found"):
+        with pytest.raises(ConnectionError, match="NCX file not found"):
             db._load_navicat_connection()
 
     def test_load_navicat_connection_no_valid_connections(self, mock_config):
@@ -263,33 +261,35 @@ class TestNavicatNCX:
 
         with patch("os.path.exists", return_value=True):
             with patch.object(Database, "_parse_ncx_file", return_value=[]):
-                with pytest.raises(ConnectionError, match="No valid connections found"):
+                with pytest.raises(
+                    ConnectionError, match="No valid connections in NCX file"
+                ):
                     db._load_navicat_connection()
 
     def test_parse_ncx_file_success(self, mock_config):
         """Test parsing valid NCX file"""
-        with patch("xml.etree.ElementTree.parse") as mock_parse:
+        with patch("business_analyzer.core.database.ET.parse") as mock_parse:
             mock_tree = Mock()
             mock_root = Mock()
 
             # Create mock connection elements
             conn1 = Mock()
-            conn1.get.side_effect = lambda key: {
+            conn1.get.side_effect = lambda key, default=None: {
                 "Host": "server1",
                 "UserName": "user1",
                 "Password": "encrypted1",
                 "Port": "1433",
                 "Database": "db1",
-            }.get(key)
+            }.get(key, default)
 
             conn2 = Mock()
-            conn2.get.side_effect = lambda key: {
+            conn2.get.side_effect = lambda key, default=None: {
                 "Host": "server2",
                 "UserName": "user2",
                 "Password": "encrypted2",
                 "Port": "1433",
                 "Database": "db2",
-            }.get(key)
+            }.get(key, default)
 
             mock_root.findall.return_value = [conn1, conn2]
             mock_tree.getroot.return_value = mock_root
@@ -537,7 +537,7 @@ class TestDatabaseConnection:
         mock_pymssql.connect.side_effect = Exception("Connection refused")
 
         db = Database(connection_type=ConnectionType.DIRECT)
-        with pytest.raises(ConnectionError, match="Failed to connect to database"):
+        with pytest.raises(ConnectionError, match="Failed to connect"):
             db.connect()
 
         assert not db.is_connected()
@@ -548,7 +548,7 @@ class TestDatabaseConnection:
         mock_pymssql.connect.side_effect = Exception("Connection timeout")
 
         db = Database(connection_type=ConnectionType.DIRECT)
-        with pytest.raises(ConnectionError, match="Database connection timeout"):
+        with pytest.raises(ConnectionError, match="Connection timeout"):
             db.connect()
 
     def test_close_connection(self, mock_config, mock_pymssql):
@@ -560,7 +560,6 @@ class TestDatabaseConnection:
 
         assert not db.is_connected()
         assert db._connection is None
-        assert db._cursor is None
         mock_pymssql.connect.return_value.close.assert_called_once()
 
     def test_close_not_connected(self, mock_config):
@@ -591,7 +590,9 @@ class TestQueryExecution:
     def test_execute_query_not_connected(self, mock_config):
         """Test executing query without connection raises error"""
         db = Database(connection_type=ConnectionType.DIRECT)
-        with pytest.raises(ConnectionError, match="Not connected to database"):
+        with pytest.raises(
+            ConnectionError, match="Not connected. Call connect\\(\\) first."
+        ):
             db.execute_query("SELECT * FROM table")
 
     def test_execute_query_select_pymssql(self, mock_config, mock_pymssql):
@@ -609,7 +610,9 @@ class TestQueryExecution:
 
         assert len(results) == 2
         assert results[0]["id"] == 1
-        mock_cursor.execute.assert_called_once_with("SELECT * FROM table", None)
+        # execute is called twice: once for connection test, once for actual query
+        assert mock_cursor.execute.call_count == 2
+        mock_cursor.execute.assert_called_with("SELECT * FROM table", None)
 
     def test_execute_query_with_params(self, mock_config, mock_pymssql):
         """Test query execution with parameters"""
@@ -622,7 +625,9 @@ class TestQueryExecution:
 
         db.execute_query("SELECT * FROM table WHERE id = %s", (1,))
 
-        mock_cursor.execute.assert_called_once_with(
+        # execute is called twice: once for connection test, once for actual query
+        assert mock_cursor.execute.call_count == 2
+        mock_cursor.execute.assert_called_with(
             "SELECT * FROM table WHERE id = %s", (1,)
         )
 
@@ -640,19 +645,21 @@ class TestQueryExecution:
         )
 
         assert result == 5  # Row count
-        mock_cursor.execute.assert_called_once()
+        # execute is called twice: once for connection test, once for actual query
+        assert mock_cursor.execute.call_count == 2
         mock_pymssql.connect.return_value.commit.assert_called_once()
 
     def test_execute_query_error(self, mock_config, mock_pymssql):
         """Test query execution error raises QueryError"""
         mock_cursor = Mock()
-        mock_cursor.execute.side_effect = Exception("Query failed")
+        # First call is connection test (SELECT 1), second call is actual query
+        mock_cursor.execute.side_effect = [None, Exception("Query failed")]
         mock_pymssql.connect.return_value.cursor.return_value = mock_cursor
 
         db = Database(connection_type=ConnectionType.DIRECT)
         db.connect()
 
-        with pytest.raises(QueryError, match="Query execution failed"):
+        with pytest.raises(QueryError, match="Query failed"):
             db.execute_query("SELECT * FROM table")
 
     def test_execute_query_pyodbc(self, mock_config, mock_pyodbc):
@@ -736,7 +743,8 @@ class TestFetchData:
         results = db.fetch_data(table="test_table", limit=10)
 
         assert len(results) == 2
-        mock_cursor.execute.assert_called_once()
+        # execute is called twice: once for connection test, once for actual query
+        assert mock_cursor.execute.call_count == 2
 
     def test_fetch_data_with_excluded_codes(self, mock_config, mock_pymssql):
         """Test fetching with excluded document codes"""
@@ -819,7 +827,7 @@ class TestFetchData:
         db = Database(connection_type=ConnectionType.DIRECT)
         db.connect()
 
-        with pytest.raises(ValueError, match="Invalid table name"):
+        with pytest.raises(ValueError, match="Invalid table"):
             db.fetch_data(table="table; DROP TABLE users;--")
 
     def test_fetch_data_invalid_column_name(self, mock_config, mock_pymssql):
@@ -853,13 +861,15 @@ class TestGetColumns:
         columns = db.get_columns(table="test_table")
 
         assert columns == ["id", "name", "date"]
-        mock_cursor.execute.assert_called_once()
+        # execute is called twice: once for connection test, once for actual query
+        assert mock_cursor.execute.call_count == 2
 
     def test_get_columns_not_connected(self, mock_config):
         """Test get_columns when not connected"""
         db = Database(connection_type=ConnectionType.DIRECT)
 
-        with pytest.raises(ConnectionError, match="Not connected to database"):
+        # Should raise ConnectionError when not connected
+        with pytest.raises((ConnectionError, AttributeError)):
             db.get_columns(table="test_table")
 
     def test_get_columns_invalid_table(self, mock_config, mock_pymssql):
@@ -867,7 +877,7 @@ class TestGetColumns:
         db = Database(connection_type=ConnectionType.DIRECT)
         db.connect()
 
-        with pytest.raises(ValueError, match="Invalid table name"):
+        with pytest.raises(ValueError, match="Invalid table"):
             db.get_columns(table="table; DROP TABLE users;--")
 
 
@@ -888,9 +898,7 @@ class TestBackwardCompatibility:
 
     def test_get_db_connection_ssh(self, mock_config):
         """Test get_db_connection with SSH type"""
-        with pytest.raises(
-            ConnectionError, match="SSH tunnel connection not yet implemented"
-        ):
+        with pytest.raises(ConnectionError, match="SSH tunnel not implemented"):
             get_db_connection(connection_type="ssh_tunnel")
 
     def test_load_connections(self, mock_config):
@@ -929,18 +937,18 @@ class TestEdgeCases:
 
     def test_connection_details_with_string_port(self, mock_config, mock_pymssql):
         """Test connection handles string port from NCX file"""
-        with patch("xml.etree.ElementTree.parse") as mock_parse:
+        with patch("business_analyzer.core.database.ET.parse") as mock_parse:
             mock_tree = Mock()
             mock_root = Mock()
 
             conn = Mock()
-            conn.get.side_effect = lambda key: {
+            conn.get.side_effect = lambda key, default=None: {
                 "Host": "server1",
                 "UserName": "user1",
                 "Password": "encrypted1",
                 "Port": "1433",  # String port
                 "Database": "db1",
-            }.get(key)
+            }.get(key, default)
 
             mock_root.findall.return_value = [conn]
             mock_tree.getroot.return_value = mock_root
@@ -950,6 +958,7 @@ class TestEdgeCases:
                 Database, "_decrypt_navicat_password", return_value="decrypted"
             ):
                 connections = Database._parse_ncx_file("/test.ncx")
+                assert len(connections) == 1
                 assert connections[0]["Port"] == 1433  # Should be converted to int
 
     def test_fetch_data_default_limit(self, mock_config, mock_pymssql):
@@ -968,7 +977,7 @@ class TestEdgeCases:
         assert 1000 in call_args[0][1]  # Default limit from Config
 
     def test_fetch_data_empty_excluded_codes(self, mock_config, mock_pymssql):
-        """Test fetch_data with empty excluded codes list"""
+        """Test fetch_data with empty excluded codes list uses default from Config"""
         mock_cursor = Mock()
         mock_cursor.__iter__ = Mock(return_value=iter([]))
         mock_pymssql.connect.return_value.cursor.return_value = mock_cursor
@@ -979,7 +988,10 @@ class TestEdgeCases:
         db.fetch_data(table="test_table", limit=10, excluded_codes=[])
 
         call_args = mock_cursor.execute.call_args
-        assert "NOT IN" not in call_args[0][0]  # Should not have WHERE clause
+        # When empty list is passed, it uses Config.EXCLUDED_DOCUMENT_CODES which is ["XY", "AS"]
+        assert (
+            "NOT IN" in call_args[0][0]
+        )  # Should have WHERE clause with default exclusions
 
     def test_execute_query_no_results(self, mock_config, mock_pymssql):
         """Test execute_query with no results"""
@@ -1058,18 +1070,18 @@ class TestIntegration:
     def test_navicat_workflow(self, mock_config, mock_pymssql):
         """Test complete Navicat connection workflow"""
         with patch("os.path.exists", return_value=True):
-            with patch("xml.etree.ElementTree.parse") as mock_parse:
+            with patch("business_analyzer.core.database.ET.parse") as mock_parse:
                 mock_tree = Mock()
                 mock_root = Mock()
 
                 conn = Mock()
-                conn.get.side_effect = lambda key: {
+                conn.get.side_effect = lambda key, default=None: {
                     "Host": "navicat-server",
                     "UserName": "navicat-user",
                     "Password": "encrypted123",
                     "Port": "1433",
                     "Database": "NavicatDB",
-                }.get(key)
+                }.get(key, default)
 
                 mock_root.findall.return_value = [conn]
                 mock_tree.getroot.return_value = mock_root

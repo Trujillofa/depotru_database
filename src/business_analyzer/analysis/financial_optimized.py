@@ -14,8 +14,8 @@ Benchmark improvements:
 
 import statistics
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
 from functools import lru_cache
+from typing import Any, Dict, List, Optional
 
 
 def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:

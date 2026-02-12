@@ -12,6 +12,11 @@ import pytest
 # Mock dependencies before import
 sys.modules["vanna"] = Mock()
 sys.modules["vanna.base"] = Mock()
+sys.modules["vanna.legacy"] = Mock()
+sys.modules["vanna.legacy.flask"] = Mock()
+sys.modules["vanna.legacy.chromadb"] = Mock()
+sys.modules["vanna.legacy.chromadb.chromadb_vector"] = Mock()
+sys.modules["vanna.legacy.openai"] = Mock()
 sys.modules["chromadb"] = Mock()
 sys.modules["chromadb.utils"] = Mock()
 sys.modules["chromadb.utils.embedding_functions"] = Mock()
@@ -42,6 +47,7 @@ class TestVannaGrokCLI:
         """Test that vanna_grok module can be imported"""
         try:
             import vanna_grok
+
             assert True
         except ImportError as e:
             pytest.fail(f"Failed to import vanna_grok: {e}")
@@ -50,6 +56,7 @@ class TestVannaGrokCLI:
         """Test that main function exists"""
         try:
             from vanna_grok import main
+
             assert callable(main)
         except ImportError:
             pytest.skip("vanna_grok.main not available")

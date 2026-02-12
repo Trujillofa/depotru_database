@@ -34,6 +34,7 @@ mock_config.Config.LOG_LEVEL = "INFO"
 mock_config.Config.has_direct_db_config = Mock(return_value=True)
 mock_config.Config.ensure_output_dir = Mock(return_value=Path("/tmp"))
 
+
 # Create real config classes with actual values (not mocks)
 class CustomerSegmentation:
     VIP_REVENUE_THRESHOLD = 500000
@@ -42,14 +43,17 @@ class CustomerSegmentation:
     FREQUENT_ORDERS_THRESHOLD = 10
     REGULAR_REVENUE_THRESHOLD = 50000
 
+
 class InventoryConfig:
     FAST_MOVER_THRESHOLD = 5
     SLOW_MOVER_THRESHOLD = 2
+
 
 class ProfitabilityConfig:
     LOW_MARGIN_THRESHOLD = 10
     STAR_PRODUCT_MARGIN = 30
     CRITICAL_MARGIN = 0
+
 
 mock_config.CustomerSegmentation = CustomerSegmentation
 mock_config.InventoryConfig = InventoryConfig
@@ -206,14 +210,14 @@ class TestDecimalEncoder:
         encoder = DecimalEncoder()
         result = encoder.default(Decimal("10.5"))
         assert result == 10.5
-        
+
         result = encoder.default(Decimal("100"))
         assert result == 100
 
     def test_non_decimal_fallback(self):
         """Test fallback for non-Decimal types"""
         encoder = DecimalEncoder()
-        
+
         # Should use default JSON encoder for other types
         with pytest.raises(TypeError):
             encoder.default("string")
@@ -272,12 +276,12 @@ class TestBusinessMetricsCalculator:
         """Test financial metrics calculation"""
         calc = BusinessMetricsCalculator(sample_data)
         financial = calc.calculate_financial_metrics()
-        
+
         # Check structure
         assert "revenue" in financial
         assert "costs" in financial
         assert "profit" in financial
-        
+
         # Verify calculations
         assert financial["revenue"]["total_with_iva"] == 522.0  # 116 + 232 + 174
         assert financial["revenue"]["total_without_iva"] == 450.0  # 100 + 200 + 150
@@ -287,42 +291,42 @@ class TestBusinessMetricsCalculator:
         """Test customer analysis"""
         calc = BusinessMetricsCalculator(sample_data)
         customers = calc.analyze_customers()
-        
+
         assert "total_customers" in customers
         assert "top_customers" in customers
         assert "customer_concentration" in customers  # Actual key name
         assert "segmentation" in customers
-        
+
         assert customers["total_customers"] == 2  # Customer A and B
 
     def test_analyze_products(self, sample_data):
         """Test product analysis"""
         calc = BusinessMetricsCalculator(sample_data)
         products = calc.analyze_products()
-        
+
         assert "total_products" in products
         assert "top_products" in products
         # Note: profitability info is in top_products, not a separate key
         assert "underperforming_products" in products
         assert "star_products" in products
-        
+
         assert products["total_products"] == 2  # Product 1 and 2
 
     def test_analyze_categories(self, sample_data):
         """Test category analysis"""
         calc = BusinessMetricsCalculator(sample_data)
         categories = calc.analyze_categories()
-        
+
         assert "total_categories" in categories
         assert "category_performance" in categories
-        
+
         assert categories["total_categories"] == 2  # Category 1 and 2
 
     def test_analyze_inventory(self, sample_data):
         """Test inventory analysis"""
         calc = BusinessMetricsCalculator(sample_data)
         inventory = calc.analyze_inventory()
-        
+
         # Actual key names from implementation
         assert "fast_moving_items" in inventory
         assert "slow_moving_items" in inventory
@@ -331,7 +335,7 @@ class TestBusinessMetricsCalculator:
         """Test trend analysis"""
         calc = BusinessMetricsCalculator(sample_data)
         trends = calc.analyze_trends()
-        
+
         assert "monthly_trends" in trends
         assert "category_distribution" in trends
 
@@ -339,32 +343,32 @@ class TestBusinessMetricsCalculator:
         """Test profitability analysis"""
         calc = BusinessMetricsCalculator(sample_data)
         profitability = calc.analyze_profitability()
-        
+
         assert "by_category" in profitability
 
     def test_segment_customer(self, sample_data):
         """Test customer segmentation logic"""
         calc = BusinessMetricsCalculator(sample_data)
-        
+
         # VIP customer (high revenue AND high orders)
         assert calc._segment_customer(600000, 10) == "VIP"
-        
+
         # High Value customer (high revenue only)
         assert calc._segment_customer(300000, 3) == "High Value"
-        
+
         # Frequent customer (high orders only)
         assert calc._segment_customer(100000, 15) == "Frequent"
-        
+
         # Regular customer (moderate revenue)
         assert calc._segment_customer(75000, 5) == "Regular"
-        
+
         # Occasional customer (low revenue)
         assert calc._segment_customer(30000, 2) == "Occasional"
 
     def test_extract_value(self, sample_data):
         """Test _extract_value helper method"""
         calc = BusinessMetricsCalculator(sample_data)
-        
+
         row = sample_data[0]
         assert calc._extract_value(row, ["TotalMasIva"]) == 116.0
         assert calc._extract_value(row, ["NonExistent"], default=0) == 0
@@ -395,11 +399,11 @@ class TestGenerateRecommendations:
     def test_generate_recommendations_returns_list(self, sample_metrics):
         """Test recommendations returns a list of strings"""
         recommendations = generate_recommendations(sample_metrics)
-        
+
         assert isinstance(recommendations, list)
         # Should have at least one recommendation for star products
         assert len(recommendations) >= 1
-        
+
         # Each recommendation should be a string
         for rec in recommendations:
             assert isinstance(rec, str)
@@ -411,11 +415,13 @@ class TestGenerateRecommendations:
             "category_analytics": {"category_performance": []},
             "product_analytics": {"underperforming_products": [], "star_products": []},
         }
-        
+
         recommendations = generate_recommendations(metrics)
-        
+
         # Should have a warning about low margins
-        assert any("margin" in r.lower() or "profit" in r.lower() for r in recommendations)
+        assert any(
+            "margin" in r.lower() or "profit" in r.lower() for r in recommendations
+        )
 
     def test_critical_categories_recommendation(self):
         """Test recommendation for critical categories"""
@@ -428,9 +434,9 @@ class TestGenerateRecommendations:
             },
             "product_analytics": {"underperforming_products": [], "star_products": []},
         }
-        
+
         recommendations = generate_recommendations(metrics)
-        
+
         # Should have urgent recommendation about critical categories
         assert any("CRITICAL" in r or "critical" in r.lower() for r in recommendations)
 
@@ -487,10 +493,10 @@ class TestPrintDetailedStatistics:
     def test_print_statistics_output(self, sample_analysis, capsys):
         """Test that statistics are printed"""
         print_detailed_statistics(sample_analysis)
-        
+
         captured = capsys.readouterr()
         output = captured.out
-        
+
         # Should contain key sections
         assert "DETAILED BUSINESS STATISTICS" in output
         assert "Product A" in output
@@ -528,10 +534,10 @@ class TestEdgeCases:
                 "Fecha": datetime(2025, 1, 1),
             },
         ]
-        
+
         calc = BusinessMetricsCalculator(minimal_data)
         metrics = calc.calculate_financial_metrics()
-        
+
         # Should handle minimal data gracefully
         assert "revenue" in metrics
         assert metrics["revenue"]["total_with_iva"] == 100.0

@@ -11,12 +11,12 @@ Usage:
     python benchmarks/performance_benchmark.py --verbose
 """
 
-import time
 import random
 import statistics
-from typing import Dict, List, Any, Callable
+import time
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Callable, Dict, List
 
 # Try to import analysis modules
 try:
@@ -29,16 +29,16 @@ try:
         sys.path.insert(0, str(src_path))
 
     # Import original analysis modules
-    from business_analyzer.analysis.financial import FinancialAnalyzer
     from business_analyzer.analysis.customer import CustomerAnalyzer
-    from business_analyzer.analysis.product import ProductAnalyzer
-    from business_analyzer.analysis.inventory import InventoryAnalyzer
+    from business_analyzer.analysis.customer_optimized import OptimizedCustomerAnalyzer
+    from business_analyzer.analysis.financial import FinancialAnalyzer
 
     # Import optimized versions
     from business_analyzer.analysis.financial_optimized import (
         OptimizedFinancialAnalyzer,
     )
-    from business_analyzer.analysis.customer_optimized import OptimizedCustomerAnalyzer
+    from business_analyzer.analysis.inventory import InventoryAnalyzer
+    from business_analyzer.analysis.product import ProductAnalyzer
     from business_analyzer.analysis.unified import UnifiedAnalyzer
 
     ANALYSIS_AVAILABLE = True
@@ -183,7 +183,9 @@ class PerformanceBenchmark:
     def benchmark_financial_analysis(self):
         """Benchmark financial analysis operations."""
         if not ANALYSIS_AVAILABLE:
-            print("\n⚠️  Skipping financial analysis benchmarks (modules not available)")
+            print(
+                "\n⚠️  Skipping financial analysis benchmarks (modules not available)"
+            )
             return
 
         sizes = [100, 1000, 5000]
@@ -256,7 +258,9 @@ class PerformanceBenchmark:
     def benchmark_inventory_analysis(self):
         """Benchmark inventory analysis operations."""
         if not ANALYSIS_AVAILABLE:
-            print("\n⚠️  Skipping inventory analysis benchmarks (modules not available)")
+            print(
+                "\n⚠️  Skipping inventory analysis benchmarks (modules not available)"
+            )
             return
 
         sizes = [100, 1000, 5000]

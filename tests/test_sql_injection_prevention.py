@@ -11,9 +11,10 @@ def validate_sql_identifier():
     """Fixture that provides the validate_sql_identifier function."""
     # Skip if pymssql is not available (required by business_analyzer_combined)
     pytest.importorskip("pymssql", reason="pymssql not installed")
-    
+
     # Import after skip check and after conftest.py mocks are set up
     from src.business_analyzer_combined import validate_sql_identifier as validator
+
     return validator
 
 

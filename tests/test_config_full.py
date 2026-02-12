@@ -25,42 +25,45 @@ class TestConfigClass:
 
     def test_ensure_output_dir(self):
         """Test ensure_output_dir method"""
-        with patch.object(Path, 'mkdir') as mock_mkdir:
+        with patch.object(Path, "mkdir") as mock_mkdir:
             result = config.Config.ensure_output_dir()
             mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
             assert result == config.Config.OUTPUT_DIR
 
     def test_has_direct_db_config_with_all_values(self):
         """Test has_direct_db_config when all values are set"""
-        with patch.object(config.Config, 'DB_HOST', 'test-host'), \
-             patch.object(config.Config, 'DB_USER', 'test-user'), \
-             patch.object(config.Config, 'DB_PASSWORD', 'test-password'):
+        with patch.object(config.Config, "DB_HOST", "test-host"), patch.object(
+            config.Config, "DB_USER", "test-user"
+        ), patch.object(config.Config, "DB_PASSWORD", "test-password"):
             assert config.Config.has_direct_db_config() is True
 
     def test_has_direct_db_config_missing_values(self):
         """Test has_direct_db_config when values are missing"""
-        with patch.object(config.Config, 'DB_HOST', None), \
-             patch.object(config.Config, 'DB_USER', 'test-user'), \
-             patch.object(config.Config, 'DB_PASSWORD', 'test-password'):
+        with patch.object(config.Config, "DB_HOST", None), patch.object(
+            config.Config, "DB_USER", "test-user"
+        ), patch.object(config.Config, "DB_PASSWORD", "test-password"):
             assert config.Config.has_direct_db_config() is False
 
     def test_validate_with_direct_config(self):
         """Test validate with direct database config"""
-        with patch.object(config.Config, 'DB_HOST', 'test-host'), \
-             patch.object(config.Config, 'DB_USER', 'test-user'), \
-             patch.object(config.Config, 'DB_PASSWORD', 'test-password'), \
-             patch.object(config.Config, 'NCX_FILE_PATH', '/nonexistent'):
+        with patch.object(config.Config, "DB_HOST", "test-host"), patch.object(
+            config.Config, "DB_USER", "test-user"
+        ), patch.object(config.Config, "DB_PASSWORD", "test-password"), patch.object(
+            config.Config, "NCX_FILE_PATH", "/nonexistent"
+        ):
             # Should not raise
             result = config.Config.validate()
             assert result is True
 
     def test_validate_no_config(self):
         """Test validate with no configuration"""
-        with patch.object(config.Config, 'DB_HOST', None), \
-             patch.object(config.Config, 'DB_USER', None), \
-             patch.object(config.Config, 'DB_PASSWORD', None), \
-             patch.object(config.Config, 'NCX_FILE_PATH', '/nonexistent'), \
-             patch('os.path.exists', return_value=False):
+        with patch.object(config.Config, "DB_HOST", None), patch.object(
+            config.Config, "DB_USER", None
+        ), patch.object(config.Config, "DB_PASSWORD", None), patch.object(
+            config.Config, "NCX_FILE_PATH", "/nonexistent"
+        ), patch(
+            "os.path.exists", return_value=False
+        ):
             with pytest.raises(ValueError, match="No valid database configuration"):
                 config.Config.validate()
 
@@ -101,9 +104,10 @@ class TestConfigEnvironmentVariables:
 
     def test_db_host_from_env(self):
         """Test DB_HOST can be set from environment"""
-        with patch.dict(os.environ, {'DB_HOST': 'env-host'}, clear=False):
+        with patch.dict(os.environ, {"DB_HOST": "env-host"}, clear=False):
             # Reload config to pick up env var
             import importlib
+
             importlib.reload(config)
             # Note: This may not work if dotenv is mocked
             pass  # Placeholder for env var testing

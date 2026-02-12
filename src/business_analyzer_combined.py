@@ -542,9 +542,9 @@ class BusinessMetricsCalculator:
             category_data[categoria]["total_revenue"] += revenue
             category_data[categoria]["total_cost"] += cost
             category_data[categoria]["orders"] += 1
-            category_data[categoria]["subcategories"][subcategoria]["revenue"] += (
-                revenue
-            )
+            category_data[categoria]["subcategories"][subcategoria][
+                "revenue"
+            ] += revenue
             category_data[categoria]["subcategories"][subcategoria]["cost"] += cost
             category_data[categoria]["subcategories"][subcategoria]["orders"] += 1
 
@@ -852,7 +852,9 @@ def fetch_banco_datos(
         # SECURITY: Use validated identifiers in SQL query
         # Note: Table/DB names cannot be parameterized, but we've validated them above
         # nosec B608: SQL identifiers validated with validate_sql_identifier()
-        cursor.execute(f"SELECT TOP 0 * FROM [{db_name}].[dbo].[{table_name}]")  # nosec B608
+        cursor.execute(
+            f"SELECT TOP 0 * FROM [{db_name}].[dbo].[{table_name}]"
+        )  # nosec B608
         columns = [desc[0] for desc in cursor.description]
         logger.info(f"Columns in {table_name}: {columns}")
 
@@ -870,7 +872,9 @@ def fetch_banco_datos(
         else:
             # No exclusions - fetch all data
             # nosec B608: SQL identifiers validated with validate_sql_identifier()
-            query = f"SELECT TOP %s * FROM [{db_name}].[dbo].[{table_name}]"  # nosec B608
+            query = (
+                f"SELECT TOP %s * FROM [{db_name}].[dbo].[{table_name}]"  # nosec B608
+            )
             params = [limit]
 
         if start_date and end_date:

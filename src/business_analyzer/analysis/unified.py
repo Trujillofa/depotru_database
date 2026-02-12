@@ -8,10 +8,10 @@ extracting all metrics simultaneously. Ideal for combined analysis scenarios.
 Performance: ~60% faster than running 4 separate analyzers
 """
 
+import statistics
 from collections import defaultdict
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
-import statistics
 
 # Handle imports for both package and direct execution contexts
 try:

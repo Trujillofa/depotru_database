@@ -30,7 +30,13 @@ mock_config.MODEL_NAME = "grok-beta"
 mock_config.HOST = "0.0.0.0"
 mock_config.PORT = 8084
 mock_config.TESTING = False
+
+# Module-level constants that are exported from base.py
+mock_config.SUPPORTED_PROVIDERS = ["grok", "openai", "anthropic", "ollama"]
+mock_config.DEFAULT_PROVIDER = "grok"
+
 sys.modules["business_analyzer.ai.base"] = mock_config
+
 
 # Now test basic functionality
 class TestAIBase:
