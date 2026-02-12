@@ -42,8 +42,7 @@ The Business Data Analyzer is a Python-based business intelligence platform for 
 ```
 depotru_database/
 ├── src/                              # Source code
-│   ├── vanna_grok.py                 # AI chat (Grok-optimized, Spanish)
-│   ├── vanna_chat.py                 # AI chat (multi-provider support)
+│   ├── vanna_grok.py                 # AI chat (multi-provider, Spanish-optimized)
 │   ├── business_analyzer_combined.py # Traditional analyzer (1,500+ lines)
 │   ├── config.py                     # Configuration management
 │   └── utils/                        # Utility functions
@@ -144,17 +143,30 @@ Core analytics engine for business metrics:
 python src/business_analyzer_combined.py --limit 5000
 ```
 
-### 4. Multi-Provider AI (`src/vanna_chat.py`)
+### 4. Multi-Provider AI Support (`src/vanna_grok.py`)
 
-Alternative AI interface supporting multiple providers:
+The Vanna AI module supports multiple AI providers via environment variable:
 
-**Supported Providers:**
-- OpenAI GPT-4
-- Grok (xAI)
-- Anthropic Claude
-- Ollama (local)
+**Supported Providers (set via `AI_PROVIDER` env var):**
+- `grok` (default): xAI Grok - optimized for Spanish business queries
+- `openai`: OpenAI GPT-4
+- `anthropic`: Anthropic Claude
+- `ollama`: Local Ollama instance (free, private)
 
-**Use case:** Testing different AI providers or when Grok is unavailable.
+**Configuration:**
+```bash
+# Choose provider
+export AI_PROVIDER=grok  # or openai, anthropic, ollama
+
+# Set appropriate API key
+export GROK_API_KEY=xai-your-key
+# OR
+export OPENAI_API_KEY=sk-your-key
+# OR
+export ANTHROPIC_API_KEY=sk-ant-your-key
+```
+
+**Use case:** Production AI chat with flexible provider selection.
 
 ---
 

@@ -7,11 +7,51 @@ This file configures pytest for the Business Data Analyzer test suite.
 import pytest
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
+# =============================================================================
+# Path Setup
+# =============================================================================
+
+# Add src to path for imports
+src_path = Path(__file__).parent.parent / "src"
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
+
+# Mock external dependencies before any imports from business_analyzer
+sys.modules["pymssql"] = Mock()
+sys.modules["pyodbc"] = Mock()
+sys.modules["NavicatCipher"] = Mock()
+sys.modules["Crypto"] = Mock()
+sys.modules["Crypto.Cipher"] = Mock()
+sys.modules["Crypto.Util"] = Mock()
+sys.modules["Crypto.Util.Padding"] = Mock()
+
+# Create mock config module
+mock_config = Mock()
+mock_config.Config = Mock()
+mock_config.Config.DB_HOST = "test-host"
+mock_config.Config.DB_PORT = 1433
+mock_config.Config.DB_USER = "test-user"
+mock_config.Config.DB_PASSWORD = "test-password"
+mock_config.Config.DB_NAME = "TestDB"
+mock_config.Config.DB_TABLE = "test_table"
+mock_config.Config.NCX_FILE_PATH = "/test/connections.ncx"
+mock_config.Config.DB_LOGIN_TIMEOUT = 10
+mock_config.Config.DB_TIMEOUT = 10
+mock_config.Config.DB_TDS_VERSION = "7.4"
+mock_config.Config.DEFAULT_LIMIT = 1000
+mock_config.Config.EXCLUDED_DOCUMENT_CODES = ["XY", "AS"]
+mock_config.Config.has_direct_db_config = Mock(return_value=True)
+mock_config.Config.ensure_output_dir = Mock(return_value=Path("/tmp"))
+
+# Insert the mock config into sys.modules BEFORE importing business_analyzer
+sys.modules["config"] = mock_config
 
 # =============================================================================
 # Dependency Checks
 # =============================================================================
+
 
 def check_dependency(module_name):
     """Check if a module is available for import."""
@@ -33,12 +73,17 @@ HAS_PANDAS = check_dependency("pandas")
 # Pytest Markers
 # =============================================================================
 
+
 def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line("markers", "unit: Unit tests")
-    config.addinivalue_line("markers", "integration: Integration tests requiring database")
+    config.addinivalue_line(
+        "markers", "integration: Integration tests requiring database"
+    )
     config.addinivalue_line("markers", "slow: Slow running tests")
-    config.addinivalue_line("markers", "requires_db: Tests that require database connection")
+    config.addinivalue_line(
+        "markers", "requires_db: Tests that require database connection"
+    )
     config.addinivalue_line("markers", "requires_api: Tests that require API keys")
 
 
@@ -48,23 +93,19 @@ def pytest_configure(config):
 
 # Skip decorators for missing dependencies
 requires_pymssql = pytest.mark.skipif(
-    not HAS_PYMSSQL,
-    reason="pymssql not installed (pip install pymssql)"
+    not HAS_PYMSSQL, reason="pymssql not installed (pip install pymssql)"
 )
 
 requires_vanna = pytest.mark.skipif(
-    not HAS_VANNA,
-    reason="vanna not installed (pip install vanna)"
+    not HAS_VANNA, reason="vanna not installed (pip install vanna)"
 )
 
 requires_matplotlib = pytest.mark.skipif(
-    not HAS_MATPLOTLIB,
-    reason="matplotlib not installed (pip install matplotlib)"
+    not HAS_MATPLOTLIB, reason="matplotlib not installed (pip install matplotlib)"
 )
 
 requires_pandas = pytest.mark.skipif(
-    not HAS_PANDAS,
-    reason="pandas not installed (pip install pandas)"
+    not HAS_PANDAS, reason="pandas not installed (pip install pandas)"
 )
 
 
@@ -72,11 +113,12 @@ requires_pandas = pytest.mark.skipif(
 # Shared Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def sample_transaction_data():
     """Sample transaction data for testing."""
     from datetime import datetime
-    
+
     return [
         {
             "TotalMasIva": 116.0,
@@ -86,7 +128,7 @@ def sample_transaction_data():
             "TercerosNombres": "Customer A",
             "ArticulosNombre": "Product 1",
             "categoria": "Category 1",
-            "Fecha": datetime(2025, 1, 15)
+            "Fecha": datetime(2025, 1, 15),
         },
         {
             "TotalMasIva": 232.0,
@@ -96,7 +138,7 @@ def sample_transaction_data():
             "TercerosNombres": "Customer A",
             "ArticulosNombre": "Product 2",
             "categoria": "Category 1",
-            "Fecha": datetime(2025, 1, 16)
+            "Fecha": datetime(2025, 1, 16),
         },
         {
             "TotalMasIva": 174.0,
@@ -106,8 +148,8 @@ def sample_transaction_data():
             "TercerosNombres": "Customer B",
             "ArticulosNombre": "Product 1",
             "categoria": "Category 2",
-            "Fecha": datetime(2025, 1, 17)
-        }
+            "Fecha": datetime(2025, 1, 17),
+        },
     ]
 
 
@@ -120,6 +162,7 @@ def empty_data():
 # =============================================================================
 # Session Hooks
 # =============================================================================
+
 
 def pytest_report_header(config):
     """Add custom header to test report."""

@@ -54,8 +54,7 @@ Develop, debug, refactor, and fix code while maintaining production stability, s
 ```
 coding_omarchy/
 ├── src/                          # Source code (Python modules)
-│   ├── vanna_grok.py            # 🔥 MAIN APP - Natural language SQL with Grok
-│   ├── vanna_chat.py            # Alternative: Claude/ChatGPT SQL
+│   ├── vanna_grok.py            # 🔥 MAIN APP - Natural language SQL (multi-provider)
 │   ├── business_analyzer_combined.py  # Traditional analytics
 │   ├── config.py                # Configuration management
 │   └── utils/                   # Utility functions
