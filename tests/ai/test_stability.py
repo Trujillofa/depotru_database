@@ -78,7 +78,16 @@ class TestStability:
 
     def test_retry_logic(self):
         """Test the retry_on_failure decorator."""
-        from business_analyzer.ai.base import retry_on_failure
+        import importlib.util
+
+        # Import directly from file to avoid conftest mock interference
+        spec = importlib.util.spec_from_file_location(
+            "ai_base",
+            Path(__file__).parent.parent.parent / "src" / "business_analyzer" / "ai" / "base.py",
+        )
+        ai_base = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ai_base)
+        retry_on_failure = ai_base.retry_on_failure
 
         call_count = 0
 
