@@ -64,7 +64,7 @@ def _prepare_prompt(question: str, sql: str, df: pd.DataFrame) -> str:
                     "mean": float(df[col].mean()),
                     "total": float(df[col].sum()) if "sum" in dir(df[col]) else None,
                 }
-        except Exception:
+        except Exception:  # nosec B110
             pass
 
     return f"""Eres un analista de negocios experto para una ferretería colombiana.

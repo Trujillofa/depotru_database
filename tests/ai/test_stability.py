@@ -80,17 +80,19 @@ class TestStability:
         """Test the retry_on_failure decorator."""
         from business_analyzer.ai.base import retry_on_failure
 
-        mock_func = MagicMock()
-        # Fail twice, then succeed
-        mock_func.side_effect = [ValueError("Fail 1"), ValueError("Fail 2"), "Success"]
+        call_count = 0
 
         @retry_on_failure(max_attempts=3, delay=0.01)
         def test_retry():
-            return mock_func()
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError(f"Fail {call_count}")
+            return "Success"
 
         result = test_retry()
         assert result == "Success"
-        assert mock_func.call_count == 3
+        assert call_count == 3
 
 
 if __name__ == "__main__":

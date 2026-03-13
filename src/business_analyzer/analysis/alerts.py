@@ -4,7 +4,7 @@ Alerts module for Business Data Analyzer.
 Identifies items below safety stock thresholds and provides inventory insights.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -18,7 +18,7 @@ class InventoryAlerts:
         self.data = data
         self.default_buffer = 10  # Default safety stock units
 
-    def analyze_low_stock(self, threshold: int = None) -> pd.DataFrame:
+    def analyze_low_stock(self, threshold: Optional[int] = None) -> pd.DataFrame:
         """
         Identify products with low inventory based on a threshold.
 

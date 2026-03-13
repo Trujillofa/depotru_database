@@ -4,7 +4,7 @@ Training module for AI package.
 Contains schema training logic for Vanna AI.
 """
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 
 def train_on_schema(vn, schema_name: str = "SmartBusiness"):
@@ -54,7 +54,7 @@ def train_on_schema(vn, schema_name: str = "SmartBusiness"):
     print("✓ Schema training complete!")
 
 
-def train_with_examples(vn, examples: List[Tuple[str, str]] = None):
+def train_with_examples(vn, examples: Optional[List[Tuple[str, str]]] = None):
     """
     Train Vanna with example question-SQL pairs.
 
@@ -182,7 +182,7 @@ def get_default_training_examples() -> List[Tuple[str, str]]:
 
 def generate_training_data(
     table_name: str = "banco_datos",
-    columns: List[str] = None,
+    columns: Optional[List[str]] = None,
     include_common_queries: bool = True,
 ) -> List[Tuple[str, str]]:
     """
@@ -215,16 +215,14 @@ def generate_training_data(
 
     if include_common_queries:
         # Revenue queries
-        # nosec B608: table_name is validated by caller with validate_sql_identifier()
-        rev_query = (
+        rev_query = (  # nosec B608
             f"SELECT SUM(TotalMasIva) AS Total_Revenue FROM {table_name} "
             f"WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')"
         )
         examples.append((f"Total revenue from {table_name}", rev_query))
 
         # Top products
-        # nosec B608: table_name is validated by caller with validate_sql_identifier()
-        prod_query = (
+        prod_query = (  # nosec B608
             f"SELECT TOP 10 ArticulosNombre, SUM(Cantidad) AS Total_Quantity "
             f"FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') "
             f"GROUP BY ArticulosNombre ORDER BY Total_Quantity DESC"
@@ -232,8 +230,7 @@ def generate_training_data(
         examples.append((f"Top selling products from {table_name}", prod_query))
 
         # Monthly trends
-        # nosec B608: table_name is validated by caller with validate_sql_identifier()
-        trend_query = (
+        trend_query = (  # nosec B608
             f"SELECT YEAR(Fecha) AS Year, MONTH(Fecha) AS Month, "
             f"SUM(TotalMasIva) AS Revenue FROM {table_name} "
             f"WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') "

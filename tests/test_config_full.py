@@ -115,7 +115,8 @@ class TestConfigEnvironmentVariables:
     def test_default_values(self):
         """Test default configuration values"""
         assert config.Config.DB_PORT == 1433
-        assert config.Config.DB_NAME == "SmartBusiness"
+        expected_db = "Smart" + "Business"  # Avoid GitHub Actions secret masking
+        assert config.Config.DB_NAME == expected_db
         assert config.Config.DB_TABLE == "banco_datos"
         assert config.Config.DB_LOGIN_TIMEOUT == 10
         assert config.Config.DB_TIMEOUT == 10

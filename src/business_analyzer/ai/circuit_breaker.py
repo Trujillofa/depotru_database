@@ -65,7 +65,10 @@ class CircuitBreaker:
         def wrapper(*args, **kwargs):
             # Check state
             if self.state == CircuitState.OPEN:
-                if time.time() - self.last_failure_time > self.recovery_timeout:
+                if (
+                    self.last_failure_time is not None
+                    and time.time() - self.last_failure_time > self.recovery_timeout
+                ):
                     print(
                         f"🟡 Circuit Breaker [{self.name}] HALF-OPEN (testing recovery)."
                     )
@@ -77,7 +80,7 @@ class CircuitBreaker:
                 result = func(*args, **kwargs)
                 self._on_success()
                 return result
-            except self.expected_exception as e:
+            except Exception as e:
                 self._on_failure()
                 raise e
 
