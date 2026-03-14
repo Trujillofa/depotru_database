@@ -1,0 +1,51 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.black]
+line-length = 88
+target-version = ["py38"]
+include = "\\.pyi?$"
+extend-exclude = '(\.git|\.mypy_cache|\.pytest_cache|\.ruff_cache|__pycache__)'
+force-exclude = '''
+(
+  ^/src/business_analyzer_combined\.py
+  | ^/src/vanna_chat\.py
+  | ^/src/config\.py
+  | ^/tests/test_behavior_baseline_smoke\.py
+  | ^/tests/test_business_metrics\.py
+  | ^/tests/test_metabase_connection\.py
+  | ^/examples/improvements_p0\.py
+  | ^/examples/pandas_approach\.py
+  | ^/examples/streamlit_dashboard\.py
+)
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+src_paths = ["src", "tests", "examples"]
+skip_gitignore = true
+skip = [
+  "src/business_analyzer_combined.py",
+  "src/vanna_chat.py",
+  "src/config.py",
+  "tests/test_behavior_baseline_smoke.py",
+  "tests/test_business_metrics.py",
+  "tests/test_metabase_connection.py",
+  "examples/improvements_p0.py",
+  "examples/pandas_approach.py",
+  "examples/streamlit_dashboard.py",
+]
+
+[tool.mypy]
+python_version = "3.9"
+files = ["src"]
+ignore_missing_imports = true
+warn_unused_configs = true
+show_error_codes = true
+pretty = true
+
+[[tool.mypy.overrides]]
+module = ["src.business_analyzer_combined", "src.vanna_chat"]
+ignore_errors = true
