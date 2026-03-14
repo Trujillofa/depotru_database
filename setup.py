@@ -13,7 +13,7 @@ long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 # Read requirements
 requirements = []
-with open("requirements.txt", "r", encoding="utf-8") as f:
+with open(this_directory / "requirements.txt", "r", encoding="utf-8") as f:
     for line in f:
         line = line.strip()
         # Skip comments, empty lines, and installation instructions

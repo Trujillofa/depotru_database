@@ -223,10 +223,10 @@ class InventoryAnalyzer:
             "fast_movers": fast_count,
             "slow_movers": slow_count,
             "normal_velocity": normal_count,
-            "fast_percentage": round(fast_count / total_products * 100, 2)
-            if total_products
-            else 0.0,
-            "slow_percentage": round(slow_count / total_products * 100, 2)
-            if total_products
-            else 0.0,
+            "fast_percentage": (
+                round(fast_count / total_products * 100, 2) if total_products else 0.0
+            ),
+            "slow_percentage": (
+                round(slow_count / total_products * 100, 2) if total_products else 0.0
+            ),
         }

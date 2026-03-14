@@ -4,11 +4,12 @@ Insights module for AI package.
 Contains AI-powered insights generation for query results.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 
 from .base import Config, retry_on_failure
+from .circuit_breaker import CircuitBreakerError, with_circuit_breaker
 
 
 @retry_on_failure(max_attempts=3, delay=2)
@@ -21,50 +22,52 @@ def generate_insights(
 ) -> str:
     """
     Use AI to analyze query results and generate business insights.
-    Includes automatic retry on failure.
-
-    Returns Spanish business recommendations based on the data.
-
-    Args:
-        question: Original user question
-        sql: SQL query that was executed
-        df: DataFrame with query results
-        ai_client: AI client for generating insights
-        provider: AI provider name (grok, openai, anthropic)
-
-    Returns:
-        Formatted insights string in Spanish
+    Includes automatic retry and circuit breaker.
     """
-    if df is None or df.empty:
-        return "⚠️ No hay datos para analizar."
+    try:
+        # Wrap the specific provider call with a circuit breaker
+        decorator = with_circuit_breaker(provider)
 
-    # Limit data sent to AI (privacy + token cost)
+        if provider in ["grok", "openai"]:
+            decorated_func = decorator(_generate_openai_insights)
+            prompt = _prepare_prompt(question, sql, df)
+            return decorated_func(ai_client, prompt, provider)
+        elif provider == "anthropic":
+            decorated_func = decorator(_generate_anthropic_insights)
+            prompt = _prepare_prompt(question, sql, df)
+            return decorated_func(ai_client, prompt)
+        else:
+            return f"⚠️ Insights no disponibles para proveedor: {provider}"
+
+    except CircuitBreakerError as e:
+        return f"🛑 Insights temporalmente fuera de línea ({provider.upper()}): {e}"
+    except Exception as e:
+        return f"⚠️ No se pudieron generar insights: {e}"
+
+
+def _prepare_prompt(question: str, sql: str, df: pd.DataFrame) -> str:
+    """Prepare the insights prompt based on data."""
+    if df is None or df.empty:
+        return ""
+
+    # Limit data sent to AI
     df_preview = df.head(Config.INSIGHTS_MAX_ROWS)
 
-    # Prepare data summary
-    summary = {
-        "rows": len(df),
-        "columns": list(df.columns),
-        "sample": df_preview.to_dict("records") if len(df_preview) > 0 else [],
-        "stats": {},
-    }
-
-    # Add statistics for numeric columns
+    # Calculate statistics
+    stats_summary = {}
     for col in df.columns:
         try:
             if pd.api.types.is_numeric_dtype(df[col]):
-                summary["stats"][col] = {
+                stats_summary[col] = {
                     "min": float(df[col].min()),
                     "max": float(df[col].max()),
                     "mean": float(df[col].mean()),
                     "total": float(df[col].sum()) if "sum" in dir(df[col]) else None,
                 }
         except Exception:  # nosec B110
-            # Silently skip columns that can't be processed for statistics
             pass
 
-    # Create prompt
-    prompt = f"""Eres un analista de negocios experto para una ferretería colombiana.
+    return f"""Eres un analista de negocios experto para una ferretería colombiana.
 
 Pregunta del usuario: {question}
 
@@ -73,7 +76,7 @@ SQL ejecutado: {sql}
 Resultados (primeras {len(df_preview)} de {len(df)} filas):
 {df_preview.to_string()}
 
-Estadísticas: {summary["stats"]}
+Estadísticas: {stats_summary}
 
 Por favor proporciona:
 1. 📊 Resumen ejecutivo (1-2 oraciones sobre qué muestran los datos)
@@ -82,16 +85,6 @@ Por favor proporciona:
 
 Formato en español, conciso, enfocado en acción.
 Usa emojis para hacer el análisis más visual."""
-
-    try:
-        if provider in ["grok", "openai"]:
-            return _generate_openai_insights(ai_client, prompt, provider)
-        elif provider == "anthropic":
-            return _generate_anthropic_insights(ai_client, prompt)
-        else:
-            return f"⚠️ Insights no disponibles para proveedor: {provider}"
-    except Exception as e:
-        return f"⚠️ No se pudieron generar insights: {e}"
 
 
 def _generate_openai_insights(ai_client, prompt: str, provider: str) -> str:
@@ -113,7 +106,8 @@ def _generate_openai_insights(ai_client, prompt: str, provider: str) -> str:
 
     insights = response.choices[0].message.content.strip()
     provider_name = "Grok" if provider == "grok" else "OpenAI"
-    return f"\n{'=' * 70}\n🤖 ANÁLISIS INTELIGENTE (Powered by {provider_name})\n{'=' * 70}\n\n{insights}\n{'=' * 70}\n"
+    header = f"🤖 ANÁLISIS INTELIGENTE (Powered by {provider_name})"
+    return f"\n{'=' * 70}\n{header}\n{'=' * 70}\n\n{insights}\n{'=' * 70}\n"
 
 
 def _generate_anthropic_insights(ai_client, prompt: str) -> str:
@@ -127,4 +121,5 @@ def _generate_anthropic_insights(ai_client, prompt: str) -> str:
     )
 
     insights = response.content[0].text.strip()
-    return f"\n{'=' * 70}\n🤖 ANÁLISIS INTELIGENTE (Powered by Claude)\n{'=' * 70}\n\n{insights}\n{'=' * 70}\n"
+    header = "🤖 ANÁLISIS INTELIGENTE (Powered by Claude)"
+    return f"\n{'=' * 70}\n{header}\n{'=' * 70}\n\n{insights}\n{'=' * 70}\n"
