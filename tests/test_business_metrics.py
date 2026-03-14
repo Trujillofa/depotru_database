@@ -15,6 +15,7 @@ from datetime import datetime
 # Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def sample_data():
     """Sample data for testing"""
@@ -27,7 +28,7 @@ def sample_data():
             "TercerosNombres": "Customer A",
             "ArticulosNombre": "Product 1",
             "categoria": "Category 1",
-            "Fecha": datetime(2025, 1, 15)
+            "Fecha": datetime(2025, 1, 15),
         },
         {
             "TotalMasIva": 232.0,
@@ -37,7 +38,7 @@ def sample_data():
             "TercerosNombres": "Customer A",
             "ArticulosNombre": "Product 2",
             "categoria": "Category 1",
-            "Fecha": datetime(2025, 1, 16)
+            "Fecha": datetime(2025, 1, 16),
         },
         {
             "TotalMasIva": 174.0,
@@ -47,8 +48,8 @@ def sample_data():
             "TercerosNombres": "Customer B",
             "ArticulosNombre": "Product 1",
             "categoria": "Category 2",
-            "Fecha": datetime(2025, 1, 17)
-        }
+            "Fecha": datetime(2025, 1, 17),
+        },
     ]
 
 
@@ -86,13 +87,14 @@ def null_data():
             "TotalSinIva": None,
             "ValorCosto": 80.0,
             "Cantidad": None,
-        }
+        },
     ]
 
 
 # ============================================================================
 # Test Safe Division
 # ============================================================================
+
 
 def test_safe_divide_normal():
     """Test safe division with valid numbers"""
@@ -124,6 +126,7 @@ def test_safe_divide_negative():
 # ============================================================================
 # Test Date Validation
 # ============================================================================
+
 
 def test_validate_date_range_valid():
     """Test date validation with valid inputs"""
@@ -175,6 +178,7 @@ def test_validate_date_range_unreasonable_year():
 # Test Limit Validation
 # ============================================================================
 
+
 def test_validate_limit_valid():
     """Test limit validation with valid inputs"""
     from examples.improvements_p0 import validate_limit
@@ -215,6 +219,7 @@ def test_validate_limit_out_of_range():
 # Test Profit Margin Calculation
 # ============================================================================
 
+
 def test_calculate_profit_margin_safe_normal():
     """Test profit margin calculation with normal data"""
     from examples.improvements_p0 import calculate_profit_margin_safe
@@ -246,6 +251,7 @@ def test_calculate_profit_margin_safe_negative():
 # ============================================================================
 # Test Financial Metrics Calculation
 # ============================================================================
+
 
 def test_calculate_financial_metrics_safe_normal(sample_data):
     """Test financial metrics with normal data"""
@@ -301,6 +307,7 @@ def test_calculate_financial_metrics_safe_null(null_data):
 # Test Customer Segmentation
 # ============================================================================
 
+
 def test_customer_segmentation():
     """Test customer segmentation logic"""
     # Import the actual BusinessMetricsCalculator if needed
@@ -330,6 +337,7 @@ def test_customer_segmentation():
 # Integration Test
 # ============================================================================
 
+
 def test_full_pipeline_with_sample_data(sample_data):
     """Test complete analysis pipeline with known data"""
     from examples.improvements_p0 import calculate_financial_metrics_safe
@@ -352,6 +360,7 @@ def test_full_pipeline_with_sample_data(sample_data):
 # ============================================================================
 # Edge Cases
 # ============================================================================
+
 
 def test_edge_case_single_record():
     """Test with single record"""
@@ -385,6 +394,102 @@ def test_edge_case_all_zeros():
     # Should not crash
     assert metrics["revenue"]["total_with_iva"] == 0
     assert metrics["profit"]["margin"] == 0
+
+
+def test_business_metrics_calculator_top_level_shape(sample_data):
+    from src.business_analyzer_combined import BusinessMetricsCalculator
+
+    calculator = BusinessMetricsCalculator(sample_data)
+    metrics = calculator.calculate_all_metrics()
+
+    assert list(metrics.keys()) == [
+        "financial_metrics",
+        "customer_analytics",
+        "product_analytics",
+        "category_analytics",
+        "inventory_analytics",
+        "trend_analytics",
+        "profitability_analytics",
+        "risk_metrics",
+        "operational_efficiency",
+    ]
+
+
+def test_extracted_analytics_outputs_match_facade_methods(sample_data):
+    from src.analytics.category_metrics import analyze_categories
+    from src.analytics.customer_metrics import analyze_customers
+    from src.analytics.financial_metrics import calculate_financial_metrics
+    from src.analytics.inventory_metrics import analyze_inventory
+    from src.analytics.product_metrics import analyze_products
+    from src.analytics.profitability_metrics import analyze_profitability
+    from src.analytics.risk_efficiency_metrics import (
+        calculate_operational_efficiency,
+        calculate_risk_metrics,
+    )
+    from src.analytics.trend_metrics import analyze_trends
+    from src.business_analyzer_combined import BusinessMetricsCalculator, safe_divide
+    from src.config import InventoryConfig, ProfitabilityConfig
+
+    calculator = BusinessMetricsCalculator(sample_data)
+
+    assert calculator.calculate_financial_metrics() == calculate_financial_metrics(
+        sample_data
+    )
+    assert calculator.analyze_customers() == analyze_customers(
+        sample_data,
+        calculator._extract_value,
+        calculator._segment_customer,
+        calculator._aggregate_segments,
+        safe_divide,
+    )
+    assert calculator.analyze_products() == analyze_products(
+        sample_data,
+        calculator._extract_value,
+        safe_divide,
+        ProfitabilityConfig.LOW_MARGIN_THRESHOLD,
+        ProfitabilityConfig.STAR_PRODUCT_MARGIN,
+    )
+    assert calculator.analyze_categories() == analyze_categories(
+        sample_data,
+        calculator._extract_value,
+        safe_divide,
+    )
+    assert calculator.analyze_inventory() == analyze_inventory(
+        sample_data,
+        calculator._extract_value,
+        InventoryConfig.FAST_MOVER_THRESHOLD,
+        InventoryConfig.SLOW_MOVER_THRESHOLD,
+    )
+    assert calculator.analyze_trends() == analyze_trends(
+        sample_data,
+        calculator._extract_value,
+    )
+    assert calculator.analyze_profitability() == analyze_profitability(
+        sample_data,
+        calculator._extract_value,
+        safe_divide,
+    )
+    assert calculator.calculate_risk_metrics() == calculate_risk_metrics()
+    assert (
+        calculator.calculate_operational_efficiency()
+        == calculate_operational_efficiency(
+            sample_data,
+            calculator._extract_value,
+        )
+    )
+
+
+def test_extracted_analytics_sparse_rows_do_not_crash(null_data):
+    from src.business_analyzer_combined import BusinessMetricsCalculator
+
+    calculator = BusinessMetricsCalculator(null_data)
+    metrics = calculator.calculate_all_metrics()
+
+    assert metrics["financial_metrics"]["revenue"]["total_with_iva"] == 200.0
+    assert "customer_analytics" in metrics
+    assert "product_analytics" in metrics
+    assert "category_analytics" in metrics
+    assert "trend_analytics" in metrics
 
 
 # ============================================================================
