@@ -101,9 +101,14 @@ coding_omarchy/
 │
 ├── src/                              # 💻 Source Code
 │   ├── __init__.py
-│   ├── business_analyzer_combined.py # Main analyzer
+│   ├── business_analyzer_combined.py # Orchestration entrypoint (legacy shell)
 │   ├── vanna_chat.py                 # AI natural language SQL (with Grok!)
 │   ├── config.py                     # Configuration management
+│   ├── contracts/                    # Row/value contracts and coercion
+│   ├── analytics/                    # Financial, customer, product, trend metrics
+│   ├── data_access/                  # DB connection and banco_datos loaders
+│   ├── reporting/                    # Visualization and report generation
+│   ├── vanna/                        # Provider factory and Vanna service layer
 │   └── utils/                        # Utility functions
 │       └── __init__.py
 │
@@ -399,6 +404,13 @@ Contributions welcome! Please:
 6. Submit a pull request
 
 See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
+
+Architecture guardrail for contributors:
+- Add new analytics logic in `src/analytics/`, not `src/business_analyzer_combined.py`.
+- Add data loading or connection logic in `src/data_access/`.
+- Add charts/report output logic in `src/reporting/`.
+- Add AI provider logic in `src/vanna/`.
+- Keep `src/business_analyzer_combined.py` focused on orchestration and compatibility.
 
 ---
 

@@ -77,6 +77,15 @@ Then create a Pull Request on GitHub.
 
 ## 🎯 Contribution Guidelines
 
+### Architecture Boundaries (Required)
+
+- New analytics logic goes in `src/analytics/`
+- New data access or connection logic goes in `src/data_access/`
+- New reporting/visualization logic goes in `src/reporting/`
+- New AI provider integration logic goes in `src/vanna/`
+- Contract/value normalization updates go in `src/contracts/`
+- `src/business_analyzer_combined.py` is an orchestration layer, do not add new analytics, reporting, provider, or data-access features directly there
+
 ### Code Style
 
 - Follow PEP 8

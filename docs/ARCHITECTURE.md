@@ -42,9 +42,14 @@ coding_omarchy/
 │
 ├── src/                              # Source code
 │   ├── __init__.py                   # Package initialization
-│   ├── business_analyzer_combined.py # Main analyzer (1,500+ lines)
+│   ├── business_analyzer_combined.py # Orchestration entrypoint
 │   ├── vanna_chat.py                 # AI natural language interface
 │   ├── config.py                     # Configuration management
+│   ├── contracts/                     # Row contracts and value coercion
+│   ├── analytics/                     # Financial/customer/product/category/trend metrics
+│   ├── data_access/                   # DB connection resolution + data fetchers
+│   ├── reporting/                     # Visualization/report rendering
+│   ├── vanna/                         # Provider factory and Vanna service layer
 │   └── utils/                        # Utility functions
 │       └── __init__.py
 │
@@ -125,9 +130,18 @@ class Config:
 
 ---
 
-### 2. Main Business Analyzer (`src/business_analyzer_combined.py`)
+### 2. Orchestration Layer (`src/business_analyzer_combined.py`)
 
-**Purpose**: Core analytics engine for business metrics.
+**Purpose**: Backward-compatible entrypoint that orchestrates extracted modules.
+
+**Module Boundaries**:
+- `src/analytics/` owns metric calculations.
+- `src/data_access/` owns connection and query logic.
+- `src/reporting/` owns chart/report generation.
+- `src/vanna/` owns provider integration logic.
+- `src/contracts/` owns row/value normalization.
+
+`business_analyzer_combined.py` should compose these modules, not become the default place for new analytics, reporting, data access, or provider features.
 
 **Key Functions:**
 
@@ -592,27 +606,26 @@ df = pd.read_sql(query, conn)
 
 ### Adding a New AI Provider
 
-1. Add configuration in `src/vanna_chat.py`:
+1. Add provider creation logic in `src/vanna/provider_factory.py`:
 ```python
-USE_NEW_PROVIDER = False
-NEW_PROVIDER_API_KEY = os.getenv("NEW_PROVIDER_API_KEY")
+def create_new_provider(...):
+    ...
 ```
 
-2. Add factory case in `create_vanna_instance()`:
+2. Wire provider selection in `src/vanna/service.py`:
 ```python
-elif USE_NEW_PROVIDER:
-    from vanna.new_provider import NewProvider_Chat
-    # ... implementation
+if use_new_provider:
+    return create_new_provider(...)
 ```
 
-3. Update `.env.example`
-4. Update documentation
+3. Expose any required flags in `src/vanna_chat.py` only as runtime toggles
+4. Update `.env.example` and documentation
 
 ---
 
 ### Adding a New Metric
 
-1. Add function in `src/business_analyzer_combined.py`:
+1. Add metric function in the correct module under `src/analytics/` (for example `src/analytics/trend_metrics.py`):
 ```python
 def analyze_new_metric(data):
     """Analyze new metric"""
@@ -620,10 +633,14 @@ def analyze_new_metric(data):
     return results
 ```
 
-2. Call in main analysis flow
-3. Add visualization if needed
-4. Add tests in `tests/test_business_metrics.py`
-5. Update documentation
+2. Add or update row contracts in `src/contracts/` if new fields are required
+3. Update orchestration wiring in `src/business_analyzer_combined.py` only if needed
+4. Add reporting output in `src/reporting/` if visualization is needed
+5. Add tests and update documentation
+
+### Contributor Rule (Required)
+
+New analytics, data access, reporting, and provider logic must be implemented in extracted modules (`src/analytics`, `src/data_access`, `src/reporting`, `src/vanna`). Do not add these concerns directly to `src/business_analyzer_combined.py`.
 
 ---
 
