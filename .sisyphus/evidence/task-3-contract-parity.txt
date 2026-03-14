@@ -1,0 +1,23 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.2.2, pluggy-1.6.0 -- /home/emilio/.local/share/mise/installs/python/3.13.9/bin/python
+cachedir: .pytest_cache
+rootdir: /home/emilio/depotru_database
+configfile: pyproject.toml
+plugins: cov-4.1.0, asyncio-0.21.0, anyio-4.12.1
+asyncio: mode=Mode.STRICT
+collecting ... collected 12 items
+
+tests/test_row_contracts.py::test_extract_row_value_parity_with_legacy[row0-keys0-0-116.5] PASSED [  8%]
+tests/test_row_contracts.py::test_extract_row_value_parity_with_legacy[row1-keys1-0-100.43] PASSED [ 16%]
+tests/test_row_contracts.py::test_extract_row_value_parity_with_legacy[row2-keys2-1-1] PASSED [ 25%]
+tests/test_row_contracts.py::test_extract_row_value_parity_with_legacy[row3-keys3-0-0] PASSED [ 33%]
+tests/test_row_contracts.py::test_extract_financial_row_values_handles_decimal_string_and_null PASSED [ 41%]
+tests/test_row_contracts.py::test_coerce_metric_value_handles_grouped_numeric_strings PASSED [ 50%]
+tests/test_row_contracts.py::test_coerce_metric_value_keeps_non_numeric_strings_unchanged PASSED [ 58%]
+tests/test_row_contracts.py::test_analyzer_financial_path_uses_shared_coercion PASSED [ 66%]
+tests/test_row_contracts.py::test_extract_row_value_raises_for_malformed_rows[None] PASSED [ 75%]
+tests/test_row_contracts.py::test_extract_row_value_raises_for_malformed_rows[10] PASSED [ 83%]
+tests/test_row_contracts.py::test_extract_row_value_raises_for_malformed_rows[malformed_row2] PASSED [ 91%]
+tests/test_row_contracts.py::test_extract_financial_row_values_raises_for_malformed_payload PASSED [100%]
+
+============================== 12 passed in 1.48s ==============================

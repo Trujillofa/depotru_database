@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.2.2, pluggy-1.6.0 -- /home/emilio/.local/share/mise/installs/python/3.13.9/bin/python
+cachedir: .pytest_cache
+rootdir: /home/emilio/depotru_database
+configfile: pyproject.toml
+plugins: cov-4.1.0, asyncio-0.21.0, anyio-4.12.1
+asyncio: mode=Mode.STRICT
+collecting ... collected 5 items / 4 deselected / 1 selected
+
+tests/test_vanna_provider_factory.py::test_create_vanna_instance_raises_when_no_provider_enabled PASSED [100%]
+
+======================= 1 passed, 4 deselected in 0.03s ========================

@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.2.2, pluggy-1.6.0 -- /home/emilio/.local/share/mise/installs/python/3.13.9/bin/python
+cachedir: .pytest_cache
+rootdir: /home/emilio/depotru_database
+configfile: pyproject.toml
+plugins: cov-4.1.0, asyncio-0.21.0, anyio-4.12.1
+asyncio: mode=Mode.STRICT
+collecting ... collected 2 items
+
+tests/test_data_access_boundaries.py::test_resolve_connection_details_prefers_direct_env_config PASSED [ 50%]
+tests/test_data_access_boundaries.py::test_fetch_banco_datos_executes_filtered_query PASSED [100%]
+
+============================== 2 passed in 0.06s ===============================

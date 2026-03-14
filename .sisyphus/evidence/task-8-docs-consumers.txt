@@ -1,0 +1,87 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.2.2, pluggy-1.6.0 -- /home/emilio/.local/share/mise/installs/python/3.13.9/bin/python
+cachedir: .pytest_cache
+rootdir: /home/emilio/depotru_database
+configfile: pyproject.toml
+plugins: cov-4.1.0, asyncio-0.21.0, anyio-4.12.1
+asyncio: mode=Mode.STRICT
+collecting ... collected 54 items
+
+tests/test_behavior_baseline_smoke.py::test_analyzer_cli_help_surface PASSED [  1%]
+tests/test_behavior_baseline_smoke.py::test_vanna_public_import_surface PASSED [  3%]
+tests/test_behavior_baseline_smoke.py::test_pandas_example_smoke_with_stubbed_optional_deps PASSED [  5%]
+tests/test_behavior_baseline_smoke.py::test_streamlit_example_path_contract_without_import_runtime PASSED [  7%]
+tests/test_business_metrics.py::test_safe_divide_normal PASSED           [  9%]
+tests/test_business_metrics.py::test_safe_divide_by_zero PASSED          [ 11%]
+tests/test_business_metrics.py::test_safe_divide_negative PASSED         [ 12%]
+tests/test_business_metrics.py::test_validate_date_range_valid PASSED    [ 14%]
+tests/test_business_metrics.py::test_validate_date_range_invalid_format PASSED [ 16%]
+tests/test_business_metrics.py::test_validate_date_range_wrong_order PASSED [ 18%]
+tests/test_business_metrics.py::test_validate_date_range_unreasonable_year PASSED [ 20%]
+tests/test_business_metrics.py::test_validate_limit_valid PASSED         [ 22%]
+tests/test_business_metrics.py::test_validate_limit_invalid PASSED       [ 24%]
+tests/test_business_metrics.py::test_validate_limit_out_of_range PASSED  [ 25%]
+tests/test_business_metrics.py::test_calculate_profit_margin_safe_normal PASSED [ 27%]
+tests/test_business_metrics.py::test_calculate_profit_margin_safe_zero_revenue PASSED [ 29%]
+tests/test_business_metrics.py::test_calculate_profit_margin_safe_negative PASSED [ 31%]
+tests/test_business_metrics.py::test_calculate_financial_metrics_safe_normal PASSED [ 33%]
+tests/test_business_metrics.py::test_calculate_financial_metrics_safe_empty PASSED [ 35%]
+tests/test_business_metrics.py::test_calculate_financial_metrics_safe_decimal PASSED [ 37%]
+tests/test_business_metrics.py::test_calculate_financial_metrics_safe_null PASSED [ 38%]
+tests/test_business_metrics.py::test_customer_segmentation PASSED        [ 40%]
+tests/test_business_metrics.py::test_full_pipeline_with_sample_data PASSED [ 42%]
+tests/test_business_metrics.py::test_edge_case_single_record PASSED      [ 44%]
+tests/test_business_metrics.py::test_edge_case_large_numbers PASSED      [ 46%]
+tests/test_business_metrics.py::test_edge_case_all_zeros PASSED          [ 48%]
+tests/test_business_metrics.py::test_business_metrics_calculator_top_level_shape PASSED [ 50%]
+tests/test_business_metrics.py::test_extracted_analytics_outputs_match_facade_methods PASSED [ 51%]
+tests/test_business_metrics.py::test_extracted_analytics_sparse_rows_do_not_crash PASSED [ 53%]
+tests/test_data_access_boundaries.py::test_resolve_connection_details_prefers_direct_env_config PASSED [ 55%]
+tests/test_data_access_boundaries.py::test_resolve_connection_details_uses_ncx_when_direct_config_missing PASSED [ 57%]
+tests/test_data_access_boundaries.py::test_resolve_connection_details_raises_for_missing_ncx PASSED [ 59%]
+tests/test_data_access_boundaries.py::test_build_banco_datos_query_keeps_document_code_exclusion PASSED [ 61%]
+tests/test_data_access_boundaries.py::test_fetch_banco_datos_executes_filtered_query PASSED [ 62%]
+tests/test_reporting_visualization.py::test_generate_visualization_report_smoke_with_default_output PASSED [ 64%]
+tests/test_reporting_visualization.py::test_generate_visualization_report_graceful_when_matplotlib_unavailable PASSED [ 66%]
+tests/test_row_contracts.py::test_extract_row_value_parity_with_legacy[row0-keys0-0-116.5] PASSED [ 68%]
+tests/test_row_contracts.py::test_extract_row_value_parity_with_legacy[row1-keys1-0-100.43] PASSED [ 70%]
+tests/test_row_contracts.py::test_extract_row_value_parity_with_legacy[row2-keys2-1-1] PASSED [ 72%]
+tests/test_row_contracts.py::test_extract_row_value_parity_with_legacy[row3-keys3-0-0] PASSED [ 74%]
+tests/test_row_contracts.py::test_extract_financial_row_values_handles_decimal_string_and_null PASSED [ 75%]
+tests/test_row_contracts.py::test_coerce_metric_value_handles_grouped_numeric_strings PASSED [ 77%]
+tests/test_row_contracts.py::test_coerce_metric_value_keeps_non_numeric_strings_unchanged PASSED [ 79%]
+tests/test_row_contracts.py::test_analyzer_financial_path_uses_shared_coercion PASSED [ 81%]
+tests/test_row_contracts.py::test_extract_row_value_raises_for_malformed_rows[None] PASSED [ 83%]
+tests/test_row_contracts.py::test_extract_row_value_raises_for_malformed_rows[10] PASSED [ 85%]
+tests/test_row_contracts.py::test_extract_row_value_raises_for_malformed_rows[malformed_row2] PASSED [ 87%]
+tests/test_row_contracts.py::test_extract_financial_row_values_raises_for_malformed_payload PASSED [ 88%]
+tests/test_vanna_provider_factory.py::test_create_vanna_instance_selects_openai_branch PASSED [ 90%]
+tests/test_vanna_provider_factory.py::test_create_vanna_instance_selects_ollama_branch PASSED [ 92%]
+tests/test_vanna_provider_factory.py::test_create_vanna_instance_selects_anthropic_branch PASSED [ 94%]
+tests/test_vanna_provider_factory.py::test_create_vanna_instance_selects_grok_branch PASSED [ 96%]
+tests/test_vanna_provider_factory.py::test_create_vanna_instance_raises_when_no_provider_enabled PASSED [ 98%]
+tests/test_vanna_public_surface.py::test_vanna_public_surface_imports_all_entrypoints PASSED [100%]
+
+=============================== warnings summary ===============================
+tests/test_reporting_visualization.py::test_generate_visualization_report_smoke_with_default_output
+  /home/emilio/depotru_database/src/reporting/visualization.py:430: UserWarning: Glyph 128202 (\N{BAR CHART}) missing from font(s) DejaVu Sans Mono.
+    plt.savefig(
+
+tests/test_reporting_visualization.py::test_generate_visualization_report_smoke_with_default_output
+  /home/emilio/depotru_database/src/reporting/visualization.py:430: UserWarning: Glyph 65039 (\N{VARIATION SELECTOR-16}) missing from font(s) DejaVu Sans Mono.
+    plt.savefig(
+
+tests/test_reporting_visualization.py::test_generate_visualization_report_smoke_with_default_output
+  /home/emilio/depotru_database/src/reporting/visualization.py:430: UserWarning: Glyph 9989 (\N{WHITE HEAVY CHECK MARK}) missing from font(s) DejaVu Sans Mono.
+    plt.savefig(
+
+tests/test_reporting_visualization.py::test_generate_visualization_report_smoke_with_default_output
+  /home/emilio/depotru_database/src/reporting/visualization.py:430: UserWarning: Glyph 127919 (\N{DIRECT HIT}) missing from font(s) DejaVu Sans Mono.
+    plt.savefig(
+
+tests/test_reporting_visualization.py::test_generate_visualization_report_smoke_with_default_output
+  /home/emilio/depotru_database/src/reporting/visualization.py:430: UserWarning: Glyph 128187 (\N{PERSONAL COMPUTER}) missing from font(s) DejaVu Sans Mono.
+    plt.savefig(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 54 passed, 5 warnings in 19.58s ========================

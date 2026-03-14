@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.9, pytest-8.2.2, pluggy-1.6.0 -- /home/emilio/.local/share/mise/installs/python/3.13.9/bin/python
+cachedir: .pytest_cache
+rootdir: /home/emilio/depotru_database
+configfile: pyproject.toml
+plugins: cov-4.1.0, asyncio-0.21.0, anyio-4.12.1
+asyncio: mode=Mode.STRICT
+collecting ... collected 1 item
+
+tests/test_business_metrics.py::test_extracted_analytics_sparse_rows_do_not_crash PASSED [100%]
+
+============================== 1 passed in 1.04s ===============================
