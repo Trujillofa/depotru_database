@@ -13,9 +13,12 @@ from collections import defaultdict
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
+
 # Handle imports for both package and direct execution contexts
 try:
     from ...config import CustomerSegmentation, InventoryConfig, ProfitabilityConfig
+    from .alerts import InventoryAlerts
 except ImportError:
     # Fallback for direct execution
     import sys
@@ -23,6 +26,12 @@ except ImportError:
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     from config import CustomerSegmentation, InventoryConfig, ProfitabilityConfig
+
+    try:
+        from analysis.alerts import InventoryAlerts
+    except ImportError:
+        # Last resort fallback
+        from .alerts import InventoryAlerts
 
 
 def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:
@@ -175,14 +184,21 @@ class UnifiedAnalyzer:
             - customers: Customer segmentation and metrics
             - products: Product performance and profitability
             - inventory: Inventory velocity metrics
+            - alerts: Stock alerts and recommendations
         """
         self._process_all_data()
+
+        # Generate alerts using the alerts module
+        df = pd.DataFrame(self.data)
+        alerts_engine = InventoryAlerts(df)
+        alerts_summary = alerts_engine.get_summary()
 
         return {
             "financial": self._calculate_financial(),
             "customers": self._calculate_customers(),
             "products": self._calculate_products(),
             "inventory": self._calculate_inventory(),
+            "alerts": alerts_summary,
         }
 
     def _calculate_financial(self) -> Dict[str, Any]:

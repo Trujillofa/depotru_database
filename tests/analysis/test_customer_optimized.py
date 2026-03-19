@@ -3,10 +3,11 @@ Tests for business_analyzer/analysis/customer_optimized.py
 """
 
 import pytest
+
 from business_analyzer.analysis.customer_optimized import (
-    safe_divide,
-    extract_value,
     OptimizedCustomerAnalyzer,
+    extract_value,
+    safe_divide,
 )
 
 
@@ -52,12 +53,15 @@ class TestExtractValue:
     def test_extract_default(self):
         """Test returning default when no keys found"""
         row = {}
-        result = extract_value(row, ["TercerosNombres", "NombreCliente"], default="Unknown")
+        result = extract_value(
+            row, ["TercerosNombres", "NombreCliente"], default="Unknown"
+        )
         assert result == "Unknown"
 
     def test_extract_decimal(self):
         """Test extracting Decimal value"""
         from decimal import Decimal
+
         row = {"TotalMasIva": Decimal("100.50")}
         result = extract_value(row, ["TotalMasIva"])
         assert result == 100.50
@@ -158,13 +162,13 @@ class TestOptimizedCustomerAnalyzer:
             {"TercerosNombres": "Customer A", "TotalMasIva": 100.0},
         ]
         analyzer = OptimizedCustomerAnalyzer(data)
-        
+
         # First call should compute
         result1 = analyzer.analyze()
-        
+
         # Second call should use cache
         result2 = analyzer.analyze()
-        
+
         assert result1 == result2
 
     def test_clear_cache(self):
@@ -174,10 +178,10 @@ class TestOptimizedCustomerAnalyzer:
         ]
         analyzer = OptimizedCustomerAnalyzer(data)
         analyzer.analyze()
-        
+
         # Clear cache
         analyzer.clear_cache()
-        
+
         assert analyzer._cache == {}
         assert analyzer._customers_list is None
 

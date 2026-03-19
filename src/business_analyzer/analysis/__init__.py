@@ -14,14 +14,18 @@ Usage:
     from src.business_analyzer.analysis import FinancialAnalyzer, InventoryAnalyzer
 """
 
+from .alerts import InventoryAlerts
 from .customer import CustomerAnalyzer
 from .financial import FinancialAnalyzer
 from .inventory import InventoryAnalyzer
 from .product import ProductAnalyzer
+from .unified import UnifiedAnalyzer
 
 __all__ = [
     "CustomerAnalyzer",
     "ProductAnalyzer",
     "FinancialAnalyzer",
     "InventoryAnalyzer",
+    "UnifiedAnalyzer",
+    "InventoryAlerts",
 ]

@@ -71,18 +71,16 @@ def test_manual_query():
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Test query for SIKA products
+        # Test query for top categories
         query = """
         SELECT TOP 5
-            marca AS category,
+            categoria AS category,
             SUM(TotalSinIva) AS revenue,
             COUNT(DISTINCT TercerosNombres) AS customers
         FROM [dbo].[banco_datos]
-        WHERE categoria = 'PRODUCTOS SIKA'
-          AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-          AND TercerosNombres != 'DEPOSITO TRUJILLO SAS'
+        WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
           AND ano = 2024
-        GROUP BY marca
+        GROUP BY categoria
         ORDER BY SUM(TotalSinIva) DESC
         """
 
@@ -123,9 +121,9 @@ def test_grok_integration():
             "expected_filters": ["ano = 2024", "DocumentosCodigo NOT IN"],
         },
         {
-            "question": "Show monthly sales trends for SIKA products",
+            "question": "Show monthly sales trends for top selling products",
             "expected_fields": ["mes", "ano", "SUM(TotalSinIva)"],
-            "expected_filters": ["categoria = 'PRODUCTOS SIKA'"],
+            "expected_filters": ["DocumentosCodigo NOT IN"],
         },
     ]
 
