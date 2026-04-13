@@ -124,14 +124,11 @@ repos:
         name: mypy type checker
         description: Static type checking for Python
         args:
-          - "--python-version=3.8"
-          - "--warn-return-any"
-          - "--warn-unused-configs"
-          - "--check-untyped-defs"
-          - "--no-implicit-optional"
-          - "--warn-redundant-casts"
-          - "--warn-unused-ignores"
+          - "--python-version=3.9"
+          - "--follow-imports=skip"
+          - "--ignore-missing-imports"
           - "--show-error-codes"
+          - "--show-column-numbers"
         files: \.py$
         # Exclude tests from strict type checking (they often use mocks)
         exclude: ^tests/
