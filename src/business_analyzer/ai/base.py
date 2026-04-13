@@ -290,7 +290,10 @@ def create_ai_client(provider: str = None):
 
     if provider == "grok":
         client = OpenAI(api_key=Config.GROK_API_KEY, base_url="https://api.x.ai/v1")
-        config = {"model": "grok-beta", "base_url": "https://api.x.ai/v1"}
+        config = {
+            "model": "grok-4-1-fast-non-reasoning",
+            "base_url": "https://api.x.ai/v1",
+        }
         return client, config, "openai"
 
     elif provider == "openai":

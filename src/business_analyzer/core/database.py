@@ -140,10 +140,9 @@ class Database:
     def _parse_ncx_file(file_path: str) -> List[Dict[str, Any]]:
         try:
             connections = []
-            # nosec B314: Parsing local Navicat NCX config files (trusted source)
             for conn in (
-                ET.parse(file_path).getroot().findall("Connection")
-            ):  # nosec B314
+                ET.parse(file_path).getroot().findall("Connection")  # nosec B314
+            ):
                 host, user, encrypted = (
                     conn.get("Host"),
                     conn.get("UserName"),
@@ -335,8 +334,8 @@ class Database:
         cursor = self._connection.cursor()
         # nosec B608: SQL identifiers validated above with validate_sql_identifier()
         cursor.execute(
-            f"SELECT TOP 0 * FROM [{db_name}].[dbo].[{table_name}]"
-        )  # nosec B608
+            f"SELECT TOP 0 * FROM [{db_name}].[dbo].[{table_name}]"  # nosec B608
+        )
         columns = [desc[0] for desc in cursor.description]
         cursor.close()
         return columns

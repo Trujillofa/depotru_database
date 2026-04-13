@@ -11,7 +11,7 @@ Performance: ~60% faster than running 4 separate analyzers
 import statistics
 from collections import defaultdict
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import pandas as pd
 
