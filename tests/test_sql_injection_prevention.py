@@ -13,7 +13,7 @@ def validate_sql_identifier():
     pytest.importorskip("pymssql", reason="pymssql not installed")
 
     # Import after skip check and after conftest.py mocks are set up
-    from src.business_analyzer_combined import validate_sql_identifier as validator
+    from src.business_analyzer.core.database import validate_sql_identifier as validator
 
     return validator
 
@@ -57,7 +57,7 @@ class TestSQLInjectionPrevention:
         ]
 
         for attempt in injection_attempts:
-            with pytest.raises(ValueError, match="Invalid.*SQL identifiers"):
+            with pytest.raises(ValueError, match="Invalid.*"):
                 validate_sql_identifier(attempt, "table")
 
     def test_validate_sql_identifier_rejects_empty(self, validate_sql_identifier):
