@@ -1,0 +1,43 @@
+[Unit]
+Description=Business Data Analyzer - AI-Powered BI Platform
+Documentation=https://github.com/Trujillofa/depotru_database
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=yderf
+Group=yderf
+WorkingDirectory=/home/yderf/depotru_database
+
+# Environment
+Environment=PATH=/home/yderf/depotru_database/.venv-tools/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/home/yderf/depotru_database/src
+Environment=PRODUCTION_MODE=true
+
+# Load environment variables from .env file
+EnvironmentFile=/home/yderf/depotru_database/.env
+
+# Main command to run the application
+ExecStart=/home/yderf/depotru_database/.venv-tools/bin/python /home/yderf/depotru_database/src/vanna_grok.py
+
+# Restart policy: always restart on failure
+Restart=always
+RestartSec=10
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=business-analyzer
+
+# Security hardening
+NoNewPrivileges=false
+ProtectSystem=no
+ProtectHome=no
+
+[Install]
+WantedBy=multi-user.target
