@@ -107,11 +107,8 @@ repos:
       - id: flake8
         name: flake8 linter
         description: Lints Python code for style and error checking
-        additional_dependencies:
-          - flake8-pyproject  # Allows reading config from pyproject.toml
         args:
-          - "--max-line-length=88"
-          - "--extend-ignore=E203,W503"
+          - "--config=.flake8"
         files: \.py$
 
   # ==========================================================================

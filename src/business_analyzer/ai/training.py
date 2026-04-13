@@ -17,7 +17,7 @@ def train_on_schema(vn, schema_name: str = "SmartBusiness"):
     """
     print(f"\nTraining on {schema_name} schema & rules...")
 
-    # 1. DDL (Table Structure)
+    # 1. DDL (Table Structure) - Complete schema with all fields
     vn.train(
         ddl="""
         CREATE TABLE banco_datos (
@@ -26,29 +26,73 @@ def train_on_schema(vn, schema_name: str = "SmartBusiness"):
             TotalSinIva DECIMAL(18,2),
             ValorCosto DECIMAL(18,2),
             Cantidad INT,
+            -- CUSTOMER fields
             TercerosNombres NVARCHAR(200),
+            TercerosIdentificacion NVARCHAR(50),
+            -- PRODUCT fields
             ArticulosNombre NVARCHAR(200),
             ArticulosCodigo NVARCHAR(50),
+            ArticulosReferencia NVARCHAR(100),
+            -- VENDOR/SELLER fields (use these for 'vendedor' queries)
+            VendedorFactura NVARCHAR(200),
+            vendedor_codigo NVARCHAR(50),
+            VendedorAsignado NVARCHAR(200),
+            -- DOCUMENT fields
             DocumentosCodigo NVARCHAR(10),
+            NumeroDocumento INT,
+            -- CLASSIFICATION fields (use for brand/category filtering)
             categoria NVARCHAR(100),
-            subcategoria NVARCHAR(100)
+            subcategoria NVARCHAR(100),
+            proveedor NVARCHAR(100),
+            marca NVARCHAR(100),
+            -- LOCATION fields
+            departamento NVARCHAR(100),
+            ciudad NVARCHAR(100)
         );
-    """
+        """
     )
 
-    # 2. Business Rules/Docs
+    # 2. Business Rules/Docs - Critical field mappings
     vn.train(
         documentation="""
         SmartBusiness – Ferretería Sales Database
-        CRITICAL RULE: ALWAYS add WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') to exclude test/cancelled docs.
+
+        CRITICAL RULE: ALWAYS add WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC') to exclude test/cancelled docs.
+
+        FIELD MAPPING - VERY IMPORTANT:
+        --------------------------------
+        CUSTOMER info:
+        - TercerosNombres = CUSTOMER name (NOT vendor!)
+
+        VENDOR/SELLER info (use these for 'vendedor' queries):
+        - VendedorFactura = Vendor name on receipt (e.g. 'DIANA PATRICIA CULMA')
+        - vendedor_codigo = Vendor code (e.g. '093', '106')
+        - VendedorAsignado = Vendor for credit sales (e.g. '106-DIANA PATRICIA CULMA')
+
+        BRAND/CATEGORY filtering (check ALL these fields for brand queries):
+        - proveedor = Products provider (e.g. 'SIKA', 'BELLOTA', 'PAVCO')
+        - categoria = Product category
+        - subcategoria = Product subcategory
+        - marca = Brand name
+        - ArticulosNombre = Product name (may contain brand name)
+
+        BRAND FILTERING RULE: For queries like 'productos SIKA', ALWAYS check ALL of:
+        (proveedor = 'SIKA' OR categoria = 'SIKA' OR subcategoria = 'SIKA' OR ArticulosNombre LIKE '%SIKA%')
+
+        VENDOR FILTERING EXAMPLES:
+        - 'vendedor 093' -> VendedorFactura LIKE '%093%' OR vendedor_codigo LIKE '%093%' OR VendedorAsignado LIKE '%093%'
+        - 'vendedor DIANA' -> VendedorFactura LIKE '%DIANA%'
+        - 'vendedor con codigo 106' -> vendedor_codigo = '106'
+
         Key Metrics:
         - Revenue: SUM(TotalMasIva)
         - Net Revenue: SUM(TotalSinIva)
         - Profit: SUM(TotalSinIva - ValorCosto)
         - Margin %: (TotalSinIva - ValorCosto) / TotalSinIva * 100
         - Tax (IVA): TotalMasIva - TotalSinIva
+
         Queries in Spanish work best (e.g., 'productos vendidos').
-    """
+        """
     )
 
     print("✓ Schema training complete!")
@@ -101,6 +145,64 @@ def get_default_training_examples() -> List[Tuple[str, str]]:
             GROUP BY categoria ORDER BY Ganancia_Neta DESC
             """,
         ),
+        # VENDOR EXAMPLES
+        (
+            "Ventas del vendedor con código 093",
+            """
+            SELECT ArticulosNombre AS Producto, SUM(TotalMasIva) AS Ventas,
+            SUM(Cantidad) AS Unidades FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            AND (VendedorFactura LIKE '%093%' OR vendedor_codigo LIKE '%093%' OR VendedorAsignado LIKE '%093%')
+            GROUP BY ArticulosNombre ORDER BY Ventas DESC
+            """,
+        ),
+        (
+            "Ventas del vendedor DIANA",
+            """
+            SELECT ArticulosNombre AS Producto, SUM(TotalMasIva) AS Ventas,
+            SUM(Cantidad) AS Unidades FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND VendedorFactura LIKE '%DIANA%'
+            GROUP BY ArticulosNombre ORDER BY Ventas DESC
+            """,
+        ),
+        # BRAND EXAMPLES - Check ALL brand fields
+        (
+            "Ventas de productos SIKA este año",
+            """
+            SELECT ArticulosNombre AS Producto, SUM(TotalMasIva) AS Ventas,
+            SUM(Cantidad) AS Unidades FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            AND (proveedor = 'SIKA' OR categoria = 'SIKA' OR subcategoria = 'SIKA' OR ArticulosNombre LIKE '%SIKA%')
+            GROUP BY ArticulosNombre ORDER BY Ventas DESC
+            """,
+        ),
+        (
+            "Ventas de productos BELLOTA este año",
+            """
+            SELECT ArticulosNombre AS Producto, SUM(TotalMasIva) AS Ventas,
+            SUM(Cantidad) AS Unidades FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            AND (proveedor = 'BELLOTA' OR categoria = 'BELLOTA' OR subcategoria = 'BELLOTA' OR ArticulosNombre LIKE '%BELLOTA%')
+            GROUP BY ArticulosNombre ORDER BY Ventas DESC
+            """,
+        ),
+        # COMBINED VENDOR + BRAND EXAMPLE
+        (
+            "Ventas de SIKA por vendedor 095 en 2026",
+            """
+            SELECT ArticulosNombre AS Producto, SUM(TotalMasIva) AS Ventas,
+            SUM(Cantidad) AS Unidades FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND YEAR(Fecha) = 2026
+            AND (proveedor = 'SIKA' OR categoria = 'SIKA' OR subcategoria = 'SIKA' OR ArticulosNombre LIKE '%SIKA%')
+            AND (VendedorFactura LIKE '%095%' OR vendedor_codigo LIKE '%095%' OR VendedorAsignado LIKE '%095%')
+            GROUP BY ArticulosNombre ORDER BY Ventas DESC
+            """,
+        ),
         (
             "Top 10 clientes por facturación total",
             """
@@ -119,29 +221,11 @@ def get_default_training_examples() -> List[Tuple[str, str]]:
             """,
         ),
         (
-            "Productos con margen de ganancia inferior al 10%",
-            """
-            SELECT ArticulosNombre, categoria, AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0))
-            AS Margen FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND TotalSinIva > 0 GROUP BY ArticulosNombre, categoria
-            HAVING AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0)) < 10 ORDER BY Margen ASC
-            """,
-        ),
-        (
             "Ventas mensuales comparando este año vs año pasado",
             """
             SELECT YEAR(Fecha) AS Ano, MONTH(Fecha) AS Mes, SUM(TotalMasIva) AS Ventas
             FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
             AND YEAR(Fecha) >= YEAR(GETDATE()) - 1 GROUP BY YEAR(Fecha), MONTH(Fecha) ORDER BY Mes, Ano
-            """,
-        ),
-        (
-            "Clientes que no han comprado en los últimos 90 días",
-            """
-            SELECT TercerosNombres, MAX(Fecha) AS Ultima_Compra FROM banco_datos
-            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            GROUP BY TercerosNombres HAVING MAX(Fecha) < DATEADD(DAY, -90, GETDATE())
-            ORDER BY Ultima_Compra DESC
             """,
         ),
         (
@@ -153,28 +237,11 @@ def get_default_training_examples() -> List[Tuple[str, str]]:
             """,
         ),
         (
-            "Ticket promedio por mes",
-            """
-            SELECT YEAR(Fecha) AS Ano, MONTH(Fecha) AS Mes,
-            SUM(TotalMasIva) / COUNT(DISTINCT NumeroDocumento) AS Ticket_Promedio
-            FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            GROUP BY YEAR(Fecha), MONTH(Fecha) ORDER BY Ano DESC, Mes DESC
-            """,
-        ),
-        (
-            "Días de la semana con mayor volumen de ventas",
-            """
-            SELECT DATENAME(WEEKDAY, Fecha) AS Dia, SUM(TotalMasIva) AS Ventas
-            FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            GROUP BY DATENAME(WEEKDAY, Fecha), DATEPART(WEEKDAY, Fecha) ORDER BY DATEPART(WEEKDAY, Fecha)
-            """,
-        ),
-        (
             "Ranking de proveedores por rentabilidad",
             """
-            SELECT subcategoria AS Proveedor, SUM(TotalSinIva - ValorCosto) AS Ganancia_Total
+            SELECT proveedor AS Proveedor, SUM(TotalSinIva - ValorCosto) AS Ganancia_Total
             FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            GROUP BY subcategoria ORDER BY Ganancia_Total DESC
+            GROUP BY proveedor ORDER BY Ganancia_Total DESC
             """,
         ),
     ]
@@ -190,8 +257,8 @@ def generate_training_data(
 
     Args:
         table_name: Name of the table
-        columns: List of column names
-        include_common_queries: Whether to include common query patterns
+        columns: List of column names to include
+        include_common_queries: Whether to include common query templates
 
     Returns:
         List of (question, sql) tuples
@@ -209,34 +276,21 @@ def generate_training_data(
             "DocumentosCodigo",
             "categoria",
             "subcategoria",
+            "VendedorFactura",
+            "vendedor_codigo",
+            "VendedorAsignado",
+            "proveedor",
+            "marca",
         ]
 
     examples = []
 
     if include_common_queries:
-        # Revenue queries
-        rev_query = (  # nosec B608
+        rev_query = (
             f"SELECT SUM(TotalMasIva) AS Total_Revenue FROM {table_name} "
             f"WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')"
         )
         examples.append((f"Total revenue from {table_name}", rev_query))
-
-        # Top products
-        prod_query = (  # nosec B608
-            f"SELECT TOP 10 ArticulosNombre, SUM(Cantidad) AS Total_Quantity "
-            f"FROM {table_name} WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') "
-            f"GROUP BY ArticulosNombre ORDER BY Total_Quantity DESC"
-        )
-        examples.append((f"Top selling products from {table_name}", prod_query))
-
-        # Monthly trends
-        trend_query = (  # nosec B608
-            f"SELECT YEAR(Fecha) AS Year, MONTH(Fecha) AS Month, "
-            f"SUM(TotalMasIva) AS Revenue FROM {table_name} "
-            f"WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS') "
-            f"GROUP BY YEAR(Fecha), MONTH(Fecha) ORDER BY Year, Month"
-        )
-        examples.append((f"Monthly revenue trends from {table_name}", trend_query))
 
     return examples
 
