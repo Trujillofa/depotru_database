@@ -320,6 +320,15 @@ module = [
     "business_analyzer.ai.insights",
     "business_analyzer.ai.providers.*",
     "business_analyzer.core.database",
+    "src.api",
+    "src.vanna_grok",
+    "src.business_analyzer.analysis.*",
+    "src.business_analyzer.ai.__init__",
+    "src.business_analyzer.ai.base",
+    "src.business_analyzer.ai.formatting",
+    "src.business_analyzer.ai.insights",
+    "src.business_analyzer.ai.providers.*",
+    "src.business_analyzer.core.database",
 ]
 ignore_errors = true
 

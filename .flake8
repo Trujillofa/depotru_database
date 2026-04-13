@@ -3,4 +3,3 @@ max-line-length = 88
 extend-ignore = E203
 per-file-ignores =
     __init__.py:F401
-    src/business_analyzer/ai/training.py:E501
