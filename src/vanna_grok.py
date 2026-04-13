@@ -15,22 +15,65 @@ Supported AI Providers (set via AI_PROVIDER env var):
 - ollama: Local Ollama (free, private)
 """
 
+import re
 import sys
+from typing import Optional
 
 # Add src to path for imports
 sys.path.insert(0, "/home/yderf/depotru_database/src")
 
-import pandas as pd
-from vanna.legacy.flask import VannaFlaskApp
+from vanna.legacy.flask import VannaFlaskApp  # noqa: E402
 
 # Import from the new modular ai package
-from business_analyzer.ai import (
+from business_analyzer.ai import (  # noqa: E402
     AIVanna,
     Config,
     format_dataframe,
     full_training,
     generate_insights,
 )
+
+
+def clean_sql(sql: str) -> str:
+    """
+    Clean SQL by removing LLM artifacts like 'intermediate_sql:' prefixes,
+    comments, and other non-SQL content that causes execution errors.
+
+    Known issue: Vanna LLMs sometimes prefix SQL with labels like:
+    - 'intermediate_sql:'
+    - 'sql:'
+    - '```sql'
+    This causes SQL Server to interpret the label as a stored procedure name.
+    """
+    if not sql:
+        return sql
+
+    cleaned = sql
+
+    # Remove common LLM SQL prefixes (case-insensitive)
+    prefixes = [
+        r"^intermediate_sql:\s*",
+        r"^sql:\s*",
+        r"^final_sql:\s*",
+        r"^query:\s*",
+    ]
+    for prefix in prefixes:
+        cleaned = re.sub(
+            prefix, "", cleaned, flags=re.IGNORECASE | re.MULTILINE
+        ).strip()
+
+    # Remove leading SQL comment lines (-- comment)
+    lines = cleaned.split("\n")
+    code_lines = [line for line in lines if not line.strip().startswith("--")]
+    cleaned = "\n".join(code_lines).strip()
+
+    # Remove markdown code blocks if present
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```\w*", "", cleaned).strip()
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3].strip()
+
+    return cleaned
 
 
 def train_vanna(vn: AIVanna):
@@ -45,7 +88,10 @@ class EnhancedAIVanna(AIVanna):
     """
 
     def ask(
-        self, question: str = None, print_results: bool = True, auto_train: bool = True
+        self,
+        question: Optional[str] = None,
+        print_results: bool = True,
+        auto_train: bool = True,
     ) -> tuple:
         """
         Enhanced ask() method with:
@@ -59,6 +105,9 @@ class EnhancedAIVanna(AIVanna):
 
             if sql is None:
                 return None, None, None
+
+            # Clean LLM artifacts from SQL (intermediate_sql prefix bug - GitHub #588)
+            sql = clean_sql(sql)
 
             # Execute query
             df = self.run_sql(sql)
@@ -105,7 +154,7 @@ class EnhancedAIVanna(AIVanna):
                 try:
                     self.train(question=question, sql=sql)
                 except Exception:  # nosec B110
-                    # Silent fail on training - training failures shouldn't break the user experience
+                    # Training failures shouldn't break the user experience
                     pass
 
             return sql, df, insights
@@ -142,6 +191,7 @@ def main():
         allow_llm_to_see_data=True,
         title=f"SmartBusiness + {Config.AI_PROVIDER.upper()} AI",
         subtitle="¡Chatea con tu base de datos en español natural!",
+        chart=False,  # Disable chart generation (causing errors)
     )
 
     # Vanna's Official Magic: .run()
