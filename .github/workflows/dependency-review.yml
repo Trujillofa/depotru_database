@@ -11,6 +11,9 @@ permissions:
 jobs:
   dependency-review:
     runs-on: ubuntu-latest
+    # Non-blocking: requires GitHub Advanced Security, which is not
+    # enabled on this repo. Keep the signal without failing merges.
+    continue-on-error: true
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4

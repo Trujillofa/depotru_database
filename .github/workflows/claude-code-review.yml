@@ -19,6 +19,9 @@ jobs:
     #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
 
     runs-on: ubuntu-latest
+    # Non-blocking: depends on CLAUDE_CODE_OAUTH_TOKEN secret, which
+    # may be expired or unset. Keep the review signal without failing merges.
+    continue-on-error: true
     permissions:
       contents: write
       pull-requests: write
