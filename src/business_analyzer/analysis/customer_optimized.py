@@ -13,7 +13,7 @@ Benchmark improvements:
 
 from collections import defaultdict
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # Handle imports for both package and direct execution contexts
 try:

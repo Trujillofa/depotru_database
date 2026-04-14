@@ -116,13 +116,13 @@ jobs:
       - name: Check code formatting with black
         run: |
           echo "::group::Black formatting check"
-          black --check --diff --extend-exclude "(src/business_analyzer_combined.py|src/business_analyzer/ai/training.py|tests/ai/test_stability.py|tests/test_config_full.py|tests/test_metabase_connection.py)" src/ tests/ examples/
+          black --check --diff --extend-exclude "(src/business_analyzer/ai/training.py|tests/ai/test_stability.py|tests/test_metabase_connection.py)" src/ tests/ examples/
           echo "::endgroup::"
 
       - name: Check import sorting with isort
         run: |
           echo "::group::isort import sorting check"
-          isort --check-only --diff --skip-glob "*.backup" --skip-glob "src/business_analyzer_combined.py" --skip-glob "src/business_analyzer/ai/training.py" --skip-glob "tests/ai/test_stability.py" --skip-glob "tests/test_config_full.py" --skip-glob "tests/test_metabase_connection.py" src/ tests/ examples/
+          isort --check-only --diff --skip-glob "*.backup" --skip-glob "src/business_analyzer/ai/training.py" --skip-glob "tests/ai/test_stability.py" --skip-glob "tests/test_metabase_connection.py" src/ tests/ examples/
           echo "::endgroup::"
 
       - name: Lint with flake8

@@ -137,7 +137,6 @@ all = [
 
 [project.scripts]
 # CLI Entry Points
-business-analyzer = "src.business_analyzer_combined:main"
 vanna-grok = "src.vanna_grok:main"
 vanna-chat = "src.vanna_grok:main"
 
@@ -313,7 +312,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
     "api",
-    "business_analyzer_combined",
     "vanna_grok",
     "business_analyzer.analysis.*",
     "business_analyzer.ai.__init__",
@@ -322,6 +320,15 @@ module = [
     "business_analyzer.ai.insights",
     "business_analyzer.ai.providers.*",
     "business_analyzer.core.database",
+    "src.api",
+    "src.vanna_grok",
+    "src.business_analyzer.analysis.*",
+    "src.business_analyzer.ai.__init__",
+    "src.business_analyzer.ai.base",
+    "src.business_analyzer.ai.formatting",
+    "src.business_analyzer.ai.insights",
+    "src.business_analyzer.ai.providers.*",
+    "src.business_analyzer.core.database",
 ]
 ignore_errors = true
 
