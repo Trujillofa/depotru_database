@@ -1,45 +1,488 @@
 {
-	"banco_datos": [
-		{
-			"VentaID": "primary key",
-			"VendedorID": "vendor ID",
-			"VendedorFactura": "Vendor name in receipt",
-			"vendedor_codigo": "vendor id",
-			"VendedorAsignado": "vendor id when is the customer is credit",
-			"DocumentosCodigo": "receipt code abbreviation",
-			"DocumentosNombre": "receipt name",
-			"NumeroDocumento": "receipt number",
-			"Fecha": "date",
-			"ano": "year",
-			"mes": "month",
-			"dia": "day",
-			"periodo": "period write with year 2025 plus month number then 20251 for january",
-			"DiasCredito": "number of days the receipt has as credit",
-			"TercerosID": "customer primary key",
-			"TercerosIdentificacion": "customer id",
-			"TercerosNombres": "customer name",
-			"ArticulosID": "products primary key",
-			"ArticulosCodigo": "products id",
-			"ArticulosNombre": "products name",
-			"AlmacenCodigo": "storehouse code",
-			"ArticulosReferencia": "products reference",
-			"Cantidad": "quantity",
-			"LineasPorcentaje": "MISSING",
-			"VentaSinIva": "revenue no taxes",
-			"VentaMasIva": "revenue plus taxes",
-			"TotalSinIva": "total revenue",
-			"TotalMasIva": "total revenue plus taxes",
-			"ValorCosto": "cost",
-			"PorDescuento": "percentage discount",
-			"ValorDescuento": "discount value",
-			"Iva": "tax",
-			"marca": "category",
-			"proveedor": "products provider",
-			"categoria": "subcategory",
-			"subcategoria": "subcategory",
-			"departamento": "state",
-			"ciudad": "city"
+	"_meta": {
+		"description": "SmartBusiness Database Schema Documentation - banco_datos table",
+		"last_updated": "2026-04-16",
+		"total_records": 1441946,
+		"date_range": {
+			"from": "2022-01-11",
+			"to": "2026-04-15"
 		},
+		"version": "2.0"
+	},
+
+	"critical_rules": {
+		"excluded_document_codes": {
+			"codes": ["XY", "AS", "TS", "YX", "ISC"],
+			"description": "ALWAYS exclude these document codes - they represent test transactions, cancellations, or internal adjustments",
+			"sql_clause": "WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')",
+			"importance": "CRITICAL - Every query must include this filter"
+		},
+		"negative_values": {
+			"description": "Negative values in financial fields represent returns/cancellations",
+			"handling": "Include by default unless analyzing returns specifically"
+		},
+		"date_format": {
+			"description": "YYYY-MM-DD format (ISO 8601)",
+			"examples": ["2025-01-07", "2026-04-15"]
+		}
+	},
+
+	"schema": {
+		"table_name": "banco_datos",
+		"description": "Main sales transaction table for ferretería (hardware store) operations",
+		"record_type": "Sales transactions including invoices, credit notes, and adjustments",
+
+		"fields": {
+			"transaction_identifiers": {
+				"VentaID": {
+					"type": "INTEGER PRIMARY KEY",
+					"description": "Unique transaction line ID",
+					"example": 353533,
+					"usage": "Use for deduplication or specific record lookup"
+				},
+				"DocumentosCodigo": {
+					"type": "NVARCHAR(10)",
+					"description": "Document type code - CRITICAL for filtering",
+					"values": {
+						"FED": {
+							"name": "FACTURA ELECTRONICA DE VENTA",
+							"description": "Main store (Almacen) - Standard electronic invoice",
+							"return_code": "DVE"
+						},
+						"FEF": {
+							"name": "FACTURA ELECTRONICA FLORENCIA",
+							"description": "Florencia branch store"
+						},
+						"FET": {
+							"name": "FACTURA ELECTRONICA CALLE 5",
+							"description": "Calle 5 / Distribuciones store"
+						},
+						"DVE": {
+							"name": "DEVOLUCION DE VENTA ELECTRONICA",
+							"description": "Return/credit note for FED"
+						},
+						"XY": {
+							"name": "TEST/ADJUSTMENT",
+							"description": "Test documents - ALWAYS EXCLUDE",
+							"exclude": true
+						},
+						"AS": {
+							"name": "ADJUSTMENT",
+							"description": "System adjustments - ALWAYS EXCLUDE",
+							"exclude": true
+						},
+						"TS": {
+							"name": "TEST SALES",
+							"description": "Test sales - ALWAYS EXCLUDE",
+							"exclude": true
+						}
+					},
+					"business_rule": "ALWAYS filter: WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')"
+				},
+				"DocumentosNombre": {
+					"type": "NVARCHAR(100)",
+					"description": "Full document type name",
+					"example": "FACTURA ELECTRONICA DE VENTA"
+				},
+				"NumeroDocumento": {
+					"type": "INTEGER",
+					"description": "Invoice/Receipt number",
+					"example": 300320,
+					"usage": "Unique per DocumentosCodigo. FED-300320 is different from FEF-300320"
+				}
+			},
+
+			"vendor_seller_fields": {
+				"_note": "Vendedor = Seller/Vendor (NOT customer!). These are employees who made the sale",
+				"VendedorID": {
+					"type": "INTEGER",
+					"description": "Vendor ID in system",
+					"example": 46
+				},
+				"VendedorFactura": {
+					"type": "NVARCHAR(200)",
+					"description": "Vendor name as shown on receipt",
+					"example": "AMELIA SOTELO NARVAEZ",
+					"top_vendors": [
+						"CARLOS EFREY PASCUAS",
+						"YULI ALEJANDRA HIGUERA",
+						"ANDRES FELIPE VARGAS JOVEL",
+						"AMELIA SOTELO NARVAEZ",
+						"OSCAR IVAN POLANIA GARCIA"
+					]
+				},
+				"vendedor_codigo": {
+					"type": "NVARCHAR(50)",
+					"description": "Vendor code/number",
+					"example": "106",
+					"note": "May be NULL for some vendors"
+				},
+				"VendedorAsignado": {
+					"type": "NVARCHAR(200)",
+					"description": "Vendor assigned for credit sales",
+					"example": "106-DIANA PATRICIA CULMA",
+					"note": "Only populated for credit transactions (DiasCredito > 0)"
+				}
+			},
+
+			"customer_fields": {
+				"_note": "Terceros = Third parties = Customers",
+				"TercerosID": {
+					"type": "INTEGER",
+					"description": "Customer ID in system",
+					"example": 4605
+				},
+				"TercerosIdentificacion": {
+					"type": "NVARCHAR(50)",
+					"description": "Customer NIT/ID number",
+					"example": "83167817"
+				},
+				"TercerosNombres": {
+					"type": "NVARCHAR(200)",
+					"description": "Customer full name",
+					"example": "MANUEL ROBERTO LONDOÑO CHARRY",
+					"top_customers": [
+						"FERRETERIA MAGRETH S A S",
+						"ONG FUNDACION GESTION SOCIAL D",
+						"FREDI TRUJILLO CULMA",
+						"FERRETERIA LA GRAN REBAJA DE C",
+						"GIL ANTONIO VARGAS MERCHAN"
+					]
+				}
+			},
+
+			"product_fields": {
+				"ArticulosID": {
+					"type": "INTEGER",
+					"description": "Product ID in system",
+					"example": 4152
+				},
+				"ArticulosCodigo": {
+					"type": "NVARCHAR(50)",
+					"description": "Product SKU/Code",
+					"example": "0100050058"
+				},
+				"ArticulosNombre": {
+					"type": "NVARCHAR(200)",
+					"description": "Product full name",
+					"example": "CUCHILLA GUAD/BELL ROJA C16 1\" RF:351625",
+					"top_products": [
+						"AMARRES PARA TEJA",
+						"CEMENTO GRIS USO GENERAL CEMEX 50KG",
+						"ALAMBRE NEGRO RECOCIDO X KILO CONTINUO",
+						"ROLLO CORRUGADO X KG 1/4\" SR NTC 2289",
+						"CODO PRESION 90 1/2 T/PESADO"
+					]
+				},
+				"ArticulosReferencia": {
+					"type": "NVARCHAR(100)",
+					"description": "Product reference code (often empty)",
+					"example": "351625"
+				},
+				"AlmacenCodigo": {
+					"type": "NVARCHAR(10)",
+					"description": "Warehouse/Store code",
+					"example": "ALM",
+					"values": {
+						"ALM": "Almacen principal (Main warehouse)"
+					}
+				}
+			},
+
+			"classification_fields": {
+				"_note": "Hierarchy: proveedor (brand) → categoria (category) → subcategoria (subcategory)",
+				"proveedor": {
+					"type": "NVARCHAR(100)",
+					"description": "Product provider/manufacturer brand",
+					"example": "BELLOTA",
+					"top_brands": [
+						{ "name": "CEMEX", "revenue": 47156611463, "category": "Cement" },
+						{
+							"name": "ACESCO",
+							"revenue": 42795789520,
+							"category": "Steel/Iron"
+						},
+						{
+							"name": "SIKA",
+							"revenue": 27219836999,
+							"category": "Construction chemicals"
+						},
+						{
+							"name": "PAVCO",
+							"revenue": 16664165136,
+							"category": "PVC pipes"
+						},
+						{
+							"name": "EUROCERAMICA",
+							"revenue": 9570179992,
+							"category": "Ceramic tiles"
+						}
+					]
+				},
+				"marca": {
+					"type": "NVARCHAR(100)",
+					"description": "Tax category or product line (NOT the brand!)",
+					"example": "PRODUCTOS GRAVADOS AL 5%",
+					"warning": "This is NOT the product brand - use 'proveedor' for brand",
+					"common_values": [
+						"PRODUCTOS GRAVADOS AL 5%",
+						"MATERIALES PARA CONSTRUCCION Y FONTANERIA",
+						"PRODUCTOS GRAVADOS AL 19%"
+					]
+				},
+				"categoria": {
+					"type": "NVARCHAR(100)",
+					"description": "Product category",
+					"example": "ART Y HERRAMIENTAS AGRICOLAS",
+					"top_categories": [
+						{
+							"name": "CEMENTO GRIS",
+							"revenue": 45164889131,
+							"transactions": 39136
+						},
+						{ "name": "HIERRO", "revenue": 44674602396, "transactions": 43538 },
+						{ "name": "ZINC", "revenue": 38159975028, "transactions": 32656 },
+						{
+							"name": "PRODUCTOS SIKA",
+							"revenue": 27443132851,
+							"transactions": 107472
+						},
+						{
+							"name": "PERFIERIA",
+							"revenue": 22679673932,
+							"transactions": 39509
+						}
+					]
+				},
+				"subcategoria": {
+					"type": "NVARCHAR(100)",
+					"description": "Product subcategory (often same as category)",
+					"example": "BUJES"
+				}
+			},
+
+			"location_fields": {
+				"departamento": {
+					"type": "NVARCHAR(100)",
+					"description": "Colombian department (state)",
+					"example": "HUILA"
+				},
+				"ciudad": {
+					"type": "NVARCHAR(100)",
+					"description": "City/Municipality",
+					"example": "NEIVA"
+				}
+			},
+
+			"financial_fields": {
+				"_note": "All financial values in Colombian Pesos (COP)",
+				"_format": "Use Colombian format: $1.234.567,89 (dots thousands, comma decimals)",
+
+				"Cantidad": {
+					"type": "DECIMAL(18,2)",
+					"description": "Quantity sold (units/kg/meters/etc)",
+					"example": 3.0
+				},
+				"VentaSinIva": {
+					"type": "DECIMAL(18,4)",
+					"description": "Line item price without tax",
+					"example": "5929.0000"
+				},
+				"VentaMasIva": {
+					"type": "DECIMAL(18,4)",
+					"description": "Line item price with tax",
+					"example": "6225.4500"
+				},
+				"TotalSinIva": {
+					"type": "DECIMAL(18,2)",
+					"description": "Total line revenue without tax (VentaSinIva * Cantidad - discount)",
+					"example": 17787.0,
+					"formula": "SUM(TotalSinIva) = Net Revenue"
+				},
+				"TotalMasIva": {
+					"type": "DECIMAL(18,2)",
+					"description": "Total line revenue with tax (VentaMasIva * Cantidad - discount)",
+					"example": 18676.35,
+					"formula": "SUM(TotalMasIva) = Gross Revenue (Facturación)"
+				},
+				"ValorCosto": {
+					"type": "DECIMAL(18,2)",
+					"description": "Total cost of goods sold",
+					"example": 15467.28,
+					"formula": "Profit = TotalSinIva - ValorCosto"
+				},
+				"Iva": {
+					"type": "DECIMAL(5,2)",
+					"description": "VAT/Tax percentage",
+					"example": 5.0,
+					"common_values": [0.0, 5.0, 19.0]
+				},
+				"PorDescuento": {
+					"type": "DECIMAL(5,2)",
+					"description": "Discount percentage",
+					"example": 0.0
+				},
+				"ValorDescuento": {
+					"type": "DECIMAL(18,12)",
+					"description": "Discount value",
+					"example": "0e-12"
+				},
+				"LineasPorcentaje": {
+					"type": "DECIMAL(5,2)",
+					"description": "Line margin/discount percentage",
+					"example": 5.0
+				}
+			},
+
+			"date_fields": {
+				"Fecha": {
+					"type": "DATE",
+					"description": "Transaction date (YYYY-MM-DD)",
+					"example": "2025-01-07",
+					"sql_functions": {
+						"YEAR": "YEAR(Fecha) - Get year (e.g., 2025)",
+						"MONTH": "MONTH(Fecha) - Get month 1-12",
+						"DAY": "DAY(Fecha) - Get day of month",
+						"DATEPART": "DATEPART(QUARTER, Fecha) - Get quarter 1-4",
+						"DATENAME": "DATENAME(MONTH, Fecha) - Get month name (e.g., 'Enero')"
+					}
+				},
+				"ano": {
+					"type": "INTEGER",
+					"description": "Year (redundant with YEAR(Fecha))",
+					"example": 2025
+				},
+				"mes": {
+					"type": "INTEGER",
+					"description": "Month 1-12 (redundant with MONTH(Fecha))",
+					"example": 1
+				},
+				"dia": {
+					"type": "INTEGER",
+					"description": "Day of month 1-31 (redundant with DAY(Fecha))",
+					"example": 7
+				},
+				"periodo": {
+					"type": "INTEGER",
+					"description": "Period code: YYYY * 10 + Month (e.g., 20251 = Jan 2025)",
+					"example": 20251,
+					"formula": "periodo = ano * 10 + mes"
+				}
+			},
+
+			"credit_fields": {
+				"DiasCredito": {
+					"type": "INTEGER",
+					"description": "Credit days for this transaction",
+					"example": 0,
+					"values": {
+						"0": "Cash sale (contado)",
+						">0": "Credit sale (credito) - Use VendedorAsignado for vendor"
+					}
+				}
+			}
+		}
+	},
+
+	"calculated_metrics": {
+		"revenue_gross": {
+			"description": "Gross revenue with tax (Facturación)",
+			"sql": "SUM(TotalMasIva)",
+			"alias": "Facturacion_Total"
+		},
+		"revenue_net": {
+			"description": "Net revenue without tax (Ventas Netas)",
+			"sql": "SUM(TotalSinIva)",
+			"alias": "Ventas_Netas"
+		},
+		"cost_total": {
+			"description": "Total cost of goods sold",
+			"sql": "SUM(ValorCosto)",
+			"alias": "Costo_Total"
+		},
+		"profit": {
+			"description": "Gross profit (Ganancia)",
+			"sql": "SUM(TotalSinIva - ValorCosto)",
+			"alias": "Ganancia_Total"
+		},
+		"profit_margin_pct": {
+			"description": "Profit margin percentage (Margen)",
+			"sql": "(TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0)",
+			"alias": "Margen_Porcentaje",
+			"note": "Use NULLIF to avoid division by zero"
+		},
+		"tax_iva": {
+			"description": "VAT/Tax amount (IVA)",
+			"sql": "SUM(TotalMasIva - TotalSinIva)",
+			"alias": "IVA_Total"
+		},
+		"quantity_total": {
+			"description": "Total quantity sold",
+			"sql": "SUM(Cantidad)",
+			"alias": "Cantidad_Total"
+		},
+		"transaction_count": {
+			"description": "Number of transactions",
+			"sql": "COUNT(*)",
+			"alias": "Numero_Transacciones"
+		},
+		"average_ticket": {
+			"description": "Average transaction value",
+			"sql": "SUM(TotalMasIva) / COUNT(*)",
+			"alias": "Ticket_Promedio"
+		}
+	},
+
+	"common_query_patterns": {
+		"top_n": {
+			"description": "Get top N results",
+			"sql": "SELECT TOP N ... ORDER BY metric DESC"
+		},
+		"time_filter_year": {
+			"description": "Filter by year",
+			"sql": "YEAR(Fecha) = 2025"
+		},
+		"time_filter_current_year": {
+			"description": "Current year",
+			"sql": "YEAR(Fecha) = YEAR(GETDATE())"
+		},
+		"time_filter_last_30_days": {
+			"description": "Last 30 days",
+			"sql": "Fecha >= DATEADD(DAY, -30, GETDATE())"
+		},
+		"time_filter_last_month": {
+			"description": "Last month",
+			"sql": "Fecha >= DATEADD(MONTH, -1, GETDATE())"
+		},
+		"brand_search": {
+			"description": "Search for brand across all brand fields",
+			"sql": "(proveedor = 'BRAND' OR categoria = 'BRAND' OR subcategoria = 'BRAND' OR marca = 'BRAND' OR ArticulosNombre LIKE '%BRAND%')"
+		},
+		"vendor_search": {
+			"description": "Search for vendor across all vendor fields",
+			"sql": "(VendedorFactura LIKE '%NAME%' OR vendedor_codigo LIKE '%CODE%' OR VendedorAsignado LIKE '%NAME%')"
+		}
+	},
+
+	"sample_queries": {
+		"top_products_by_revenue": {
+			"description": "Top 10 products by revenue this year",
+			"natural_language": "Top 10 productos más vendidos por facturación este año",
+			"sql": "SELECT TOP 10 ArticulosNombre, SUM(TotalMasIva) AS Ventas FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC') AND YEAR(Fecha) = YEAR(GETDATE()) GROUP BY ArticulosNombre ORDER BY Ventas DESC"
+		},
+		"monthly_sales": {
+			"description": "Monthly sales current year",
+			"natural_language": "Ventas mensuales del año actual",
+			"sql": "SELECT MONTH(Fecha) AS Mes, DATENAME(MONTH, Fecha) AS Nombre_Mes, SUM(TotalMasIva) AS Ventas FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC') AND YEAR(Fecha) = YEAR(GETDATE()) GROUP BY MONTH(Fecha), DATENAME(MONTH, Fecha) ORDER BY Mes"
+		},
+		"sika_products_2026": {
+			"description": "SIKA products sales 2026",
+			"natural_language": "ventas del 2026 en la marca sika",
+			"sql": "SELECT ArticulosNombre, SUM(TotalMasIva) AS Ventas, SUM(Cantidad) AS Unidades FROM banco_datos WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC') AND YEAR(Fecha) = 2026 AND (proveedor = 'SIKA' OR categoria = 'SIKA' OR subcategoria = 'SIKA' OR ArticulosNombre LIKE '%SIKA%') GROUP BY ArticulosNombre ORDER BY Ventas DESC"
+		}
+	},
+
+	"sample_data": [
 		{
 			"VentaID": 353533,
 			"VendedorID": 46,
@@ -60,9 +503,9 @@
 			"TercerosNombres": "MANUEL ROBERTO LONDOÑO CHARRY",
 			"ArticulosID": 4152,
 			"ArticulosCodigo": "0100050058",
-			"ArticulosNombre": "CUCHILLA GUAD\/BELL ROJA C16 1\" RF:351625",
+			"ArticulosNombre": "CUCHILLA GUAD/BELL ROJA C16 1\" RF:351625",
 			"AlmacenCodigo": "ALM",
-			"ArticulosReferencia": "",
+			"ArticulosReferencia": "351625",
 			"Cantidad": 3.0,
 			"LineasPorcentaje": 5.0,
 			"VentaSinIva": "5929.0000",
@@ -71,7 +514,7 @@
 			"TotalMasIva": 18676.35,
 			"ValorCosto": 15467.28,
 			"PorDescuento": 0.0,
-			"ValorDescuento": 0e-12,
+			"ValorDescuento": 0,
 			"Iva": 5.0,
 			"marca": "PRODUCTOS GRAVADOS AL 5%",
 			"proveedor": "BELLOTA",
@@ -83,9 +526,9 @@
 		{
 			"VentaID": 353484,
 			"VendedorID": 20,
-			"VendedorFactura": "DIANA PATRICIA CULMA ",
+			"VendedorFactura": "DIANA PATRICIA CULMA",
 			"vendedor_codigo": "106",
-			"VendedorAsignado": "106-DIANA PATRICIA CULMA ",
+			"VendedorAsignado": "106-DIANA PATRICIA CULMA",
 			"DocumentosCodigo": "FED",
 			"DocumentosNombre": "FACTURA ELECTRONICA DE VENTA",
 			"NumeroDocumento": 300291,
@@ -100,7 +543,7 @@
 			"TercerosNombres": "DIEGO HERNAN SANDOVAL CASTRO",
 			"ArticulosID": 1283,
 			"ArticulosCodigo": "0020070021",
-			"ArticulosNombre": "BUJE SOLDADO PRESION 3X2 1\/2 PAVCO",
+			"ArticulosNombre": "BUJE SOLDADO PRESION 3X2 1/2 PAVCO",
 			"AlmacenCodigo": "ALM",
 			"ArticulosReferencia": "",
 			"Cantidad": 5.0,
@@ -111,7 +554,7 @@
 			"TotalMasIva": 56173.95,
 			"ValorCosto": 41047.2,
 			"PorDescuento": 0.0,
-			"ValorDescuento": 0e-12,
+			"ValorDescuento": 0,
 			"Iva": 19.0,
 			"marca": "MATERIALES PARA CONSTRUCCION Y FONTANERIA",
 			"proveedor": "PAVCO",
