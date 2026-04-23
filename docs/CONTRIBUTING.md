@@ -10,13 +10,14 @@ Thank you for considering contributing! This document covers setup, workflow, co
 
 1. [Getting Started](#getting-started)
 2. [Development Workflow](#development-workflow)
-3. [Code Style](#code-style)
-4. [Testing](#testing)
-5. [Security](#security)
-6. [Git Workflow](#git-workflow)
-7. [Documentation](#documentation)
-8. [AI Agent Guidelines](#ai-agent-guidelines)
-9. [Troubleshooting](#troubleshooting)
+3. [Operational Automation](#operational-automation)
+4. [Code Style](#code-style)
+5. [Testing](#testing)
+6. [Security](#security)
+7. [Git Workflow](#git-workflow)
+8. [Documentation](#documentation)
+9. [AI Agent Guidelines](#ai-agent-guidelines)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -232,6 +233,56 @@ Then create a Pull Request on GitHub with:
 - Clear description of changes
 - Reference to related issues
 - Test results
+
+---
+
+## Operational Automation
+
+### Weekly KPI Control Board
+
+Use this workflow to generate a KPI board for the **last completed week (Mon-Sun)**.
+
+```bash
+# Recommended one-command flow (uses Makefile target)
+make kpi-weekly
+
+# Equivalent direct command
+python scripts/utils/run_weekly_kpi_board.py
+```
+
+Output is saved as:
+
+- `reports/KPI_CONTROL_BOARD_<year>_W<week>.md`
+
+Examples:
+- `reports/KPI_CONTROL_BOARD_2026_W16.md`
+
+### Optional Scheduler Setup (Cron)
+
+```bash
+# Print ready cron line (Monday 07:00)
+python scripts/utils/run_weekly_kpi_board.py --print-cron
+```
+
+### Backfill / Re-run a Specific Week
+
+```bash
+# Uses run-date as reference and generates previous completed week
+python scripts/utils/run_weekly_kpi_board.py --run-date 2026-04-22
+```
+
+### Required Environment
+
+KPI automation reads DB credentials from `.env` (or environment variables):
+
+- `DB_SERVER`
+- `DB_USER`
+- `DB_PASSWORD`
+- optional: `DB_PORT`, `DB_NAME`
+
+Notes:
+- `make kpi-weekly` runs `venv/bin/python`, so initialize the venv first (`make install`).
+- SQL source pack: `scripts/analysis/kpi_sql_pack.sql.template`.
 
 ---
 

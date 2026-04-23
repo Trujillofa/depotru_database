@@ -5,7 +5,9 @@ Contains configuration, security utilities, and the AIVanna base class.
 """
 
 import inspect
+import math
 import os
+import re
 import sys
 import warnings
 from functools import wraps
@@ -19,22 +21,8 @@ try:
 except ImportError:
     pass
 
-# Vanna imports
-try:
-    from vanna.legacy.chromadb.chromadb_vector import ChromaDB_VectorStore
-    from vanna.legacy.openai import OpenAI_Chat
-except ImportError:
-    # Create dummy base classes for when vanna is not available
-    class _ChromaDB_VectorStore:
-        def __init__(self, *args, **kwargs):
-            pass
-
-    class _OpenAI_Chat:
-        def __init__(self, *args, **kwargs):
-            pass
-
-    ChromaDB_VectorStore = _ChromaDB_VectorStore
-    OpenAI_Chat = _OpenAI_Chat
+from vanna.legacy.chromadb.chromadb_vector import ChromaDB_VectorStore
+from vanna.legacy.openai import OpenAI_Chat
 
 try:
     from openai import OpenAI
@@ -363,7 +351,98 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
 
         print(f"✓ Proveedor AI configurado: {self.provider.upper()}")
 
-    @retry_on_failure(max_attempts=2, delay=1)
+    @staticmethod
+    def _normalize_currency_symbols(text: str) -> str:
+        if not text:
+            return text
+        normalized = text.replace("₡", "$").replace("CRC ", "$").replace("COP ", "$")
+        return AIVanna._normalize_scientific_notation(normalized)
+
+    @staticmethod
+    def _normalize_scientific_notation(text: str) -> str:
+        scientific_number_pattern = re.compile(
+            r"(?P<prefix>\$\s*)?(?P<number>[+-]?\d+(?:\.\d+)?[eE][+-]?\d+)"
+        )
+
+        def _replace(match: re.Match[str]) -> str:
+            number_text = match.group("number")
+            prefix = match.group("prefix") or ""
+            try:
+                value = float(number_text)
+            except ValueError:
+                return match.group(0)
+
+            if not math.isfinite(value):
+                return match.group(0)
+
+            if value.is_integer():
+                formatted = f"{int(value):,}".replace(",", ".")
+            else:
+                formatted = (
+                    f"{value:,.2f}".replace(",", "TEMP")
+                    .replace(".", ",")
+                    .replace("TEMP", ".")
+                )
+
+            return f"{prefix}{formatted}"
+
+        return scientific_number_pattern.sub(_replace, text)
+
+    @staticmethod
+    def _is_brand_profit_question(question: str) -> bool:
+        lower = (question or "").lower()
+        has_brand = "marca" in lower or "marcas" in lower
+        has_profit = any(
+            token in lower for token in ("rentable", "rentables", "ganancia", "margen")
+        )
+        return has_brand and has_profit
+
+    @staticmethod
+    def _brand_profit_sql_template() -> str:
+        return """
+SELECT TOP 10
+    Marca,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia,
+    SUM(TotalMasIva) AS Ventas,
+    COUNT(*) AS Transacciones
+FROM (
+    SELECT
+        UPPER(LTRIM(RTRIM(NULLIF(proveedor, '')))) AS Marca,
+        TotalSinIva,
+        ValorCosto,
+        TotalMasIva
+    FROM banco_datos
+    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+      AND NULLIF(LTRIM(RTRIM(proveedor)), '') IS NOT NULL
+) AS marcas_norm
+WHERE Marca NOT LIKE '%MATERIALES%'
+  AND Marca NOT LIKE '%SERVICIO%'
+  AND Marca NOT LIKE '%HERRAMIENAS%'
+  AND Marca NOT LIKE '%REVESTIMIENTO%'
+  AND Marca NOT LIKE '%PRODUCTOS EXCLUIDOS%'
+  AND LEN(Marca) > 2
+GROUP BY Marca
+ORDER BY Ganancia DESC
+        """.strip()
+
+    def connect_to_mssql(self, **kwargs):
+        """Connect to MSSQL database using pyodbc or pymssql."""
+        try:
+            super().connect_to_mssql(**kwargs)
+        except AttributeError:
+            import pymssql
+
+            self.connection = pymssql.connect(
+                server=Config.DB_SERVER,
+                user=Config.DB_USER,
+                password=Config.DB_PASSWORD,
+                database=Config.DB_NAME,
+                port=int(os.getenv("DB_PORT", "1433")),
+                as_dict=True,
+            )
+            self.run_sql_is_set = True
+            print("✓ MSSQL connected via pymssql fallback!")
+
     def generate_sql(
         self, question: str, allow_llm_to_see_data: bool = True, **kwargs
     ) -> str:
@@ -374,9 +453,26 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
             # Apply circuit breaker based on provider
             decorator = with_circuit_breaker(self.provider)
             decorated_gen = decorator(super().generate_sql)
-            return decorated_gen(
+            generated = decorated_gen(
                 question=question, allow_llm_to_see_data=allow_llm_to_see_data, **kwargs
             )
+            if isinstance(generated, str):
+                normalized = generated.strip().upper()
+                if (
+                    normalized
+                    and "SELECT" not in normalized
+                    and "WITH" not in normalized
+                ):
+                    print(
+                        "⚠️ Model returned non-SQL response; skipping execution for this question."
+                    )
+                    return None
+
+                if self._is_brand_profit_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        return self._brand_profit_sql_template()
+            return generated
         except CircuitBreakerError as e:
             print(f"🛑 AI Provider {self.provider.upper()} is currently offline: {e}")
             return None
@@ -385,14 +481,54 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
             raise
 
     def run_sql(self, sql: str, **kwargs):
-        """
-        Execute SQL with improved error handling.
-        """
+        """Execute SQL with improved error handling."""
+        import pandas as pd
+
+        if not sql:
+            return pd.DataFrame()
+
+        def _execute_to_dataframe(query: str):
+            cursor = self.connection.cursor()
+            try:
+                cursor.execute(query)
+                columns = [desc[0] for desc in cursor.description]
+                rows = cursor.fetchall()
+                return pd.DataFrame(rows, columns=columns)
+            finally:
+                cursor.close()
+
+        def _with_customer_space_normalization(query: str) -> str:
+            normalized = query.replace(
+                "TercerosNombres LIKE",
+                "REPLACE(REPLACE(TercerosNombres, '  ', ' '), '  ', ' ') LIKE",
+            )
+            normalized = normalized.replace(
+                "tercerosnombres like",
+                "REPLACE(REPLACE(tercerosnombres, '  ', ' '), '  ', ' ') like",
+            )
+            return normalized
+
         try:
-            return super().run_sql(sql, **kwargs)
+            if hasattr(self, "connection") and self.connection:
+                df = _execute_to_dataframe(sql)
+                if (
+                    df.empty
+                    and "tercerosnombres" in sql.lower()
+                    and " like " in sql.lower()
+                ):
+                    normalized_sql = _with_customer_space_normalization(sql)
+                    if normalized_sql != sql:
+                        normalized_df = _execute_to_dataframe(normalized_sql)
+                        if not normalized_df.empty:
+                            return normalized_df
+                return df
+            super_df = super().run_sql(sql, **kwargs)
+            if super_df is None:
+                return pd.DataFrame()
+            return super_df
         except Exception as e:
             print(f"❌ Database error executing SQL: {e}")
-            return None
+            return pd.DataFrame()
 
     def connect_to_mssql_odbc(self):
         """Connect & test via ODBC (Vanna's go-to for MSSQL)"""
@@ -412,15 +548,24 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
                 print("✓ MSSQL connected & ping successful!")
             else:
                 raise ValueError("Ping returned empty—check DB access")
-        except ImportError:
-            print("❌ pyodbc missing: Run 'pip install pyodbc'")
-            sys.exit(1)
-        except Exception as e:
-            print(f"❌ MSSQL connection failed: {e}")
-            print("💡 Quick Fixes:")
-            print("   - Linux: sudo apt install unixodbc-dev msodbcsql17")
-            print("   - Or reply 'pymssql fallback' for pure Python DB connect")
-            sys.exit(1)
+        except (ImportError, Exception) as e:
+            print(f"⚠️  pyodbc method failed ({e}), trying pymssql fallback...")
+            import pymssql
+
+            self.connection = pymssql.connect(
+                server=Config.DB_SERVER,
+                user=Config.DB_USER,
+                password=Config.DB_PASSWORD,
+                database=Config.DB_NAME,
+                port=int(os.getenv("DB_PORT", "1433")),
+                as_dict=True,
+            )
+            self.run_sql_is_set = True
+            df = self.run_sql("SELECT 1 AS ping;")
+            if df is not None and not df.empty:
+                print("✓ MSSQL connected via pymssql fallback!")
+            else:
+                raise ValueError("Ping returned empty—check DB access")
 
     def get_ai_client(self):
         """Get the AI client for insights generation."""
@@ -437,3 +582,23 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         elif self.provider == "ollama":
             return None
         return None
+
+    def generate_summary(self, question: str, df, **kwargs) -> str:
+        if df is None:
+            return (
+                "⚠️ No se pudo generar el resumen porque la consulta no devolvió "
+                "resultados válidos."
+            )
+
+        if hasattr(df, "empty") and df.empty:
+            return "ℹ️ La consulta no devolvió registros para resumir."
+
+        try:
+            summary = super().generate_summary(question, df, **kwargs)
+        except Exception as exc:
+            return (
+                "⚠️ No se pudo generar el resumen automático para esta consulta "
+                f"({exc})."
+            )
+
+        return self._normalize_currency_symbols(summary)

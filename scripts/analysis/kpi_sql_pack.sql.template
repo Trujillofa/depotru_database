@@ -1,0 +1,263 @@
+/*
+KPI SQL Pack - SmartBusiness (MSSQL)
+====================================
+
+Purpose:
+- Build weekly KPI monitoring directly from banco_datos
+- Support profitability and growth decisions with consistent formulas
+
+Core formulas:
+- Ventas Netas      = SUM(TotalSinIva)
+- Costo Total       = SUM(ValorCosto)
+- Ganancia Bruta    = SUM(TotalSinIva - ValorCosto)
+- Margen Bruto %    = Ganancia Bruta / Ventas Netas * 100
+- Ticket Promedio   = SUM(TotalMasIva) / COUNT(*)
+
+CRITICAL BUSINESS RULE:
+Always exclude test/cancelled document types:
+DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+
+Usage:
+1) Set @start_date and @end_date
+2) Run each query block independently
+3) Export results into reports/KPI_CONTROL_BOARD_TEMPLATE.md
+*/
+
+DECLARE @start_date DATE = DATEADD(DAY, -90, CAST(GETDATE() AS DATE));
+DECLARE @end_date DATE = CAST(GETDATE() AS DATE);
+
+/* -------------------------------------------------------------------------- */
+/* Q1) KPI Global Trend (weekly)                                              */
+/* -------------------------------------------------------------------------- */
+WITH base AS (
+    SELECT
+        Fecha,
+        TotalMasIva,
+        TotalSinIva,
+        ValorCosto,
+        Cantidad
+    FROM banco_datos
+    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+      AND Fecha BETWEEN @start_date AND @end_date
+)
+SELECT
+    DATEPART(YEAR, Fecha) AS Anio,
+    DATEPART(ISO_WEEK, Fecha) AS Semana_ISO,
+    SUM(TotalMasIva) AS Facturacion_Con_IVA,
+    SUM(TotalSinIva) AS Ventas_Netas,
+    SUM(ValorCosto) AS Costo_Total,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia_Bruta,
+    CASE
+        WHEN SUM(TotalSinIva) = 0 THEN 0
+        ELSE (SUM(TotalSinIva - ValorCosto) * 100.0 / SUM(TotalSinIva))
+    END AS Margen_Bruto_Pct,
+    COUNT(*) AS Numero_Transacciones,
+    CASE
+        WHEN COUNT(*) = 0 THEN 0
+        ELSE SUM(TotalMasIva) * 1.0 / COUNT(*)
+    END AS Ticket_Promedio,
+    SUM(Cantidad) AS Volumen_Vendido
+FROM base
+GROUP BY DATEPART(YEAR, Fecha), DATEPART(ISO_WEEK, Fecha)
+ORDER BY Anio, Semana_ISO;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q2) Margen y Ganancia por Categoría/Subcategoría                           */
+/* -------------------------------------------------------------------------- */
+SELECT
+    ISNULL(categoria, 'SIN_CATEGORIA') AS Categoria,
+    ISNULL(subcategoria, 'SIN_SUBCATEGORIA') AS Subcategoria,
+    SUM(TotalSinIva) AS Ventas_Netas,
+    SUM(ValorCosto) AS Costo_Total,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia_Bruta,
+    CASE
+        WHEN SUM(TotalSinIva) = 0 THEN 0
+        ELSE (SUM(TotalSinIva - ValorCosto) * 100.0 / SUM(TotalSinIva))
+    END AS Margen_Bruto_Pct,
+    COUNT(*) AS Numero_Transacciones,
+    CASE
+        WHEN COUNT(*) = 0 THEN 0
+        ELSE SUM(TotalMasIva) * 1.0 / COUNT(*)
+    END AS Ticket_Promedio
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+  AND Fecha BETWEEN @start_date AND @end_date
+GROUP BY categoria, subcategoria
+ORDER BY Ganancia_Bruta DESC;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q3) Matriz SKU: Alto Volumen + Bajo Margen (foco de mejora)               */
+/* -------------------------------------------------------------------------- */
+WITH sku_metrics AS (
+    SELECT
+        ISNULL(ArticulosCodigo, 'SIN_CODIGO') AS SKU,
+        ISNULL(ArticulosNombre, 'SIN_NOMBRE') AS Producto,
+        ISNULL(categoria, 'SIN_CATEGORIA') AS Categoria,
+        SUM(Cantidad) AS Unidades,
+        SUM(TotalSinIva) AS Ventas_Netas,
+        SUM(ValorCosto) AS Costo_Total,
+        SUM(TotalSinIva - ValorCosto) AS Ganancia_Bruta,
+        CASE
+            WHEN SUM(TotalSinIva) = 0 THEN 0
+            ELSE (SUM(TotalSinIva - ValorCosto) * 100.0 / SUM(TotalSinIva))
+        END AS Margen_Bruto_Pct,
+        COUNT(*) AS Transacciones
+    FROM banco_datos
+    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+      AND Fecha BETWEEN @start_date AND @end_date
+    GROUP BY ArticulosCodigo, ArticulosNombre, categoria
+),
+ranked AS (
+    SELECT
+        *,
+        NTILE(4) OVER (ORDER BY Unidades DESC) AS Cuartil_Volumen,
+        NTILE(4) OVER (ORDER BY Margen_Bruto_Pct ASC) AS Cuartil_Margen_Bajo
+    FROM sku_metrics
+)
+SELECT TOP 100
+    SKU,
+    Producto,
+    Categoria,
+    Unidades,
+    Ventas_Netas,
+    Ganancia_Bruta,
+    Margen_Bruto_Pct,
+    Transacciones,
+    Cuartil_Volumen,
+    Cuartil_Margen_Bajo,
+    CASE
+        WHEN Cuartil_Volumen = 1 AND Cuartil_Margen_Bajo = 1 THEN 'ACCION_INMEDIATA'
+        WHEN Cuartil_Volumen = 1 AND Cuartil_Margen_Bajo <= 2 THEN 'ACCION_ALTA'
+        ELSE 'SEGUIMIENTO'
+    END AS Prioridad
+FROM ranked
+ORDER BY Prioridad, Unidades DESC;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q4) Concentración de clientes (riesgo comercial)                           */
+/* -------------------------------------------------------------------------- */
+WITH customer_sales AS (
+    SELECT
+        ISNULL(TercerosNombres, 'SIN_CLIENTE') AS Cliente,
+        SUM(TotalMasIva) AS Facturacion_Con_IVA,
+        SUM(TotalSinIva) AS Ventas_Netas,
+        SUM(TotalSinIva - ValorCosto) AS Ganancia_Bruta,
+        COUNT(*) AS Numero_Compras,
+        CASE
+            WHEN COUNT(*) = 0 THEN 0
+            ELSE SUM(TotalMasIva) * 1.0 / COUNT(*)
+        END AS Ticket_Promedio
+    FROM banco_datos
+    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+      AND Fecha BETWEEN @start_date AND @end_date
+    GROUP BY TercerosNombres
+),
+ranked AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (ORDER BY Facturacion_Con_IVA DESC) AS rn
+    FROM customer_sales
+)
+SELECT
+    SUM(CASE WHEN rn <= 10 THEN Facturacion_Con_IVA ELSE 0 END) AS Facturacion_Top10,
+    SUM(Facturacion_Con_IVA) AS Facturacion_Total,
+    CASE
+        WHEN SUM(Facturacion_Con_IVA) = 0 THEN 0
+        ELSE SUM(CASE WHEN rn <= 10 THEN Facturacion_Con_IVA ELSE 0 END) * 100.0 / SUM(Facturacion_Con_IVA)
+    END AS Concentracion_Top10_Pct
+FROM ranked;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q5) Top clientes por facturación y margen                                  */
+/* -------------------------------------------------------------------------- */
+SELECT TOP 50
+    ISNULL(TercerosNombres, 'SIN_CLIENTE') AS Cliente,
+    SUM(TotalMasIva) AS Facturacion_Con_IVA,
+    SUM(TotalSinIva) AS Ventas_Netas,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia_Bruta,
+    CASE
+        WHEN SUM(TotalSinIva) = 0 THEN 0
+        ELSE (SUM(TotalSinIva - ValorCosto) * 100.0 / SUM(TotalSinIva))
+    END AS Margen_Bruto_Pct,
+    COUNT(*) AS Numero_Compras,
+    CASE
+        WHEN COUNT(*) = 0 THEN 0
+        ELSE SUM(TotalMasIva) * 1.0 / COUNT(*)
+    END AS Ticket_Promedio
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+  AND Fecha BETWEEN @start_date AND @end_date
+GROUP BY TercerosNombres
+ORDER BY Facturacion_Con_IVA DESC;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q6) Ticket promedio por categoría                                           */
+/* -------------------------------------------------------------------------- */
+SELECT
+    ISNULL(categoria, 'SIN_CATEGORIA') AS Categoria,
+    COUNT(*) AS Numero_Transacciones,
+    SUM(TotalMasIva) AS Facturacion_Con_IVA,
+    CASE
+        WHEN COUNT(*) = 0 THEN 0
+        ELSE SUM(TotalMasIva) * 1.0 / COUNT(*)
+    END AS Ticket_Promedio,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia_Bruta,
+    CASE
+        WHEN SUM(TotalSinIva) = 0 THEN 0
+        ELSE (SUM(TotalSinIva - ValorCosto) * 100.0 / SUM(TotalSinIva))
+    END AS Margen_Bruto_Pct
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+  AND Fecha BETWEEN @start_date AND @end_date
+GROUP BY categoria
+ORDER BY Ticket_Promedio DESC;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q7) Devoluciones por categoría (control de erosión de margen)              */
+/* -------------------------------------------------------------------------- */
+SELECT
+    ISNULL(categoria, 'SIN_CATEGORIA') AS Categoria,
+    SUM(CASE WHEN Cantidad > 0 THEN Cantidad ELSE 0 END) AS Unidades_Brutas,
+    SUM(CASE WHEN Cantidad < 0 THEN ABS(Cantidad) ELSE 0 END) AS Unidades_Devueltas,
+    CASE
+        WHEN SUM(CASE WHEN Cantidad > 0 THEN Cantidad ELSE 0 END) = 0 THEN 0
+        ELSE SUM(CASE WHEN Cantidad < 0 THEN ABS(Cantidad) ELSE 0 END) * 100.0
+             / SUM(CASE WHEN Cantidad > 0 THEN Cantidad ELSE 0 END)
+    END AS Tasa_Devolucion_Pct,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia_Bruta
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+  AND Fecha BETWEEN @start_date AND @end_date
+GROUP BY categoria
+ORDER BY Tasa_Devolucion_Pct DESC;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q8) Días de semana con más volumen (plan comercial operativo)              */
+/* -------------------------------------------------------------------------- */
+SELECT
+    CASE DATENAME(WEEKDAY, Fecha)
+        WHEN 'Monday' THEN 'Lunes'
+        WHEN 'Tuesday' THEN 'Martes'
+        WHEN 'Wednesday' THEN 'Miércoles'
+        WHEN 'Thursday' THEN 'Jueves'
+        WHEN 'Friday' THEN 'Viernes'
+        WHEN 'Saturday' THEN 'Sábado'
+        WHEN 'Sunday' THEN 'Domingo'
+        ELSE DATENAME(WEEKDAY, Fecha)
+    END AS Dia_Semana,
+    SUM(Cantidad) AS Volumen_Vendido,
+    SUM(TotalMasIva) AS Facturacion_Con_IVA,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia_Bruta,
+    COUNT(*) AS Numero_Transacciones
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+  AND Fecha BETWEEN @start_date AND @end_date
+GROUP BY DATENAME(WEEKDAY, Fecha)
+ORDER BY Volumen_Vendido DESC;

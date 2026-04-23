@@ -4,6 +4,7 @@ Tests for AI package training module.
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 from business_analyzer.ai.training import (
     generate_training_data,
     get_default_training_examples,
+    load_autoresearch_training_examples,
 )
 
 
@@ -39,6 +41,20 @@ class TestTrainingExamples:
         for question, sql in examples:
             assert "SELECT" in sql.upper()
 
+    def test_default_examples_include_weekday_spanish_pattern(self):
+        """Ensures weekday analysis examples preserve Spanish labels in SQL."""
+        examples = get_default_training_examples()
+        weekday_examples = [
+            sql
+            for question, sql in examples
+            if "día de la semana" in question.lower()
+            or "días de la semana" in question.lower()
+        ]
+        joined_sql = "\n".join(weekday_examples)
+        assert "DATENAME(WEEKDAY, Fecha)" in joined_sql
+        assert "WHEN 'Monday' THEN 'Lunes'" in joined_sql
+        assert "DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')" in joined_sql
+
 
 class TestGenerateTrainingData:
     """Test training data generation."""
@@ -60,6 +76,55 @@ class TestGenerateTrainingData:
         """Test training data generation without common queries."""
         data = generate_training_data(include_common_queries=False)
         assert len(data) == 0
+
+
+class TestAutoResearchLoader:
+    """Test external AutoResearch training-data ingestion."""
+
+    def test_load_jsonl_examples(self, tmp_path: Path):
+        """Loads valid question/sql pairs from JSONL."""
+        file_path = tmp_path / "examples.jsonl"
+        file_path.write_text(
+            "\n".join(
+                [
+                    '{"question":"Top productos","sql":"SELECT TOP 5 ArticulosNombre FROM banco_datos"}',
+                    '{"prompt":"Ventas por categoria","completion":"SELECT categoria, SUM(TotalMasIva) FROM banco_datos GROUP BY categoria"}',
+                    '{"question":"bad","sql":"DELETE FROM banco_datos"}',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        examples = load_autoresearch_training_examples(str(file_path))
+        assert len(examples) == 2
+        assert all(isinstance(q, str) and isinstance(s, str) for q, s in examples)
+
+    def test_injects_document_filter_for_banco_datos(self, tmp_path: Path):
+        """Ensures critical DocumentosCodigo filter is injected when missing."""
+        file_path = tmp_path / "filter_check.jsonl"
+        file_path.write_text(
+            '{"question":"Historial cliente","sql":"SELECT TOP 10 * FROM banco_datos ORDER BY Fecha DESC"}\n',
+            encoding="utf-8",
+        )
+
+        examples = load_autoresearch_training_examples(str(file_path))
+        assert len(examples) == 1
+        _, sql = examples[0]
+        assert "DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')" in sql
+
+    def test_load_tsv_two_columns(self, tmp_path: Path):
+        """Loads basic two-column TSV format."""
+        file_path = tmp_path / "examples.tsv"
+        file_path.write_text(
+            "Pregunta\tSQL\n"
+            "Top clientes\tSELECT TOP 10 TercerosNombres FROM banco_datos\n",
+            encoding="utf-8",
+        )
+
+        examples = load_autoresearch_training_examples(str(file_path))
+        assert len(examples) == 1
+        assert examples[0][0] == "Top clientes"
+        assert "SELECT TOP 10" in examples[0][1]
 
 
 if __name__ == "__main__":

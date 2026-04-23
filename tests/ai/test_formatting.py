@@ -57,6 +57,11 @@ class TestFormatNumber:
         result = format_number(float("nan"), "AnyColumn")
         assert result == "-"
 
+    def test_translate_english_weekday(self):
+        """Translates weekday labels to Spanish for display."""
+        result = format_number("Monday", "Dia_Semana")
+        assert result == "Lunes"
+
 
 class TestFormatCurrency:
     """Test currency formatting."""
@@ -141,6 +146,13 @@ class TestFormatDataFrame:
         """Test None DataFrame formatting."""
         result = format_dataframe(None)
         assert result is None
+
+    def test_format_dataframe_translates_weekdays(self):
+        """Weekday names should render in Spanish after formatting."""
+        df = pd.DataFrame({"Dia_Semana": ["Sunday", "Wednesday"]})
+        result = format_dataframe(df)
+        assert result.iloc[0]["Dia_Semana"] == "Domingo"
+        assert result.iloc[1]["Dia_Semana"] == "Miércoles"
 
 
 class TestConstants:

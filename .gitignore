@@ -132,3 +132,8 @@ config.local.*
 # ChromaDB vector store
 chroma.sqlite3
 [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/
+
+# Keep recent KPI reports for documentation (last 4 weeks)
+reports/KPI_CONTROL_BOARD_*.md
+!reports/KPI_CONTROL_BOARD_TEMPLATE.md
+!reports/KPI_CONTROL_BOARD_2026_W*.md

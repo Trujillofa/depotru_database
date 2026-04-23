@@ -103,6 +103,22 @@ streamlit run examples/streamlit_dashboard.py
 # → Opens automatically in browser
 ```
 
+### Option 4: Weekly KPI Control Board Automation
+
+```bash
+# Generate KPI board for last completed week (Mon-Sun)
+make kpi-weekly
+
+# Or run script directly
+python scripts/utils/run_weekly_kpi_board.py
+
+# Print Monday cron line
+python scripts/utils/run_weekly_kpi_board.py --print-cron
+```
+
+Output example:
+- `reports/KPI_CONTROL_BOARD_2026_W16.md`
+
 ---
 
 ## 📁 Project Structure
@@ -184,7 +200,7 @@ Create a `.env` file in the project root:
 
 ```bash
 # Database Connection (Required)
-DB_HOST=your-server-host
+DB_SERVER=your-server-host
 DB_PORT=1433
 DB_USER=your-username
 DB_PASSWORD=your-password
@@ -316,6 +332,8 @@ brew install unixodbc msodbcsql17
 | [docs/TESTING.md](docs/TESTING.md) | Testing guide |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Future development plans |
 | [docs/AI_AGENT_INSTRUCTIONS.md](docs/AI_AGENT_INSTRUCTIONS.md) | AI agent development guide |
+| [scripts/README.md](scripts/README.md) | Automation and utility scripts |
+| [reports/README.md](reports/README.md) | Report outputs and KPI board files |
 
 ---
 

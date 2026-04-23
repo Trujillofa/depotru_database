@@ -19,6 +19,8 @@ import re
 import sys
 from typing import Optional
 
+import pandas as pd
+
 # Add src to path for imports
 sys.path.insert(0, "/home/yderf/depotru_database/src")
 
@@ -104,7 +106,8 @@ class EnhancedAIVanna(AIVanna):
             sql = self.generate_sql(question=question, allow_llm_to_see_data=True)
 
             if sql is None:
-                return None, None, None
+                print("\n⚠️ No se pudo generar SQL válido para la pregunta.\n")
+                return None, pd.DataFrame(), None
 
             # Clean LLM artifacts from SQL (intermediate_sql prefix bug - GitHub #588)
             sql = clean_sql(sql)
@@ -114,7 +117,7 @@ class EnhancedAIVanna(AIVanna):
 
             if df is None or df.empty:
                 print("\n⚠️ La consulta no devolvió resultados.\n")
-                return sql, df, None
+                return sql, pd.DataFrame(), None
 
             # ========== ENHANCEMENT 1: Format Numbers ==========
             print("\n" + "=" * 70)
@@ -194,10 +197,9 @@ def main():
         chart=False,  # Disable chart generation (causing errors)
     )
 
-    # Vanna's Official Magic: .run()
-    print("✓ Using Vanna's built-in Flask runner (threaded for multiple users)")
+    print("✓ Starting Flask development server")
     try:
-        app.run(
+        app.flask_app.run(
             host=Config.HOST,
             port=Config.PORT,
             debug=False,
@@ -207,8 +209,10 @@ def main():
     except KeyboardInterrupt:
         print("\n\n👋 Server stopped gracefully! (Gracias por chatear con tus datos)")
     except Exception as e:
-        print(f"\n❌ Launch hiccup: {e}")
-        print("💡 Fixes: Check port (lsof -i :8084), or try PORT=8085 in .env")
+        print(f"\n❌ Server error: {e}")
+        import traceback
+
+        traceback.print_exc()
 
 
 if __name__ == "__main__":

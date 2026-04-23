@@ -10,6 +10,7 @@ import pandas as pd
 
 from .base import Config, retry_on_failure
 from .circuit_breaker import CircuitBreakerError, with_circuit_breaker
+from .formatting import format_dataframe, format_number
 
 
 @retry_on_failure(max_attempts=3, delay=2)
@@ -52,17 +53,23 @@ def _prepare_prompt(question: str, sql: str, df: pd.DataFrame) -> str:
 
     # Limit data sent to AI
     df_preview = df.head(Config.INSIGHTS_MAX_ROWS)
+    df_preview_formatted = format_dataframe(
+        df_preview, max_rows=Config.INSIGHTS_MAX_ROWS
+    )
 
     # Calculate statistics
     stats_summary = {}
     for col in df.columns:
         try:
             if pd.api.types.is_numeric_dtype(df[col]):
+                numeric_series = df[col].dropna()
+                if numeric_series.empty:
+                    continue
                 stats_summary[col] = {
-                    "min": float(df[col].min()),
-                    "max": float(df[col].max()),
-                    "mean": float(df[col].mean()),
-                    "total": float(df[col].sum()) if "sum" in dir(df[col]) else None,
+                    "min": format_number(float(numeric_series.min()), col),
+                    "max": format_number(float(numeric_series.max()), col),
+                    "mean": format_number(float(numeric_series.mean()), col),
+                    "total": format_number(float(numeric_series.sum()), col),
                 }
         except Exception:  # nosec B110
             pass
@@ -74,7 +81,7 @@ Pregunta del usuario: {question}
 SQL ejecutado: {sql}
 
 Resultados (primeras {len(df_preview)} de {len(df)} filas):
-{df_preview.to_string()}
+{df_preview_formatted.to_string(index=False)}
 
 Estadísticas: {stats_summary}
 

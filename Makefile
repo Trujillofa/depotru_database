@@ -1,4 +1,4 @@
-.PHONY: install test lint run-ai clean
+.PHONY: install test lint run-ai kpi-weekly clean
 
 VENV = venv
 PYTHON = $(VENV)/bin/python
@@ -19,6 +19,9 @@ lint:
 
 run-ai:
 	$(PYTHON) src/vanna_grok.py
+
+kpi-weekly:
+	$(PYTHON) scripts/utils/run_weekly_kpi_board.py
 
 clean:
 	rm -rf __pycache__ .pytest_cache .mypy_cache .ruff_cache

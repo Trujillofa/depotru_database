@@ -9,6 +9,17 @@ from typing import Any, List, Optional
 
 import pandas as pd
 
+# English-to-Spanish weekday translations for SQL DATENAME output
+WEEKDAY_TRANSLATIONS = {
+    "monday": "Lunes",
+    "tuesday": "Martes",
+    "wednesday": "Miércoles",
+    "thursday": "Jueves",
+    "friday": "Viernes",
+    "saturday": "Sábado",
+    "sunday": "Domingo",
+}
+
 # Set Colombian locale for number formatting (fallback to Spanish/default)
 try:
     locale.setlocale(locale.LC_ALL, "es_CO.UTF-8")
@@ -88,6 +99,10 @@ def format_number(value: Any, column_name: str = "") -> str:
     try:
         num = float(value)
     except (ValueError, TypeError):
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in WEEKDAY_TRANSLATIONS:
+                return WEEKDAY_TRANSLATIONS[normalized]
         return str(value)
 
     # 1. EXPLICIT COLUMN MATCH (highest priority)

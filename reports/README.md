@@ -6,6 +6,8 @@ This directory contains generated analysis reports and their supporting data.
 
 ### Markdown Reports (Root Level)
 - `ANALYSIS_REPORT.md` - Comprehensive analysis across all categories
+- `KPI_CONTROL_BOARD_TEMPLATE.md` - Weekly KPI operating template (scorecard + actions)
+- `KPI_CONTROL_BOARD_<year>_W<week>.md` - Auto-generated weekly KPI board from SQL pack
 - `SIKA_ANALYSIS_REPORT.md` - PRODUCTOS SIKA detailed analysis (English)
 - `REPORTE_SIKA_ESPANOL.md` - PRODUCTOS SIKA detailed analysis (Spanish)
 - `DEPOSITO_TRUJILLO_INVESTIGATION.md` - Internal operations investigation
@@ -35,3 +37,14 @@ python scripts/reports/generate_report.py
 ## Report Updates
 
 Reports are automatically generated when the corresponding analysis scripts are run. The JSON data files in `/data/` are used as input for report generation.
+
+For weekly KPI automation, run:
+
+```bash
+make kpi-weekly
+
+# Or direct script usage
+python scripts/utils/run_weekly_kpi_board.py
+```
+
+This creates a historical series like `KPI_CONTROL_BOARD_2026_W16.md`.

@@ -5,7 +5,143 @@ Contains schema training logic for Vanna AI.
 This version includes 25 real-world examples based on actual database analysis.
 """
 
+import csv
+import json
+import os
 from typing import List, Optional, Tuple
+
+DOC_EXCLUSION_FILTER = "DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')"
+
+
+def _insert_before_tail(sql: str, fragment: str) -> str:
+    """Insert SQL fragment before GROUP/ORDER/HAVING/LIMIT tail clauses."""
+    lower = sql.lower()
+    positions = [
+        pos
+        for pos in (
+            lower.find(" group by "),
+            lower.find(" order by "),
+            lower.find(" having "),
+            lower.find(" limit "),
+        )
+        if pos != -1
+    ]
+
+    insert_at = min(positions) if positions else len(sql)
+    head = sql[:insert_at].rstrip()
+    tail = sql[insert_at:]
+
+    if head.endswith(";"):
+        head = head[:-1].rstrip()
+
+    return f"{head} {fragment}{tail}"
+
+
+def _ensure_document_exclusion(sql: str) -> str:
+    """Ensure critical test/cancelled document filter for banco_datos queries."""
+    lower = sql.lower()
+    if "from banco_datos" not in lower or "documentoscodigo" in lower:
+        return sql
+
+    if " where " in lower:
+        return _insert_before_tail(sql, f"AND {DOC_EXCLUSION_FILTER}")
+
+    return _insert_before_tail(sql, f"WHERE {DOC_EXCLUSION_FILTER}")
+
+
+def _is_valid_training_pair(question: str, sql: str) -> bool:
+    """Validate a candidate (question, sql) pair for Vanna training."""
+    if not question or not sql:
+        return False
+
+    sql_upper = sql.upper()
+    return "SELECT" in sql_upper or "WITH" in sql_upper
+
+
+def load_autoresearch_training_examples(file_path: str) -> List[Tuple[str, str]]:
+    """
+    Load external AutoResearch-generated NL→SQL examples.
+
+    Supported formats:
+    - .jsonl with keys like: question/sql, prompt/completion, nl/query
+    - .tsv/.csv with two columns or named question/sql-like columns
+    """
+    if not file_path or not os.path.exists(file_path):
+        return []
+
+    extension = os.path.splitext(file_path)[1].lower()
+    examples: List[Tuple[str, str]] = []
+
+    question_keys = ["question", "prompt", "nl", "input", "query_text"]
+    sql_keys = ["sql", "query", "completion", "target", "answer_sql"]
+
+    if extension == ".jsonl":
+        with open(file_path, "r", encoding="utf-8") as handle:
+            for raw in handle:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                question = ""
+                sql = ""
+                for key in question_keys:
+                    value = item.get(key)
+                    if isinstance(value, str) and value.strip():
+                        question = value.strip()
+                        break
+                for key in sql_keys:
+                    value = item.get(key)
+                    if isinstance(value, str) and value.strip():
+                        sql = value.strip()
+                        break
+
+                sql = _ensure_document_exclusion(sql)
+                if _is_valid_training_pair(question, sql):
+                    examples.append((question, sql))
+
+    elif extension in {".tsv", ".csv"}:
+        delimiter = "\t" if extension == ".tsv" else ","
+        with open(file_path, "r", encoding="utf-8") as handle:
+            reader = csv.reader(handle, delimiter=delimiter)
+            rows = list(reader)
+
+        if not rows:
+            return []
+
+        header = [cell.strip().lower() for cell in rows[0]]
+        header_has_named_fields = any(key in header for key in question_keys + sql_keys)
+
+        if header_has_named_fields:
+            q_index = next(
+                (i for i, col in enumerate(header) if col in question_keys), None
+            )
+            s_index = next((i for i, col in enumerate(header) if col in sql_keys), None)
+            if q_index is None and s_index is not None and len(header) >= 2:
+                q_index = 0 if s_index != 0 else 1
+            if s_index is None and q_index is not None and len(header) >= 2:
+                s_index = 0 if q_index != 0 else 1
+            if q_index is not None and s_index is not None:
+                for row in rows[1:]:
+                    if max(q_index, s_index) >= len(row):
+                        continue
+                    question = row[q_index].strip()
+                    sql = _ensure_document_exclusion(row[s_index].strip())
+                    if _is_valid_training_pair(question, sql):
+                        examples.append((question, sql))
+        else:
+            for row in rows:
+                if len(row) < 2:
+                    continue
+                question = row[0].strip()
+                sql = _ensure_document_exclusion(row[1].strip())
+                if _is_valid_training_pair(question, sql):
+                    examples.append((question, sql))
+
+    return examples
 
 
 def train_on_schema(vn, schema_name: str = "SmartBusiness"):
@@ -369,7 +505,7 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             """,
         ),
         # ============================================================
-        # CATEGORY 2: TIME-SERIES ANALYSIS (6 examples)
+        # CATEGORY 2: TIME-SERIES ANALYSIS (8 examples)
         # ============================================================
         # Monthly Sales Current Year
         (
@@ -473,6 +609,65 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             AND YEAR(Fecha) >= YEAR(GETDATE()) - 1
             GROUP BY MONTH(Fecha)
             ORDER BY Mes
+            """,
+        ),
+        # Weekday Sales Volume (Spanish labels)
+        (
+            "Días de la semana con mayor volumen de ventas",
+            """
+            SELECT
+                CASE DATENAME(WEEKDAY, Fecha)
+                    WHEN 'Monday' THEN 'Lunes'
+                    WHEN 'Tuesday' THEN 'Martes'
+                    WHEN 'Wednesday' THEN 'Miércoles'
+                    WHEN 'Thursday' THEN 'Jueves'
+                    WHEN 'Friday' THEN 'Viernes'
+                    WHEN 'Saturday' THEN 'Sábado'
+                    WHEN 'Sunday' THEN 'Domingo'
+                    ELSE DATENAME(WEEKDAY, Fecha)
+                END AS Dia_Semana,
+                SUM(Cantidad) AS Volumen_Vendido,
+                SUM(TotalMasIva) AS Ventas_Totales,
+                COUNT(*) AS Numero_Transacciones
+            FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            GROUP BY DATENAME(WEEKDAY, Fecha)
+            ORDER BY Volumen_Vendido DESC
+            """,
+        ),
+        # Weekday Sales Distribution (chronological order)
+        (
+            "Ventas por día de la semana en orden",
+            """
+            SELECT
+                CASE DATENAME(WEEKDAY, Fecha)
+                    WHEN 'Monday' THEN 'Lunes'
+                    WHEN 'Tuesday' THEN 'Martes'
+                    WHEN 'Wednesday' THEN 'Miércoles'
+                    WHEN 'Thursday' THEN 'Jueves'
+                    WHEN 'Friday' THEN 'Viernes'
+                    WHEN 'Saturday' THEN 'Sábado'
+                    WHEN 'Sunday' THEN 'Domingo'
+                    ELSE DATENAME(WEEKDAY, Fecha)
+                END AS Dia_Semana,
+                CASE DATENAME(WEEKDAY, Fecha)
+                    WHEN 'Monday' THEN 1
+                    WHEN 'Tuesday' THEN 2
+                    WHEN 'Wednesday' THEN 3
+                    WHEN 'Thursday' THEN 4
+                    WHEN 'Friday' THEN 5
+                    WHEN 'Saturday' THEN 6
+                    WHEN 'Sunday' THEN 7
+                    ELSE 8
+                END AS Dia_Orden,
+                SUM(TotalMasIva) AS Ventas_Totales,
+                SUM(TotalSinIva - ValorCosto) AS Ganancia,
+                COUNT(*) AS Numero_Transacciones
+            FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND Fecha >= DATEADD(MONTH, -3, GETDATE())
+            GROUP BY DATENAME(WEEKDAY, Fecha)
+            ORDER BY Dia_Orden
             """,
         ),
         # ============================================================
@@ -693,6 +888,34 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             AND (proveedor = 'CEMEX' OR categoria = 'CEMEX' OR subcategoria = 'CEMEX' OR marca = 'CEMEX' OR ArticulosNombre LIKE '%CEMEX%')
             GROUP BY ArticulosNombre
             ORDER BY Ventas_Total DESC
+            """,
+        ),
+        # Brand Profitability (normalized proveedor/marca)
+        (
+            "Las marcas más rentables por ganancia total",
+            """
+            SELECT TOP 10
+                Marca,
+                SUM(TotalSinIva - ValorCosto) AS Ganancia,
+                SUM(TotalMasIva) AS Ventas,
+                COUNT(*) AS Transacciones
+            FROM (
+                SELECT
+                    UPPER(LTRIM(RTRIM(COALESCE(NULLIF(proveedor, ''), NULLIF(marca, ''))))) AS Marca,
+                    TotalSinIva,
+                    ValorCosto,
+                    TotalMasIva
+                FROM banco_datos
+                WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+                AND (NULLIF(LTRIM(RTRIM(proveedor)), '') IS NOT NULL OR NULLIF(LTRIM(RTRIM(marca)), '') IS NOT NULL)
+            ) AS marcas_norm
+            WHERE Marca NOT LIKE '%MATERIALES%'
+            AND Marca NOT LIKE '%SERVICIO%'
+            AND Marca NOT LIKE '%HERRAMIENAS%'
+            AND Marca NOT LIKE '%REVESTIMIENTO%'
+            AND Marca NOT LIKE '%PRODUCTOS EXCLUIDOS%'
+            GROUP BY Marca
+            ORDER BY Ganancia DESC
             """,
         ),
         # Real Brand: ACESCO
@@ -978,22 +1201,21 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             ORDER BY Tasa_IVA
             """,
         ),
-        # Discount Analysis
+        # Tax/IVA Analysis (uses available schema fields)
         (
-            "Productos con mayor descuento aplicado",
+            "Productos con mayor IVA aplicado",
             """
             SELECT TOP 10
                 ArticulosNombre AS Producto,
-                AVG(PorDescuento) AS Descuento_Promedio,
-                SUM(ValorDescuento) AS Total_Descuento,
+                AVG(TotalMasIva - TotalSinIva) AS IVA_Promedio,
+                SUM(TotalMasIva - TotalSinIva) AS IVA_Total,
                 SUM(TotalMasIva) AS Ventas_Total,
                 COUNT(*) AS Numero_Ventas
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND PorDescuento > 0
             AND YEAR(Fecha) = YEAR(GETDATE())
             GROUP BY ArticulosNombre
-            ORDER BY Total_Descuento DESC
+            ORDER BY IVA_Total DESC
             """,
         ),
         # Combined Brand + Vendor Analysis
@@ -1114,7 +1336,20 @@ def full_training(vn, schema_name: str = "SmartBusiness"):
         schema_name: Name of the database schema
     """
     train_on_schema(vn, schema_name)
-    train_with_examples(vn)
+
+    examples = get_phase1_training_examples()
+    external_path = os.getenv("AUTORESEARCH_TRAINING_FILE", "").strip()
+    if external_path:
+        external_examples = load_autoresearch_training_examples(external_path)
+        if external_examples:
+            print(
+                f"\nLoaded {len(external_examples)} external AutoResearch examples from {external_path}"
+            )
+            examples.extend(external_examples)
+        else:
+            print(f"\nNo valid external AutoResearch examples found at {external_path}")
+
+    train_with_examples(vn, examples)
     print(
         f"✓ Full training complete – Vanna's ready to query {schema_name} like a pro!"
     )
