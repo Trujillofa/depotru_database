@@ -64,7 +64,7 @@ def require_env(name: str, validation_func=None, error_msg: str = None) -> str:
         print(f"   {name}=tu-valor-aqui")
         print("\n   Ejemplo .env completo:")
         print("   GROK_API_KEY=xai-tu-clave")
-        print("   DB_SERVER=tu-servidor")
+        print("   DB_HOST=tu-servidor")
         print("   DB_NAME=SmartBusiness")
         print("   DB_USER=tu-usuario")
         print("   DB_PASSWORD=tu-contraseña")
@@ -170,36 +170,49 @@ class Config:
         sys.exit(1)
 
     # Provider-specific API keys (only required for chosen provider)
-    GROK_API_KEY = get_env_or_test_default(
-        "GROK_API_KEY",
-        test_default="xai-test-key-for-ci-only",
-        validation_func=lambda x: x.startswith("xai-"),
-        error_msg="La clave de Grok debe comenzar con 'xai-'",
-        warn_on_test_default=AI_PROVIDER == "grok",
-    )
-
-    OPENAI_API_KEY = get_env_or_test_default(
-        "OPENAI_API_KEY",
-        test_default="sk-test-key-for-ci-only",
-        validation_func=lambda x: x.startswith("sk-"),
-        error_msg="La clave de OpenAI debe comenzar con 'sk-'",
-        warn_on_test_default=AI_PROVIDER == "openai",
-    )
-
-    ANTHROPIC_API_KEY = get_env_or_test_default(
-        "ANTHROPIC_API_KEY",
-        test_default="sk-ant-test-key-for-ci-only",
-        validation_func=lambda x: x.startswith("sk-ant-"),
-        error_msg="La clave de Anthropic debe comenzar con 'sk-ant-'",
-        warn_on_test_default=AI_PROVIDER == "anthropic",
-    )
+    # Only load the API key for the selected provider to avoid requiring all keys
+    if AI_PROVIDER == "grok":
+        GROK_API_KEY = get_env_or_test_default(
+            "GROK_API_KEY",
+            test_default="xai-test-key-for-ci-only",
+            validation_func=lambda x: x.startswith("xai-"),
+            error_msg="La clave de Grok debe comenzar con 'xai-'",
+            warn_on_test_default=True,
+        )
+        OPENAI_API_KEY = None
+        ANTHROPIC_API_KEY = None
+    elif AI_PROVIDER == "openai":
+        OPENAI_API_KEY = get_env_or_test_default(
+            "OPENAI_API_KEY",
+            test_default="sk-test-key-for-ci-only",
+            validation_func=lambda x: x.startswith("sk-"),
+            error_msg="La clave de OpenAI debe comenzar con 'sk-'",
+            warn_on_test_default=True,
+        )
+        GROK_API_KEY = None
+        ANTHROPIC_API_KEY = None
+    elif AI_PROVIDER == "anthropic":
+        ANTHROPIC_API_KEY = get_env_or_test_default(
+            "ANTHROPIC_API_KEY",
+            test_default="sk-ant-test-key-for-ci-only",
+            validation_func=lambda x: x.startswith("sk-ant-"),
+            error_msg="La clave de Anthropic debe comenzar con 'sk-ant-'",
+            warn_on_test_default=True,
+        )
+        GROK_API_KEY = None
+        OPENAI_API_KEY = None
+    else:  # ollama
+        GROK_API_KEY = None
+        OPENAI_API_KEY = None
+        ANTHROPIC_API_KEY = None
 
     # Ollama configuration (local, no API key needed)
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
 
-    # Database configuration
-    DB_SERVER = get_env_or_test_default("DB_SERVER", test_default="test-server")
+    # Database configuration - using same names as core config
+    DB_HOST = get_env_or_test_default("DB_HOST", test_default="test-host")
+    DB_PORT = int(get_env_or_test_default("DB_PORT", "1433"))
     DB_NAME = get_env_or_test_default("DB_NAME", test_default="TestDB")
     DB_USER = get_env_or_test_default("DB_USER", test_default="test_user")
     DB_PASSWORD = get_env_or_test_default("DB_PASSWORD", test_default="test_password")
@@ -398,6 +411,59 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         return has_brand and has_profit
 
     @staticmethod
+    def _insert_before_tail(sql: str, fragment: str) -> str:
+        """Insert SQL fragment before GROUP/ORDER/HAVING/LIMIT clauses."""
+        lower = sql.lower()
+        positions = [
+            pos
+            for pos in (
+                lower.find(" group by "),
+                lower.find(" order by "),
+                lower.find(" having "),
+                lower.find(" limit "),
+            )
+            if pos != -1
+        ]
+
+        insert_at = min(positions) if positions else len(sql)
+        head = sql[:insert_at].rstrip()
+        tail = sql[insert_at:]
+
+        if head.endswith(";"):
+            head = head[:-1].rstrip()
+
+        return f"{head} {fragment}{tail}"
+
+    @staticmethod
+    def _ensure_document_exclusion(sql: str) -> str:
+        """Guarantee exclusion filter for banco_datos queries."""
+        if not sql:
+            return sql
+
+        canonical_filter = "DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')"
+        normalized_sql = re.sub(
+            r"DocumentosCodigo\s+NOT\s+IN\s*\([^\)]*\)",
+            canonical_filter,
+            sql,
+            flags=re.IGNORECASE,
+        )
+
+        lower = sql.lower()
+        normalized_lower = normalized_sql.lower()
+        if "from banco_datos" not in lower:
+            return normalized_sql
+
+        if "documentoscodigo" in normalized_lower:
+            return normalized_sql
+
+        if " where " in lower:
+            return AIVanna._insert_before_tail(
+                normalized_sql, f"AND {canonical_filter}"
+            )
+
+        return AIVanna._insert_before_tail(normalized_sql, f"WHERE {canonical_filter}")
+
+    @staticmethod
     def _brand_profit_sql_template() -> str:
         return """
 SELECT TOP 10
@@ -433,7 +499,7 @@ ORDER BY Ganancia DESC
             import pymssql
 
             self.connection = pymssql.connect(
-                server=Config.DB_SERVER,
+                server=Config.DB_HOST,
                 user=Config.DB_USER,
                 password=Config.DB_PASSWORD,
                 database=Config.DB_NAME,
@@ -472,6 +538,7 @@ ORDER BY Ganancia DESC
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
                         return self._brand_profit_sql_template()
+                return self._ensure_document_exclusion(generated)
             return generated
         except CircuitBreakerError as e:
             print(f"🛑 AI Provider {self.provider.upper()} is currently offline: {e}")
@@ -534,7 +601,7 @@ ORDER BY Ganancia DESC
         """Connect & test via ODBC (Vanna's go-to for MSSQL)"""
         odbc_str = (
             f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-            f"SERVER={Config.DB_SERVER};"
+            f"SERVER={Config.DB_HOST};"
             f"DATABASE={Config.DB_NAME};"
             f"UID={Config.DB_USER};"
             f"PWD={Config.DB_PASSWORD};"
@@ -553,7 +620,7 @@ ORDER BY Ganancia DESC
             import pymssql
 
             self.connection = pymssql.connect(
-                server=Config.DB_SERVER,
+                server=Config.DB_HOST,
                 user=Config.DB_USER,
                 password=Config.DB_PASSWORD,
                 database=Config.DB_NAME,

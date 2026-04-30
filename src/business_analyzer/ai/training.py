@@ -8,6 +8,7 @@ This version includes 25 real-world examples based on actual database analysis.
 import csv
 import json
 import os
+import re
 from typing import List, Optional, Tuple
 
 DOC_EXCLUSION_FILTER = "DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')"
@@ -39,14 +40,21 @@ def _insert_before_tail(sql: str, fragment: str) -> str:
 
 def _ensure_document_exclusion(sql: str) -> str:
     """Ensure critical test/cancelled document filter for banco_datos queries."""
-    lower = sql.lower()
+    normalized_sql = re.sub(
+        r"DocumentosCodigo\s+NOT\s+IN\s*\([^\)]*\)",
+        DOC_EXCLUSION_FILTER,
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    lower = normalized_sql.lower()
     if "from banco_datos" not in lower or "documentoscodigo" in lower:
-        return sql
+        return normalized_sql
 
     if " where " in lower:
-        return _insert_before_tail(sql, f"AND {DOC_EXCLUSION_FILTER}")
+        return _insert_before_tail(normalized_sql, f"AND {DOC_EXCLUSION_FILTER}")
 
-    return _insert_before_tail(sql, f"WHERE {DOC_EXCLUSION_FILTER}")
+    return _insert_before_tail(normalized_sql, f"WHERE {DOC_EXCLUSION_FILTER}")
 
 
 def _is_valid_training_pair(question: str, sql: str) -> bool:
@@ -251,6 +259,15 @@ def train_on_schema(vn, schema_name: str = "SmartBusiness"):
         - YEAR(Fecha) = Year
         - MONTH(Fecha) = Month (1-12)
         - DATEPART(QUARTER, Fecha) = Quarter (1-4)
+
+        TEXT MATCHING RULES (IMPORTANT):
+        - For brands/providers (e.g., CEMEX, ACESCO), prefer normalized matching:
+          UPPER(LTRIM(RTRIM(COALESCE(proveedor, '')))) LIKE '%CEMEX%'
+          OR UPPER(LTRIM(RTRIM(COALESCE(marca, '')))) LIKE '%CEMEX%'
+          OR UPPER(LTRIM(RTRIM(COALESCE(ArticulosNombre, '')))) LIKE '%CEMEX%'
+        - For categories like CEMENTO GRIS, avoid strict equality when possible.
+          Prefer contains + normalization to tolerate spaces/variants:
+          UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) LIKE '%CEMENTO%GRIS%'
 
         =================================================================
         REAL BUSINESS DATA REFERENCE (From 1.4M Records)
@@ -701,7 +718,13 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                 AVG(TotalMasIva / NULLIF(Cantidad, 0)) AS Precio_Promedio
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND (proveedor = 'SIKA' OR categoria LIKE '%SIKA%' OR subcategoria LIKE '%SIKA%' OR ArticulosNombre LIKE '%SIKA%')
+            AND (
+                UPPER(LTRIM(RTRIM(COALESCE(proveedor, '')))) LIKE '%SIKA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(marca, '')))) LIKE '%SIKA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) LIKE '%SIKA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(subcategoria, '')))) LIKE '%SIKA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(ArticulosNombre, '')))) LIKE '%SIKA%'
+            )
             GROUP BY ArticulosNombre
             ORDER BY Ventas DESC
             """,
@@ -755,7 +778,7 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                 COUNT(*) AS Transacciones
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND categoria = 'HIERRO'
+            AND UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) = 'HIERRO'
             GROUP BY ArticulosNombre
             ORDER BY Ventas DESC
             """,
@@ -771,7 +794,7 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                 SUM(TotalSinIva - ValorCosto) AS Ganancia
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND proveedor IN ('PAVCO', 'EUROCERAMICA')
+            AND UPPER(LTRIM(RTRIM(COALESCE(proveedor, '')))) IN ('PAVCO', 'EUROCERAMICA')
             GROUP BY proveedor
             ORDER BY Ventas_Totales DESC
             """,
@@ -884,8 +907,14 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                 SUM(TotalSinIva - ValorCosto) AS Ganancia
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND YEAR(Fecha) = 2025
-            AND (proveedor = 'CEMEX' OR categoria = 'CEMEX' OR subcategoria = 'CEMEX' OR marca = 'CEMEX' OR ArticulosNombre LIKE '%CEMEX%')
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            AND (
+                UPPER(LTRIM(RTRIM(COALESCE(proveedor, '')))) LIKE '%CEMEX%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(marca, '')))) LIKE '%CEMEX%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) LIKE '%CEMEX%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(subcategoria, '')))) LIKE '%CEMEX%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(ArticulosNombre, '')))) LIKE '%CEMEX%'
+            )
             GROUP BY ArticulosNombre
             ORDER BY Ventas_Total DESC
             """,
@@ -930,7 +959,13 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
             AND YEAR(Fecha) = YEAR(GETDATE())
-            AND (proveedor = 'ACESCO' OR categoria = 'ACESCO' OR subcategoria = 'ACESCO' OR marca = 'ACESCO' OR ArticulosNombre LIKE '%ACESCO%')
+            AND (
+                UPPER(LTRIM(RTRIM(COALESCE(proveedor, '')))) LIKE '%ACESCO%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(marca, '')))) LIKE '%ACESCO%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) LIKE '%ACESCO%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(subcategoria, '')))) LIKE '%ACESCO%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(ArticulosNombre, '')))) LIKE '%ACESCO%'
+            )
             GROUP BY ArticulosNombre
             ORDER BY Ventas DESC
             """,
@@ -948,7 +983,13 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
             AND YEAR(Fecha) = YEAR(GETDATE())
-            AND (proveedor = 'PAVCO' OR categoria = 'PAVCO' OR subcategoria = 'PAVCO' OR marca = 'PAVCO' OR ArticulosNombre LIKE '%PAVCO%')
+            AND (
+                UPPER(LTRIM(RTRIM(COALESCE(proveedor, '')))) LIKE '%PAVCO%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(marca, '')))) LIKE '%PAVCO%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) LIKE '%PAVCO%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(subcategoria, '')))) LIKE '%PAVCO%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(ArticulosNombre, '')))) LIKE '%PAVCO%'
+            )
             GROUP BY MONTH(Fecha), DATENAME(MONTH, Fecha)
             ORDER BY Mes
             """,
@@ -964,7 +1005,13 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                 AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0)) AS Margen_Promedio
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND (proveedor = 'EUROCERAMICA' OR categoria = 'EUROCERAMICA' OR subcategoria = 'EUROCERAMICA' OR marca = 'EUROCERAMICA' OR ArticulosNombre LIKE '%EUROCERAMICA%')
+            AND (
+                UPPER(LTRIM(RTRIM(COALESCE(proveedor, '')))) LIKE '%EUROCERAMICA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(marca, '')))) LIKE '%EUROCERAMICA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) LIKE '%EUROCERAMICA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(subcategoria, '')))) LIKE '%EUROCERAMICA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(ArticulosNombre, '')))) LIKE '%EUROCERAMICA%'
+            )
             GROUP BY ArticulosNombre
             ORDER BY Ventas_Total DESC
             """,
@@ -981,7 +1028,10 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
             AND YEAR(Fecha) = YEAR(GETDATE())
-            AND (VendedorFactura LIKE '%CARLOS EFREY%' OR VendedorFactura LIKE '%PASCUAS%')
+            AND (
+                UPPER(LTRIM(RTRIM(COALESCE(VendedorFactura, '')))) LIKE '%CARLOS%EFREY%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(VendedorFactura, '')))) LIKE '%PASCUAS%'
+            )
             GROUP BY ArticulosNombre
             ORDER BY Ventas DESC
             """,
@@ -1015,7 +1065,7 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
             AND YEAR(Fecha) = YEAR(GETDATE())
-            AND TercerosNombres LIKE '%FERRETERIA MAGRETH%'
+            AND UPPER(LTRIM(RTRIM(COALESCE(TercerosNombres, '')))) LIKE '%FERRETERIA%MAGRETH%'
             GROUP BY ArticulosNombre
             ORDER BY Total_Comprado DESC
             """,
@@ -1032,7 +1082,7 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
             AND YEAR(Fecha) = YEAR(GETDATE())
-            AND TercerosNombres LIKE '%FREDI TRUJILLO%'
+            AND UPPER(LTRIM(RTRIM(COALESCE(TercerosNombres, '')))) LIKE '%FREDI%TRUJILLO%'
             GROUP BY MONTH(Fecha)
             ORDER BY Mes
             """,
@@ -1067,7 +1117,7 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                 AVG(TotalMasIva / NULLIF(Cantidad, 0)) AS Precio_Promedio_Por_Bolsa
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND ArticulosNombre LIKE '%CEMENTO GRIS%CEMEX%50KG%'
+            AND UPPER(LTRIM(RTRIM(COALESCE(ArticulosNombre, '')))) LIKE '%CEMENTO%GRIS%CEMEX%50KG%'
             AND YEAR(Fecha) = YEAR(GETDATE())
             GROUP BY MONTH(Fecha), DATENAME(MONTH, Fecha)
             ORDER BY Mes
@@ -1084,8 +1134,9 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                 COUNT(DISTINCT ArticulosNombre) AS Variedad_Productos
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND categoria = 'CEMENTO GRIS'
+            AND UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) LIKE '%CEMENTO%GRIS%'
             AND YEAR(Fecha) = YEAR(GETDATE())
+            AND NULLIF(LTRIM(RTRIM(COALESCE(proveedor, ''))), '') IS NOT NULL
             GROUP BY proveedor
             ORDER BY Ventas DESC
             """,
@@ -1101,7 +1152,7 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                 AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0)) AS Margen_Porcentaje
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND categoria = 'HIERRO'
+            AND UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) = 'HIERRO'
             AND YEAR(Fecha) = YEAR(GETDATE())
             GROUP BY ArticulosNombre
             ORDER BY Ganancia_Total DESC
@@ -1119,7 +1170,7 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                 COUNT(DISTINCT TercerosNombres) AS Numero_Clientes
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND categoria = 'ZINC'
+            AND UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) = 'ZINC'
             AND Fecha >= DATEADD(MONTH, -12, GETDATE())
             GROUP BY YEAR(Fecha), MONTH(Fecha)
             ORDER BY Año DESC, Mes DESC
@@ -1229,9 +1280,18 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                 SUM(TotalSinIva - ValorCosto) AS Ganancia
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND YEAR(Fecha) = 2025
-            AND (proveedor = 'SIKA' OR categoria = 'SIKA' OR subcategoria = 'SIKA' OR marca = 'SIKA' OR ArticulosNombre LIKE '%SIKA%')
-            AND (VendedorFactura LIKE '%CARLOS EFREY%' OR VendedorFactura LIKE '%PASCUAS%')
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            AND (
+                UPPER(LTRIM(RTRIM(COALESCE(proveedor, '')))) LIKE '%SIKA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(marca, '')))) LIKE '%SIKA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) LIKE '%SIKA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(subcategoria, '')))) LIKE '%SIKA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(ArticulosNombre, '')))) LIKE '%SIKA%'
+            )
+            AND (
+                UPPER(LTRIM(RTRIM(COALESCE(VendedorFactura, '')))) LIKE '%CARLOS%EFREY%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(VendedorFactura, '')))) LIKE '%PASCUAS%'
+            )
             GROUP BY ArticulosNombre
             ORDER BY Ventas DESC
             """,
@@ -1312,7 +1372,7 @@ def generate_training_data(
     if include_common_queries:
         rev_query = (
             f"SELECT SUM(TotalMasIva) AS Total_Revenue FROM {table_name} "
-            f"WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')"
+            f"WHERE {DOC_EXCLUSION_FILTER}"
         )
         examples.append((f"Total revenue from {table_name}", rev_query))
 

@@ -137,3 +137,6 @@ chroma.sqlite3
 reports/KPI_CONTROL_BOARD_*.md
 !reports/KPI_CONTROL_BOARD_TEMPLATE.md
 !reports/KPI_CONTROL_BOARD_2026_W*.md
+
+# Training data - handle with DVC or ignore
+data/*.jsonl

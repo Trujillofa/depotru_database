@@ -11,7 +11,7 @@ Group=yderf
 WorkingDirectory=/home/yderf/depotru_database
 
 # Environment
-Environment=PATH=/home/yderf/depotru_database/.venv-tools/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/home/yderf/depotru_database/.venv-production/bin:/usr/local/bin:/usr/bin:/bin
 Environment=PYTHONPATH=/home/yderf/depotru_database/src
 Environment=PRODUCTION_MODE=true
 
@@ -19,7 +19,7 @@ Environment=PRODUCTION_MODE=true
 EnvironmentFile=/home/yderf/depotru_database/.env
 
 # Main command to run the application
-ExecStart=/home/yderf/depotru_database/.venv-tools/bin/python /home/yderf/depotru_database/src/vanna_grok.py
+ExecStart=/home/yderf/depotru_database/.venv-production/bin/python /home/yderf/depotru_database/src/vanna_grok.py
 
 # Restart policy: always restart on failure
 Restart=always
