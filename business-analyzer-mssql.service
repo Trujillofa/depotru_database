@@ -1,0 +1,48 @@
+[Unit]
+Description=Business Data Analyzer - Local SQL Server (Podman)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=yderf
+Group=yderf
+WorkingDirectory=/home/yderf/depotru_database
+
+# Reuse DB credentials from the project environment file
+EnvironmentFile=-/home/yderf/depotru_database/.env
+
+# Run SQL Server 2022 Developer locally using host networking
+ExecStart=/usr/bin/podman run --rm \
+    --replace \
+    --name business-analyzer-mssql \
+    --network host \
+    -e ACCEPT_EULA=Y \
+    -e MSSQL_PID=Developer \
+    -e MSSQL_TCP_PORT=1433 \
+    -e MSSQL_SA_PASSWORD=${DB_PASSWORD} \
+    -v business-analyzer-mssql-data:/var/opt/mssql:Z \
+    mcr.microsoft.com/mssql/server:2022-latest
+
+ExecStartPre=-/usr/bin/podman rm -f business-analyzer-mssql
+ExecStop=/usr/bin/podman stop -t 20 business-analyzer-mssql
+
+Restart=always
+RestartSec=10
+TimeoutStopSec=40
+KillSignal=SIGTERM
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=business-analyzer-mssql
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=false
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

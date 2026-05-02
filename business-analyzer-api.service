@@ -1,0 +1,55 @@
+[Unit]
+Description=Business Data Analyzer API - REST API Endpoints
+Documentation=https://github.com/Trujillofa/depotru_database
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=yderf
+Group=yderf
+WorkingDirectory=/home/yderf/depotru_database
+
+# Environment file
+EnvironmentFile=-/home/yderf/depotru_database/.env
+
+# Podman run command
+ExecStart=/usr/bin/podman run --rm \
+    --replace \
+    --name business-analyzer-api \
+    --network host \
+    --workdir /app \
+    -v /home/yderf/depotru_database:/app:Z \
+    -v /home/yderf/depotru_database/.env:/app/.env:Z \
+    --entrypoint python \
+    localhost/business-analyzer:latest \
+    src/api.py
+
+# Ensure previous container instance is removed before start
+ExecStartPre=-/usr/bin/podman rm -f business-analyzer-api
+ExecStop=/usr/bin/podman stop -t 10 business-analyzer-api
+
+# Restart policy: always restart on failure
+Restart=always
+RestartSec=10
+
+# Graceful shutdown
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=business-analyzer-api
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=false
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target
