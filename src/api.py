@@ -3,10 +3,12 @@ REST API for Business Data Analyzer.
 
 Provides endpoints for programmatic access to business metrics.
 """
+# pyright: reportMissingImports=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedImport=false, reportDeprecated=false, reportImplicitRelativeImport=false, reportCallInDefaultInitializer=false, reportUntypedFunctionDecorator=false, reportArgumentType=false, reportExplicitAny=false
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
+import pymssql
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
@@ -26,6 +28,22 @@ class AnalysisResult(BaseModel):
     status: str
     data: Dict[str, Any]
     provider_status: Dict[str, str]
+
+
+class WhatIfRequest(BaseModel):
+    product_id: str
+    price_change_pct: float = 0.0
+    cost_change_pct: float = 0.0
+    volume_change_pct: float = 0.0
+
+
+class WhatIfResponse(BaseModel):
+    product_id: str
+    original_margin_pct: float
+    projected_margin_pct: float
+    original_profit: float
+    projected_profit: float
+    assumption: str
 
 
 @app.get("/health")
@@ -70,6 +88,57 @@ async def get_combined_analysis(
             "provider_status": provider_status,
         }
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/scenarios/what-if", response_model=WhatIfResponse)
+async def what_if_scenario(req: WhatIfRequest):
+    """Run What-If scenario for a product."""
+    try:
+        conn = pymssql.connect(
+            server=os.getenv("DB_SERVER", ""),
+            user=os.getenv("DB_USER", ""),
+            password=os.getenv("DB_PASSWORD", ""),
+            database=os.getenv("DB_NAME", "SmartBusiness"),
+            port=os.getenv("DB_PORT", "1433"),
+            login_timeout=30,
+            timeout=180,
+        )
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT TOP 1
+                AVG((TotalSinIva - ValorCosto) / TotalSinIva * 100) as margin_pct,
+                AVG(TotalSinIva - ValorCosto) as profit
+            FROM banco_datos
+            WHERE ArticulosCodigo = %s
+              AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+            """,
+            (req.product_id,),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if not row or row[0] is None:
+            raise HTTPException(status_code=404, detail="Product not found")
+
+        orig_margin = float(row[0])
+        orig_profit = float(row[1])
+
+        # Simple What-If: adjust margin by price/cost changes
+        projected_margin = orig_margin + req.price_change_pct - req.cost_change_pct
+        projected_profit = orig_profit * (1 + req.volume_change_pct / 100)
+
+        return WhatIfResponse(
+            product_id=req.product_id,
+            original_margin_pct=orig_margin,
+            projected_margin_pct=projected_margin,
+            original_profit=orig_profit,
+            projected_profit=projected_profit,
+            assumption=f"Price {req.price_change_pct:+.1f}%, Cost {req.cost_change_pct:+.1f}%, Volume {req.volume_change_pct:+.1f}%",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
