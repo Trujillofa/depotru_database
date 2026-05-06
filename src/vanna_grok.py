@@ -194,7 +194,7 @@ def main():
         allow_llm_to_see_data=True,
         title=f"SmartBusiness + {Config.AI_PROVIDER.upper()} AI",
         subtitle="¡Chatea con tu base de datos en español natural!",
-        chart=False,  # Disable chart generation (causing errors)
+        chart=True,  # Enable chart generation
     )
 
     print("✓ Starting Flask development server")
