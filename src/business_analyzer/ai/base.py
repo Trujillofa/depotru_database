@@ -9,6 +9,7 @@ import math
 import os
 import re
 import sys
+import time
 import warnings
 from functools import wraps
 from typing import Callable
@@ -229,6 +230,24 @@ class Config:
     MAX_DISPLAY_ROWS = int(os.getenv("MAX_DISPLAY_ROWS", "100"))
 
 
+class SimpleQueryCache:
+    def __init__(self, ttl=300):
+        self.ttl = ttl
+        self._cache = {}
+
+    def get(self, q):
+        k = (q or "").lower().strip()
+        if k not in self._cache:
+            return None
+        if time.time() - self._cache[k]["t"] > self.ttl:
+            del self._cache[k]
+            return None
+        return self._cache[k]["v"]
+
+    def set(self, q, v):
+        self._cache[(q or "").lower().strip()] = {"v": v, "t": time.time()}
+
+
 # =============================================================================
 # ERROR HANDLING - Retry Logic
 # =============================================================================
@@ -335,6 +354,7 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
 
     def __init__(self):
         self.provider = Config.AI_PROVIDER
+        self._query_cache = SimpleQueryCache(int(os.getenv("CACHE_TTL_SECONDS", "300")))
         self.ai_client, ai_config, provider_type = create_ai_client(self.provider)
 
         # 1. ChromaDB for RAG (local, private, fast)
@@ -516,6 +536,9 @@ ORDER BY Ganancia DESC
         Generate SQL with circuit breaker and retry logic.
         """
         try:
+            cached = self._query_cache.get(question)
+            if cached:
+                return cached
             # Apply circuit breaker based on provider
             decorator = with_circuit_breaker(self.provider)
             decorated_gen = decorator(super().generate_sql)
@@ -537,8 +560,12 @@ ORDER BY Ganancia DESC
                 if self._is_brand_profit_question(question):
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
-                        return self._brand_profit_sql_template()
-                return self._ensure_document_exclusion(generated)
+                        post_candidate = self._brand_profit_sql_template()
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
+                post_candidate = self._ensure_document_exclusion(generated)
+                self._query_cache.set(question, post_candidate)
+                return post_candidate
             return generated
         except CircuitBreakerError as e:
             print(f"🛑 AI Provider {self.provider.upper()} is currently offline: {e}")

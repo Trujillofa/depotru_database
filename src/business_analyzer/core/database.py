@@ -1,12 +1,17 @@
 """Database Module for Business Analyzer. Handles connections, queries, security."""
 
+# pyright: reportAny=false, reportArgumentType=false, reportConstantRedefinition=false, reportDeprecated=false, reportExplicitAny=false, reportImplicitRelativeImport=false, reportMissingImports=false, reportMissingParameterType=false, reportMissingTypeArgument=false, reportOptionalIterable=false, reportOptionalMemberAccess=false, reportOptionalSubscript=false, reportPossiblyUnboundVariable=false, reportPrivateUsage=false, reportReturnType=false, reportUnannotatedClassAttribute=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnusedCallResult=false, reportUnusedImport=false
+
 import logging
 import os
 import re
+import threading
+import time
 
 # nosec B405: xml.etree.ElementTree is used for parsing local Navicat NCX files only
 # These are trusted configuration files, not external/untrusted XML data
 import xml.etree.ElementTree as ET  # nosec B405
+from collections import deque
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
@@ -56,6 +61,52 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+class ConnectionPool:
+    """Simple thread-safe connection pool for pymssql."""
+
+    def __init__(self, max_size: int = 10, idle_timeout: int = 300):
+        self.max_size = max_size
+        self.idle_timeout = idle_timeout
+        self._pool: deque = deque(maxlen=max_size)
+        self._lock = threading.Lock()
+        self._in_use = 0
+
+    def get_connection(self, create_func):
+        with self._lock:
+            while self._pool:
+                conn, timestamp = self._pool.popleft()
+                if time.time() - timestamp < self.idle_timeout:
+                    self._in_use += 1
+                    return conn
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            self._in_use += 1
+        conn = create_func()
+        return conn
+
+    def return_connection(self, conn):
+        with self._lock:
+            self._in_use -= 1
+            if len(self._pool) < self.max_size:
+                self._pool.append((conn, time.time()))
+            else:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def close_all(self):
+        with self._lock:
+            while self._pool:
+                conn, _ = self._pool.popleft()
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+
 class DatabaseError(Exception):
     pass
 
@@ -89,6 +140,11 @@ class Database:
             ncx_file_path or Config.NCX_FILE_PATH,
         )
         self._connection = None
+        self._pool_enabled = os.getenv("DB_POOL_ENABLED", "0") in {"1", "true", "yes"}
+        self._pool = ConnectionPool(
+            max_size=int(os.getenv("DB_POOL_SIZE", "10")),
+            idle_timeout=int(os.getenv("DB_POOL_TIMEOUT", "300")),
+        )
         if not PYMSSQL_AVAILABLE and not PYODBC_AVAILABLE:
             raise ImportError(
                 "No database driver available. Install pymssql or pyodbc."
@@ -191,47 +247,63 @@ class Database:
         if self._connection:
             logger.warning("Already connected")
             return self
-        details = self._get_connection_details()
-        host, port, db = (
-            details.get("Host"),
-            details.get("Port"),
-            details.get("Database", Config.DB_NAME),
-        )
-        logger.info(f"Connecting to {host}:{port}/{db}")
         try:
-            if PYMSSQL_AVAILABLE:
-                self._connection = pymssql.connect(
-                    server=details["Host"],
-                    port=details["Port"],
-                    user=details["UserName"],
-                    password=details["Password"],
-                    database=db,
-                    login_timeout=Config.DB_LOGIN_TIMEOUT,
-                    timeout=Config.DB_TIMEOUT,
-                    tds_version=Config.DB_TDS_VERSION,
-                )
-            elif PYODBC_AVAILABLE:
-                self._connection = pyodbc.connect(
-                    f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={details['Host']},{details['Port']};DATABASE={db};UID={details['UserName']};PWD={details['Password']};"
-                )
-            logger.info("✓ Connected successfully")
+            details = self._get_connection_details()
+            host, port, db = (
+                details.get("Host"),
+                details.get("Port"),
+                details.get("Database", Config.DB_NAME),
+            )
+            user, password = details.get("UserName"), details.get("Password")
+
+            def create_conn():
+                if PYMSSQL_AVAILABLE:
+                    return pymssql.connect(
+                        server=host,
+                        user=user,
+                        password=password,
+                        database=db,
+                        port=str(port) if port else "1433",
+                        login_timeout=Config.DB_LOGIN_TIMEOUT,
+                        timeout=Config.DB_TIMEOUT,
+                        tds_version=Config.DB_TDS_VERSION,
+                    )
+                if PYODBC_AVAILABLE:
+                    pyodbc.pooling = True
+                    connection_string = (
+                        "DRIVER={ODBC Driver 17 for SQL Server};"
+                        f"SERVER={host},{port};"
+                        f"DATABASE={db};"
+                        f"UID={user};"
+                        f"PWD={password};"
+                    )
+                    return pyodbc.connect(connection_string)
+                raise ConnectionError("No database driver available")
+
+            if self._pool_enabled and PYMSSQL_AVAILABLE:
+                self._connection = self._pool.get_connection(create_conn)
+            else:
+                self._connection = create_conn()
+
             cursor = self._connection.cursor()
-            cursor.execute("SELECT 1 as test")
+            cursor.execute("SELECT 1")
             cursor.fetchone()
             cursor.close()
+            logger.info("✓ Connected to database")
+            return self
         except Exception as e:
             self._connection = None
-            raise ConnectionError(
-                f"Connection timeout: {e}"
-                if "timeout" in str(e).lower()
-                else f"Failed to connect: {e}"
-            )
-        return self
+            if "timeout" in str(e).lower():
+                raise ConnectionError(f"Connection timeout: {e}")
+            raise ConnectionError(f"Failed to connect: {e}")
 
     def close(self):
         if self._connection:
             try:
-                self._connection.close()
+                if self._pool_enabled and PYMSSQL_AVAILABLE:
+                    self._pool.return_connection(self._connection)
+                else:
+                    self._connection.close()
                 logger.info("✓ Connection closed")
             except Exception as e:
                 logger.warning(f"Error closing: {e}")
@@ -261,10 +333,9 @@ class Database:
         if not self._connection:
             raise ConnectionError("Not connected. Call connect() first.")
         try:
+            cursor_method = getattr(self._connection, "cursor")
             cursor = (
-                self._connection.cursor(as_dict=True)
-                if PYMSSQL_AVAILABLE
-                else self._connection.cursor()
+                cursor_method(as_dict=True) if PYMSSQL_AVAILABLE else cursor_method()
             )
             cursor.execute(query, params)
             if fetch:
