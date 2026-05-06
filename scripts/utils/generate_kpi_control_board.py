@@ -26,6 +26,15 @@ from typing import Any, Dict, List
 
 import pymssql
 
+try:
+    from business_analyzer.ai.base import (  # pyright: ignore[reportMissingImports]
+        AIVanna,
+    )
+
+    _ai = AIVanna()
+except Exception:
+    _ai = None
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SQL_PACK_PATH = ROOT_DIR / "scripts" / "analysis" / "kpi_sql_pack.sql.template"
 OUTPUT_DIR = ROOT_DIR / "reports"
@@ -170,6 +179,33 @@ def format_delta(value: float, kind: str) -> str:
     if kind == "pp":
         return f"{value:+.2f} pp".replace(".", ",")
     return format_pct(value, 2) if value else "0,00%"
+
+
+def generate_narrative(
+    scorecard: Dict[str, Dict[str, Any]], results: Dict[str, List[Dict[str, Any]]]
+) -> str:
+    """Generate AI narrative summary for KPI board."""
+    if _ai is None:
+        return "AI narrative unavailable (AIVanna init failed)."
+    try:
+        margin = scorecard.get("margen", {}).get("current", 0.0)
+        profit = scorecard.get("ganancia", {}).get("current", 0.0)
+        ticket = scorecard.get("ticket", {}).get("current", 0.0)
+        concentration = scorecard.get("concentracion", {}).get("current", 0.0)
+        q2 = results.get("Q2", [])
+        top_cat = q2[0].get("Categoria", "N/A") if q2 else "N/A"
+        prompt = (
+            f"Escribe un párrafo ejecutivo en español (máximo 150 palabras) "
+            f"analizando el rendimiento semanal de la ferretería: "
+            f"Margen Bruto {margin:.2f}%, Ganancia Bruta ${profit:,.0f}, "
+            f"Ticket Promedio ${ticket:,.0f}, Concentración Top-10 {concentration:.2f}%, "
+            f"Categoría top: {top_cat}. "
+            f"Incluye una recomendación comercial accionable."
+        )
+        summary = _ai.generate_summary(prompt, None)
+        return str(summary)
+    except Exception as e:
+        return f"AI narrative generation failed: {e}"
 
 
 def status_higher_is_better(current: float, target: float) -> str:
@@ -409,6 +445,12 @@ def render_markdown(
     lines.append("| Medium | Inventory |  |  |  | +capital / +margen |")
 
     lines.append("")
+    lines.append("## 6) AI Narrative Summary")
+    lines.append("")
+    narrative = generate_narrative(scorecard, results)
+    lines.append(narrative)
+    lines.append("")
+
     lines.append("## 5) SQL Blocks Used (Traceability)")
     lines.append("")
     for q in range(1, 9):
