@@ -233,6 +233,12 @@ def train_on_schema(vn, schema_name: str = "SmartBusiness"):
         - ArticulosCodigo = Product SKU/code
         - ArticulosReferencia = Reference code
 
+        BRANCH / STORE / DOCUMENT TYPE (Sedes / Puntos de venta):
+        - DocumentosCodigo identifies the store/invoice source for sales analysis.
+        - SIKA CENTER is a branch/store, NOT a customer. Use DocumentosCodigo = 'FEF'.
+        - CALLE 5 / DISTRIBUCIONES is a branch/store. Use DocumentosCodigo = 'FET'.
+        - ALMACEN / PRINCIPAL is the main store. Use DocumentosCodigo = 'FED'.
+
         FINANCIAL (Financiero):
         - TotalMasIva = Revenue WITH tax (IVA) - "Facturación"
         - TotalSinIva = Revenue WITHOUT tax - "Ventas Netas"
@@ -319,6 +325,7 @@ def train_on_schema(vn, schema_name: str = "SmartBusiness"):
         - Profit/Ganancia = TotalSinIva - ValorCosto
         - Margin/Margen = ((TotalSinIva - ValorCosto) / TotalSinIva) * 100
         - Customer/Cliente = TercerosNombres
+        - Branch/Store/Sede/Punto de venta = DocumentosCodigo
         - Product/Producto = ArticulosNombre
         - Category/Categoría = categoria
         - Subcategory/Subcategoría = subcategoria
@@ -328,6 +335,21 @@ def train_on_schema(vn, schema_name: str = "SmartBusiness"):
         - Quantity/Cantidad = Cantidad
         - Date/Fecha = Fecha
         - Transaction/Transacción = DocumentosCodigo + NumeroDocumento
+
+        AMBIGUITY RESOLUTION (IMPORTANT):
+        - If user asks for "categoría", use categoria (not proveedor/marca).
+        - If user asks for "marca" or "proveedor", search proveedor, marca, and product text when needed.
+        - If user asks for "vendedor", use VendedorFactura / vendedor_codigo / VendedorAsignado.
+        - If user asks for "cliente", use TercerosNombres (never vendor fields).
+        - If user mentions "SIKA CENTER", treat it as a branch/store: use DocumentosCodigo = 'FEF', never TercerosNombres.
+        - If user mentions "CALLE 5" or "DISTRIBUCIONES", treat it as a branch/store: use DocumentosCodigo = 'FET'.
+        - If user asks for "producto" or "artículo", use ArticulosNombre / ArticulosCodigo.
+
+        NON-EXISTENT COLUMNS TO AVOID:
+        - Do NOT use total_profit, profit_margin, revenue, customer_name, product_name, seller_name.
+        - Always compute profit as TotalSinIva - ValorCosto.
+        - Always compute margin as (TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0).
+        - Use TOP N for result limits in SQL Server, not LIMIT.
 
         =================================================================
         QUERY PATTERNS BY USE CASE
@@ -359,6 +381,7 @@ def train_on_schema(vn, schema_name: str = "SmartBusiness"):
         - By customer: GROUP BY TercerosNombres
         - By product: GROUP BY ArticulosNombre
         - By vendor: GROUP BY VendedorFactura
+        - By branch/store: GROUP BY DocumentosCodigo or filter exact branch code
         """
     )
 
@@ -656,40 +679,85 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
         (
             "Ventas por día de la semana en orden",
             """
+            WITH ventas_por_dia AS (
+                SELECT
+                    ((DATEPART(WEEKDAY, Fecha) + @@DATEFIRST + 5) % 7) + 1 AS Dia_Orden,
+                    TotalMasIva,
+                    TotalSinIva,
+                    ValorCosto
+                FROM banco_datos
+                WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+                AND Fecha >= DATEADD(MONTH, -3, GETDATE())
+            )
             SELECT
-                CASE DATENAME(WEEKDAY, Fecha)
-                    WHEN 'Monday' THEN 'Lunes'
-                    WHEN 'Tuesday' THEN 'Martes'
-                    WHEN 'Wednesday' THEN 'Miércoles'
-                    WHEN 'Thursday' THEN 'Jueves'
-                    WHEN 'Friday' THEN 'Viernes'
-                    WHEN 'Saturday' THEN 'Sábado'
-                    WHEN 'Sunday' THEN 'Domingo'
-                    ELSE DATENAME(WEEKDAY, Fecha)
+                CASE Dia_Orden
+                    WHEN 1 THEN 'Lunes'
+                    WHEN 2 THEN 'Martes'
+                    WHEN 3 THEN 'Miércoles'
+                    WHEN 4 THEN 'Jueves'
+                    WHEN 5 THEN 'Viernes'
+                    WHEN 6 THEN 'Sábado'
+                    WHEN 7 THEN 'Domingo'
                 END AS Dia_Semana,
-                CASE DATENAME(WEEKDAY, Fecha)
-                    WHEN 'Monday' THEN 1
-                    WHEN 'Tuesday' THEN 2
-                    WHEN 'Wednesday' THEN 3
-                    WHEN 'Thursday' THEN 4
-                    WHEN 'Friday' THEN 5
-                    WHEN 'Saturday' THEN 6
-                    WHEN 'Sunday' THEN 7
-                    ELSE 8
-                END AS Dia_Orden,
+                Dia_Orden,
                 SUM(TotalMasIva) AS Ventas_Totales,
                 SUM(TotalSinIva - ValorCosto) AS Ganancia,
                 COUNT(*) AS Numero_Transacciones
-            FROM banco_datos
-            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND Fecha >= DATEADD(MONTH, -3, GETDATE())
-            GROUP BY DATENAME(WEEKDAY, Fecha)
+            FROM ventas_por_dia
+            GROUP BY Dia_Orden
             ORDER BY Dia_Orden
             """,
         ),
         # ============================================================
         # CATEGORY 3: CATEGORY & BRAND ANALYSIS (6 examples)
         # ============================================================
+        # Branch / Store Sales (SIKA CENTER is FEF, not a customer)
+        (
+            "Ventas del Sika Center este año",
+            """
+            SELECT
+                MONTH(Fecha) AS Mes,
+                DATENAME(MONTH, Fecha) AS Nombre_Mes,
+                SUM(TotalMasIva) AS Ventas_Totales,
+                SUM(TotalSinIva - ValorCosto) AS Ganancia,
+                COUNT(*) AS Numero_Transacciones
+            FROM banco_datos
+            WHERE DocumentosCodigo = 'FEF'
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            GROUP BY MONTH(Fecha), DATENAME(MONTH, Fecha)
+            ORDER BY Mes
+            """,
+        ),
+        (
+            "Ventas de la sede Sika Center por mes",
+            """
+            SELECT
+                YEAR(Fecha) AS Año,
+                MONTH(Fecha) AS Mes,
+                DATENAME(MONTH, Fecha) AS Nombre_Mes,
+                SUM(TotalMasIva) AS Ventas_Totales,
+                COUNT(*) AS Numero_Transacciones
+            FROM banco_datos
+            WHERE DocumentosCodigo = 'FEF'
+            GROUP BY YEAR(Fecha), MONTH(Fecha), DATENAME(MONTH, Fecha)
+            ORDER BY Año DESC, Mes DESC
+            """,
+        ),
+        (
+            "Ventas de Calle 5 este año",
+            """
+            SELECT
+                MONTH(Fecha) AS Mes,
+                DATENAME(MONTH, Fecha) AS Nombre_Mes,
+                SUM(TotalMasIva) AS Ventas_Totales,
+                COUNT(*) AS Numero_Transacciones
+            FROM banco_datos
+            WHERE DocumentosCodigo = 'FET'
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            GROUP BY MONTH(Fecha), DATENAME(MONTH, Fecha)
+            ORDER BY Mes
+            """,
+        ),
         # Subcategory Breakdown for Top Category
         (
             "Subcategorías dentro de CEMENTO GRIS",
@@ -1326,6 +1394,112 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                 ELSE 'Minorista (< $10M)'
             END
             ORDER BY SUM(Compra_Total) DESC
+            """,
+        ),
+        # Colloquial Top Customer Variation
+        (
+            "Dame los clientes top por facturación este mes",
+            """
+            SELECT TOP 10
+                TercerosNombres AS Cliente,
+                SUM(TotalMasIva) AS Facturacion_Total,
+                COUNT(*) AS Numero_Compras,
+                AVG(TotalMasIva) AS Ticket_Promedio
+            FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND Fecha >= DATEADD(MONTH, -1, GETDATE())
+            AND NULLIF(LTRIM(RTRIM(COALESCE(TercerosNombres, ''))), '') IS NOT NULL
+            GROUP BY TercerosNombres
+            ORDER BY Facturacion_Total DESC
+            """,
+        ),
+        # Inventory Velocity / Slow Movers
+        (
+            "Productos de baja rotación en los últimos 90 días",
+            """
+            SELECT TOP 20
+                ArticulosCodigo AS Codigo_Producto,
+                ArticulosNombre AS Producto,
+                SUM(Cantidad) AS Unidades_Vendidas,
+                COUNT(*) AS Numero_Transacciones,
+                MAX(Fecha) AS Ultima_Venta
+            FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND Fecha >= DATEADD(DAY, -90, GETDATE())
+            AND NULLIF(LTRIM(RTRIM(COALESCE(ArticulosNombre, ''))), '') IS NOT NULL
+            GROUP BY ArticulosCodigo, ArticulosNombre
+            HAVING SUM(Cantidad) > 0
+            ORDER BY Unidades_Vendidas ASC, Ultima_Venta ASC
+            """,
+        ),
+        # Brand / Provider Ambiguity
+        (
+            "Margen por marca o proveedor",
+            """
+            SELECT TOP 15
+                COALESCE(NULLIF(LTRIM(RTRIM(proveedor)), ''), NULLIF(LTRIM(RTRIM(marca)), ''), 'SIN MARCA') AS Marca_Proveedor,
+                SUM(TotalMasIva) AS Ventas_Totales,
+                SUM(TotalSinIva - ValorCosto) AS Ganancia,
+                AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0)) AS Margen_Promedio_Pct,
+                COUNT(*) AS Numero_Transacciones
+            FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            GROUP BY COALESCE(NULLIF(LTRIM(RTRIM(proveedor)), ''), NULLIF(LTRIM(RTRIM(marca)), ''), 'SIN MARCA')
+            ORDER BY Ganancia DESC
+            """,
+        ),
+        # Geographic Segmentation
+        (
+            "Ventas por departamento y ciudad",
+            """
+            SELECT TOP 20
+                departamento AS Departamento,
+                ciudad AS Ciudad,
+                SUM(TotalMasIva) AS Ventas_Totales,
+                SUM(TotalSinIva - ValorCosto) AS Ganancia,
+                COUNT(DISTINCT TercerosNombres) AS Clientes_Unicos
+            FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            AND NULLIF(LTRIM(RTRIM(COALESCE(departamento, ''))), '') IS NOT NULL
+            AND NULLIF(LTRIM(RTRIM(COALESCE(ciudad, ''))), '') IS NOT NULL
+            GROUP BY departamento, ciudad
+            ORDER BY Ventas_Totales DESC
+            """,
+        ),
+        # Seasonal Pattern
+        (
+            "Patrón estacional de ventas por mes en los últimos 24 meses",
+            """
+            SELECT
+                MONTH(Fecha) AS Mes,
+                DATENAME(MONTH, Fecha) AS Nombre_Mes,
+                SUM(TotalMasIva) AS Ventas_Totales,
+                SUM(TotalSinIva - ValorCosto) AS Ganancia,
+                COUNT(*) AS Numero_Transacciones
+            FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND Fecha >= DATEADD(MONTH, -24, GETDATE())
+            GROUP BY MONTH(Fecha), DATENAME(MONTH, Fecha)
+            ORDER BY Mes
+            """,
+        ),
+        # Category vs Brand Clarification
+        (
+            "Ventas de la categoría CEMENTO GRIS comparadas por marca",
+            """
+            SELECT TOP 10
+                COALESCE(NULLIF(LTRIM(RTRIM(proveedor)), ''), NULLIF(LTRIM(RTRIM(marca)), ''), 'SIN MARCA') AS Marca_Proveedor,
+                SUM(TotalMasIva) AS Ventas_Totales,
+                SUM(Cantidad) AS Unidades,
+                SUM(TotalSinIva - ValorCosto) AS Ganancia
+            FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            AND UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) LIKE '%CEMENTO%GRIS%'
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            GROUP BY COALESCE(NULLIF(LTRIM(RTRIM(proveedor)), ''), NULLIF(LTRIM(RTRIM(marca)), ''), 'SIN MARCA')
+            ORDER BY Ventas_Totales DESC
             """,
         ),
     ]

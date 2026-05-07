@@ -511,6 +511,119 @@ GROUP BY Marca
 ORDER BY Ganancia DESC
         """.strip()
 
+    @staticmethod
+    def _is_weekday_sales_question(question: str) -> bool:
+        lower = (question or "").lower()
+        return (
+            "día de la semana" in lower
+            or "dias de la semana" in lower
+            or "días de la semana" in lower
+        )
+
+    @staticmethod
+    def _is_sika_center_branch_question(question: str) -> bool:
+        lower = (question or "").lower()
+        return "sika center" in lower
+
+    @staticmethod
+    def _month_number_from_question(question: str) -> int:
+        lower = (question or "").lower()
+        numeric_month = re.search(
+            r"month\s*\(\s*fecha\s*\)\s*=\s*(1[0-2]|[1-9])", lower
+        )
+        if numeric_month:
+            return int(numeric_month.group(1))
+
+        month_names = {
+            "enero": 1,
+            "febrero": 2,
+            "marzo": 3,
+            "abril": 4,
+            "mayo": 5,
+            "junio": 6,
+            "julio": 7,
+            "agosto": 8,
+            "septiembre": 9,
+            "setiembre": 9,
+            "octubre": 10,
+            "noviembre": 11,
+            "diciembre": 12,
+        }
+        for month_name, month_number in month_names.items():
+            if month_name in lower:
+                return month_number
+        return 0
+
+    @staticmethod
+    def _sika_center_branch_sql_template(question: str = "") -> str:
+        month_number = AIVanna._month_number_from_question(question)
+        month_filter = f"\n  AND MONTH(Fecha) = {month_number}" if month_number else ""
+
+        return """
+SELECT
+    YEAR(Fecha) AS Año,
+    MONTH(Fecha) AS Mes,
+    DATENAME(MONTH, Fecha) AS Nombre_Mes,
+    SUM(TotalMasIva) AS Ventas_Totales,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia,
+    COUNT(*) AS Numero_Transacciones
+FROM banco_datos
+WHERE DocumentosCodigo = 'FEF'
+  AND YEAR(Fecha) = YEAR(GETDATE()){month_filter}
+GROUP BY YEAR(Fecha), MONTH(Fecha), DATENAME(MONTH, Fecha)
+ORDER BY Mes
+        """.strip().format(
+            month_filter=month_filter
+        )
+
+    @staticmethod
+    def _repair_sika_center_customer_sql(sql: str) -> str:
+        if not sql:
+            return sql
+
+        lower = sql.lower()
+        references_sika_customer = (
+            "tercerosnombres" in lower
+            and "sika" in lower
+            and "from banco_datos" in lower
+        )
+        if not references_sika_customer:
+            return sql
+
+        return AIVanna._sika_center_branch_sql_template(sql)
+
+    @staticmethod
+    def _weekday_sales_sql_template() -> str:
+        return """
+WITH ventas_por_dia AS (
+    SELECT
+        ((DATEPART(WEEKDAY, Fecha) + @@DATEFIRST + 5) % 7) + 1 AS Dia_Orden,
+        TotalMasIva,
+        TotalSinIva,
+        ValorCosto
+    FROM banco_datos
+    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+      AND Fecha >= DATEADD(MONTH, -3, GETDATE())
+)
+SELECT
+    CASE Dia_Orden
+        WHEN 1 THEN 'Lunes'
+        WHEN 2 THEN 'Martes'
+        WHEN 3 THEN 'Miércoles'
+        WHEN 4 THEN 'Jueves'
+        WHEN 5 THEN 'Viernes'
+        WHEN 6 THEN 'Sábado'
+        WHEN 7 THEN 'Domingo'
+    END AS Dia_Semana,
+    Dia_Orden,
+    SUM(TotalMasIva) AS Ventas_Totales,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia,
+    COUNT(*) AS Numero_Transacciones
+FROM ventas_por_dia
+GROUP BY Dia_Orden
+ORDER BY Dia_Orden
+        """.strip()
+
     def connect_to_mssql(self, **kwargs):
         """Connect to MSSQL database using pyodbc or pymssql."""
         try:
@@ -563,7 +676,20 @@ ORDER BY Ganancia DESC
                         post_candidate = self._brand_profit_sql_template()
                         self._query_cache.set(question, post_candidate)
                         return post_candidate
-                post_candidate = self._ensure_document_exclusion(generated)
+                if self._is_weekday_sales_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._weekday_sales_sql_template()
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
+                if self._is_sika_center_branch_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._sika_center_branch_sql_template(question)
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
+                repaired_generated = self._repair_sika_center_customer_sql(generated)
+                post_candidate = self._ensure_document_exclusion(repaired_generated)
                 self._query_cache.set(question, post_candidate)
                 return post_candidate
             return generated
@@ -580,6 +706,8 @@ ORDER BY Ganancia DESC
 
         if not sql:
             return pd.DataFrame()
+
+        sql = self._repair_sika_center_customer_sql(sql)
 
         def _execute_to_dataframe(query: str):
             cursor = self.connection.cursor()
@@ -602,6 +730,30 @@ ORDER BY Ganancia DESC
             )
             return normalized
 
+        def _is_transient_connection_error(error: Exception) -> bool:
+            message = str(error).lower()
+            transient_markers = [
+                "08s01",
+                "sqlexecdirectw",
+                "tcp provider",
+                "communication link failure",
+            ]
+            return any(marker in message for marker in transient_markers)
+
+        def _reconnect_if_possible() -> bool:
+            try:
+                if hasattr(self, "connection") and self.connection:
+                    try:
+                        self.connection.close()
+                    except Exception:
+                        pass
+                    self.connection = None
+                self.connect_to_mssql_odbc()
+                return bool(getattr(self, "connection", None))
+            except Exception as reconnect_error:
+                print(f"⚠️ Database reconnect failed: {reconnect_error}")
+                return False
+
         try:
             if hasattr(self, "connection") and self.connection:
                 df = _execute_to_dataframe(sql)
@@ -621,6 +773,12 @@ ORDER BY Ganancia DESC
                 return pd.DataFrame()
             return super_df
         except Exception as e:
+            if _is_transient_connection_error(e) and _reconnect_if_possible():
+                try:
+                    return self.run_sql(sql, **kwargs)
+                except Exception as retry_error:
+                    print(f"❌ Database retry failed: {retry_error}")
+                    return pd.DataFrame()
             print(f"❌ Database error executing SQL: {e}")
             return pd.DataFrame()
 
