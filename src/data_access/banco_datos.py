@@ -48,7 +48,7 @@ def fetch_banco_datos(
         port = conn_details["Port"]
         user = conn_details["UserName"]
         password = conn_details["Password"]
-        logger.info("Connecting to database at %s:%s", host, port)
+        logger.info("Connecting to configured database endpoint")
 
         conn = pymssql.connect(
             server=host,
