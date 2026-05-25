@@ -44,15 +44,17 @@ def fetch_banco_datos(
 
     conn: Any = None
     try:
-        logger.info(
-            f"Connecting to database at {conn_details['Host']}:{conn_details['Port']}"
-        )
+        host = conn_details["Host"]
+        port = conn_details["Port"]
+        user = conn_details["UserName"]
+        password = conn_details["Password"]
+        logger.info("Connecting to database at %s:%s", host, port)
 
         conn = pymssql.connect(
-            server=conn_details["Host"],
-            port=conn_details["Port"],
-            user=conn_details["UserName"],
-            password=conn_details["Password"],
+            server=host,
+            port=port,
+            user=user,
+            password=password,
             database=Config.DB_NAME,
             login_timeout=Config.DB_LOGIN_TIMEOUT,
             timeout=Config.DB_TIMEOUT,

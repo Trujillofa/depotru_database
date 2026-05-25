@@ -29,7 +29,6 @@ import argparse
 import json
 import logging
 import os
-import statistics
 from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
@@ -374,7 +373,6 @@ def print_detailed_statistics(analysis: Dict[str, Any]):
     customers = metrics["customer_analytics"]
     products = metrics["product_analytics"]
     categories = metrics["category_analytics"]
-    trends = metrics["trend_analytics"]
     recommendations = analysis.get("strategic_recommendations", [])
 
     print(f"\n{'=' * 80}")
