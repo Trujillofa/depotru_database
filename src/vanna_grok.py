@@ -24,8 +24,6 @@ import pandas as pd
 # Add src to path for imports
 sys.path.insert(0, "/home/yderf/depotru_database/src")
 
-from vanna.legacy.flask import VannaFlaskApp  # noqa: E402
-
 # Import from the new modular ai package
 from business_analyzer.ai import (  # noqa: E402
     AIVanna,
@@ -34,6 +32,7 @@ from business_analyzer.ai import (  # noqa: E402
     full_training,
     generate_insights,
 )
+from vanna.legacy.flask import VannaFlaskApp  # noqa: E402
 
 
 def clean_sql(sql: str) -> str:

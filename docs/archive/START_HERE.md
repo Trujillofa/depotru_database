@@ -84,7 +84,7 @@ python examples/improvements_p0.py
 - Safe database connection handling
 - Division by zero fixes
 - Input validation
-- **Copy-paste ready!**
+- Reference implementations, adapt to extracted modules (`src/data_access/`, `src/analytics/`, `src/contracts/`)
 
 ---
 
@@ -337,8 +337,8 @@ coding_omarchy/
 │   ├── streamlit_dashboard.py (Web dashboard)
 │   └── test_business_metrics.py (Unit tests)
 │
-├── business_analyzer_combined.py (Current implementation)
-├── config.py (Configuration management)
+├── src/business_analyzer_combined.py (Orchestration entrypoint)
+├── src/contracts/ src/analytics/ src/data_access/ src/reporting/ src/vanna/ (Extracted modules)
 │
 ├── README.md (Setup guide)
 ├── SECURITY.md (Security guidelines)
