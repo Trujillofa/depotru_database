@@ -124,6 +124,7 @@ site/
 # Local configuration overrides
 local_config.py
 config.local.*
+query_sika.py
 
 # Database files
 *.db

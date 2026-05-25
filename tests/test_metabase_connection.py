@@ -14,7 +14,7 @@ pytest.importorskip("pymssql")
 
 import pymssql
 
-from config import Config
+from src.config import Config
 
 # YOUR CONNECTION DETAILS - Match what you use in Metabase!
 HOST = "your-server"  # Replace with your server
