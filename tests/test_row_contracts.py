@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Union
 
 import pytest
 
@@ -20,7 +21,7 @@ def test_extract_row_value_parity_with_legacy(
     row: dict[str, object],
     keys: list[str],
     default: object,
-    expected: float | int,
+    expected: Union[float, int],
 ) -> None:
     assert extract_row_value(row, keys, default=default) == expected
 
