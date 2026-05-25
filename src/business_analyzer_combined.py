@@ -25,18 +25,16 @@ Note: Visualization reports are generated automatically when matplotlib is insta
 The --generate-report flag is for future compatibility.
 """
 
-from typing import List, Dict, Any, Optional
-import logging
-import json
 import argparse
+import json
+import logging
 import os
-from datetime import datetime, date
-from decimal import Decimal
-from collections import defaultdict
 import statistics
+from collections import defaultdict
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
 
-# Import configuration
-from .config import Config, CustomerSegmentation, InventoryConfig, ProfitabilityConfig
 from .analytics.category_metrics import analyze_categories as analyze_categories_core
 from .analytics.customer_metrics import analyze_customers as analyze_customers_core
 from .analytics.financial_metrics import (
@@ -54,10 +52,15 @@ from .analytics.risk_efficiency_metrics import (
     calculate_risk_metrics as calculate_risk_metrics_core,
 )
 from .analytics.trend_metrics import analyze_trends as analyze_trends_core
+
+# Import configuration
+from .config import Config, CustomerSegmentation, InventoryConfig, ProfitabilityConfig
 from .contracts.row_contracts import extract_row_value
 from .data_access import fetch_banco_datos, resolve_connection_details
 from .reporting import (
     MATPLOTLIB_AVAILABLE,
+)
+from .reporting import (
     generate_visualization_report as generate_visualization_report_core,
 )
 

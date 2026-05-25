@@ -1,6 +1,6 @@
 import importlib
 import logging
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # nosec B405 - NCX files are local trusted config exports.
 from collections.abc import Callable
 from typing import Any, Optional
 
@@ -18,7 +18,9 @@ except Exception:
 _aes_module: Optional[Any]
 _unpad: Optional[Callable[..., Any]]
 try:
-    _aes_module = importlib.import_module("Crypto.Cipher").AES
+    _aes_module = importlib.import_module(
+        "Crypto.Cipher"
+    ).AES  # nosec B413 - optional Navicat legacy fallback.
     _unpad = importlib.import_module("Crypto.Util.Padding").unpad
 except Exception:
     _aes_module = None
@@ -61,7 +63,6 @@ def load_connections(file_path: str) -> list[dict[str, Any]]:
 
             if not all([host, user, encrypted_password]):
                 continue
-            assert encrypted_password is not None
 
             try:
                 password = decrypt_navicat_password(encrypted_password)

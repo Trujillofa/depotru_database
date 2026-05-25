@@ -52,12 +52,9 @@ def generate_visualization_report(
     else:
         output_path = os.path.expanduser(output_path)
 
-    assert (
-        plt is not None
-        and mpatches is not None
-        and GridSpec is not None
-        and np is not None
-    )
+    if plt is None or mpatches is None or GridSpec is None or np is None:
+        logger.warning("Matplotlib dependencies unavailable - skipping visualization")
+        return None
 
     metrics = analysis["calculated_metrics"]
     financial = metrics["financial_metrics"]
