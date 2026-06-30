@@ -38,14 +38,27 @@ CURRENCY_COLUMNS = [
     "TotalSinIva",
     "ValorCosto",
     "Facturacion_Total",
+    "Facturacion",
+    "Ventas_Totales",
+    "Ventas",
     "Revenue",
     "Ganancia",
     "Ganancia_Neta",
+    "Ganancia_Total",
     "total_revenue",
     "Ticket_Promedio",
     "Revenue_Neto",
     "Precio",
     "Costo",
+]
+
+INTEGER_COLUMNS = [
+    "Cantidad",
+    "Unidades_Vendidas",
+    "Unidades",
+    "Numero_Transacciones",
+    "Numero_Ventas",
+    "order_count",
 ]
 
 # Known percentage columns
@@ -111,6 +124,9 @@ def format_number(value: Any, column_name: str = "") -> str:
 
     if column_name in PERCENTAGE_COLUMNS:
         return f"{num:,.1f}%".replace(".", ",")
+
+    if column_name in INTEGER_COLUMNS:
+        return f"{int(num):,}".replace(",", ".")
 
     # 2. KEYWORD DETECTION (fallback)
     col_lower = column_name.lower()

@@ -5,6 +5,7 @@
 import logging
 import os
 import re
+import sys
 import threading
 import time
 
@@ -59,6 +60,14 @@ except ImportError:
     from config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def _default_pool_enabled() -> bool:
+    """Pooling on in production; off during pytest unless explicitly set."""
+    explicit = os.getenv("DB_POOL_ENABLED")
+    if explicit is not None:
+        return explicit.lower() in {"1", "true", "yes"}
+    return "pytest" not in sys.modules
 
 
 class ConnectionPool:
@@ -140,7 +149,7 @@ class Database:
             ncx_file_path or Config.NCX_FILE_PATH,
         )
         self._connection = None
-        self._pool_enabled = os.getenv("DB_POOL_ENABLED", "0") in {"1", "true", "yes"}
+        self._pool_enabled = _default_pool_enabled()
         self._pool = ConnectionPool(
             max_size=int(os.getenv("DB_POOL_SIZE", "10")),
             idle_timeout=int(os.getenv("DB_POOL_TIMEOUT", "300")),
@@ -312,6 +321,42 @@ class Database:
 
     def is_connected(self) -> bool:
         return self._connection is not None
+
+    def get_j3system_connection(self):
+        """Open a dedicated connection to the J3System ERP database.
+
+        Uses the same host/credentials as SmartBusiness but targets DB_NAME_J3SYSTEM.
+        Caller is responsible for closing the returned connection.
+        """
+        if not PYMSSQL_AVAILABLE:
+            raise ConnectionError(
+                "J3System connection requires pymssql (as_dict cursors)."
+            )
+        details = self._get_connection_details()
+        host = details.get("Host")
+        port = details.get("Port", 1433)
+        user = details.get("UserName")
+        password = details.get("Password")
+        j3_db = self.validate_sql_identifier(Config.DB_NAME_J3SYSTEM, "j3 database")
+        try:
+            conn = pymssql.connect(
+                server=host,
+                user=user,
+                password=password,
+                database=j3_db,
+                port=str(port) if port else "1433",
+                login_timeout=Config.DB_LOGIN_TIMEOUT,
+                timeout=Config.DB_TIMEOUT,
+                tds_version=Config.DB_TDS_VERSION,
+            )
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            cursor.close()
+            logger.info("✓ Connected to J3System database")
+            return conn
+        except Exception as e:
+            raise ConnectionError(f"Failed to connect to J3System: {e}") from e
 
     @staticmethod
     def validate_sql_identifier(identifier: str, param_name: str) -> str:

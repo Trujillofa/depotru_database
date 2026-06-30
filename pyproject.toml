@@ -73,6 +73,8 @@ dependencies = [
     "streamlit>=1.20.0",
     "flask>=2.0.0",
     "waitress>=2.1.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
     "flasgger>=0.9.5",
     "flask-sock>=0.5.3",
 
@@ -107,6 +109,7 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.21.0",
     "black>=22.0.0",
     "flake8>=4.0.0",
     "mypy>=0.950",
@@ -119,6 +122,16 @@ jupyter = [
     "jupyter>=1.0.0",
     "ipython>=8.0.0",
     "ipykernel>=6.0.0",
+]
+
+# MCP (Model Context Protocol) database server support (Python 3.10+)
+mcp = [
+    "mcp>=1.2; python_version >= '3.10'",
+]
+
+# Distributed query cache (optional — set CACHE_BACKEND=redis)
+cache = [
+    "redis>=5.0.0",
 ]
 
 # All extras combined
@@ -137,8 +150,10 @@ all = [
 
 [project.scripts]
 # CLI Entry Points
-vanna-grok = "src.vanna_grok:main"
-vanna-chat = "src.vanna_grok:main"
+depotru-report = "business_analyzer.reports.monthly:main"
+vanna-grok = "vanna_grok:main"
+vanna-chat = "vanna_grok:main"
+depotru-db-mcp = "business_analyzer.mcp.database_server:main"
 
 [project.urls]
 Homepage = "https://github.com/Trujillofa/coding_omarchy"
@@ -151,9 +166,12 @@ Repository = "https://github.com/Trujillofa/coding_omarchy"
 # ============================================================================
 
 [tool.setuptools]
-packages = ["src", "src.utils"]
-include-package-data = true
-zip-safe = false
+py-modules = ["vanna_grok", "api", "config"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["business_analyzer*"]
+exclude = ["tests*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.json", "*.md", "*.txt", "*.yaml", "*.yml"]

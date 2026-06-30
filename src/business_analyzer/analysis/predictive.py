@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Predictive analytics for demand forecasting.
 
@@ -8,81 +7,23 @@ for the next N days based on historical Cantidad and Fecha.
 
 from __future__ import annotations
 
-import os
 from datetime import date, timedelta
-from typing import cast
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-try:
-    from dotenv import load_dotenv
+if TYPE_CHECKING:
+    from ..core.database import Database
 
-    _ = load_dotenv()
-except ImportError:
-    pass
-
-import pymssql
+EXCLUDED_DOCS = ("XY", "AS", "TS")
 
 
-def require_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise ValueError(f"Missing required environment variable: {name}")
-    return value
-
-
-def get_connection():
-    return pymssql.connect(
-        server=require_env("DB_SERVER"),
-        user=require_env("DB_USER"),
-        password=require_env("DB_PASSWORD"),
-        database=os.getenv("DB_NAME", "SmartBusiness"),
-        port=os.getenv("DB_PORT", "1433"),
-        login_timeout=30,
-        timeout=180,
-    )
-
-
-def forecast_demand(product_id: str, days: int = 30) -> int:
-    """
-    Forecast demand for a product using linear regression on historical sales.
-
-    Args:
-        product_id: Product identifier (ArticulosCodigo or similar)
-        days: Number of days to forecast ahead
-
-    Returns:
-        Projected sales volume (integer) for the next `days` period
-    """
-    end_date = date.today()
-    start_date = end_date - timedelta(days=90)  # Use 90 days of history
-
-    sql = f"""
-    SELECT
-        Fecha,
-        SUM(Cantidad) as total_qty
-    FROM banco_datos
-    WHERE ArticulosCodigo = '{product_id}'
-      AND Fecha BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}'
-      AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
-    GROUP BY Fecha
-    ORDER BY Fecha
-    """
-
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute(sql)
-        rows = cursor.fetchall()
-        cursor.close()
-    finally:
-        conn.close()
-
-    if not rows or len(rows) < 2:
+def _linear_forecast(daily_qty: List[float], days: int) -> int:
+    """Pure regression forecast from ordered daily quantities."""
+    if not daily_qty or len(daily_qty) < 2:
         return 0
 
-    # Simple linear regression: y = mx + b
-    n = len(rows)
+    n = len(daily_qty)
     x = list(range(n))
-    y = [float(cast(float, row[1])) for row in rows]
+    y = daily_qty
 
     sum_x = sum(x)
     sum_y = sum(y)
@@ -97,51 +38,105 @@ def forecast_demand(product_id: str, days: int = 30) -> int:
     m = (n * sum_xy - sum_x * sum_y) / denominator
     b = (sum_y - m * sum_x) / n
 
-    # Forecast for next `days` period
     last_x = n - 1
     forecast_per_day = m * (last_x + days / 2) + b
     forecast_total = (
         int(forecast_per_day * days / 30) if days != 30 else int(forecast_per_day)
     )
-
     return max(0, forecast_total)
 
 
-def get_top_products(limit: int = 10) -> list[dict[str, object]]:
-    """Get top-selling products by quantity in last 30 days."""
-    end_date = date.today()
-    start_date = end_date - timedelta(days=30)
+def forecast_demand(
+    product_id: str,
+    days: int = 30,
+    history_days: int = 90,
+    db: Optional["Database"] = None,
+) -> int:
+    """
+    Forecast demand for a product using linear regression on historical sales.
 
-    sql = f"""
-    SELECT TOP {limit}
-        ArticulosCodigo as product_id,
-        ArticulosNombre as product_name,
-        SUM(Cantidad) as total_qty
-    FROM banco_datos
-    WHERE Fecha BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}'
-      AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
-    GROUP BY ArticulosCodigo, ArticulosNombre
-    ORDER BY total_qty DESC
+    Args:
+        product_id: Product identifier (ArticulosCodigo)
+        days: Number of days to forecast ahead
+        history_days: Lookback window for regression
+        db: Optional Database instance (creates one if omitted)
+
+    Returns:
+        Projected sales volume (integer) for the next ``days`` period
+    """
+    from ..core.database import Database
+
+    end_date = date.today()
+    start_date = end_date - timedelta(days=history_days)
+
+    sql = """
+        SELECT
+            Fecha,
+            SUM(Cantidad) AS total_qty
+        FROM banco_datos
+        WHERE ArticulosCodigo = %s
+          AND Fecha BETWEEN %s AND %s
+          AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+        GROUP BY Fecha
+        ORDER BY Fecha
     """
 
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute(sql)
-        if cursor.description is None:
-            return []
-        columns = [str(col[0]) for col in cursor.description]
-        rows = cursor.fetchall()
-        cursor.close()
-        return [dict(zip(columns, row)) for row in rows]
-    finally:
-        conn.close()
+    def _run(conn: "Database") -> List[Dict[str, Any]]:
+        rows = conn.execute_query(
+            sql, (product_id, start_date.isoformat(), end_date.isoformat())
+        )
+        return rows if isinstance(rows, list) else []
+
+    if db is not None:
+        rows = _run(db)
+    else:
+        with Database() as conn:
+            rows = _run(conn)
+
+    daily_qty = [float(r.get("total_qty") or 0) for r in rows]
+    return _linear_forecast(daily_qty, days)
+
+
+def get_top_products(
+    limit: int = 10,
+    lookback_days: int = 30,
+    db: Optional["Database"] = None,
+) -> List[Dict[str, Any]]:
+    """Top-selling products by quantity in the last ``lookback_days``."""
+    from ..core.database import Database
+
+    end_date = date.today()
+    start_date = end_date - timedelta(days=lookback_days)
+    safe_limit = max(1, min(int(limit), 100))
+
+    sql = f"""
+        SELECT TOP {safe_limit}
+            ArticulosCodigo AS product_id,
+            ArticulosNombre AS product_name,
+            SUM(Cantidad) AS total_qty
+        FROM banco_datos
+        WHERE Fecha BETWEEN %s AND %s
+          AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+        GROUP BY ArticulosCodigo, ArticulosNombre
+        ORDER BY total_qty DESC
+    """  # nosec B608 — limit is bounded int
+
+    def _run(conn: "Database") -> List[Dict[str, Any]]:
+        rows = conn.execute_query(
+            sql, (start_date.isoformat(), end_date.isoformat())
+        )
+        return rows if isinstance(rows, list) else []
+
+    if db is not None:
+        return _run(db)
+    with Database() as conn:
+        return _run(conn)
 
 
 if __name__ == "__main__":
     import sys
 
     product = sys.argv[1] if len(sys.argv) > 1 else "TEST-ITEM-1"
-    days = int(sys.argv[2]) if len(sys.argv) > 2 else 30
-    result = forecast_demand(product, days)
-    print(f"Forecast for {product} ({days} days): {result} units")
+    forecast_days = int(sys.argv[2]) if len(sys.argv) > 2 else 30
+    result = forecast_demand(product, forecast_days)
+    print(f"Forecast for {product} ({forecast_days} days): {result} units")

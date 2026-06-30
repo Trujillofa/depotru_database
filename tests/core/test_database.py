@@ -43,6 +43,7 @@ mock_config_module.Config.DB_PORT = 1433
 mock_config_module.Config.DB_USER = "test-user"
 mock_config_module.Config.DB_PASSWORD = "test-password"
 mock_config_module.Config.DB_NAME = "TestDB"
+mock_config_module.Config.DB_NAME_J3SYSTEM = "J3System"
 mock_config_module.Config.DB_TABLE = "test_table"
 mock_config_module.Config.NCX_FILE_PATH = "/test/connections.ncx"
 mock_config_module.Config.DB_LOGIN_TIMEOUT = 10
@@ -81,6 +82,7 @@ def mock_config():
         mock_cfg.DB_USER = "test-user"
         mock_cfg.DB_PASSWORD = "test-password"
         mock_cfg.DB_NAME = "TestDB"
+        mock_cfg.DB_NAME_J3SYSTEM = "J3System"
         mock_cfg.DB_TABLE = "test_table"
         mock_cfg.NCX_FILE_PATH = "/test/connections.ncx"
         mock_cfg.DB_LOGIN_TIMEOUT = 10
@@ -1100,6 +1102,25 @@ class TestIntegration:
                         assert call_kwargs["server"] == "navicat-server"
                         assert call_kwargs["user"] == "navicat-user"
                         assert call_kwargs["password"] == "decrypted_pass"
+
+
+class TestJ3SystemConnection:
+    """Tests for get_j3system_connection()."""
+
+    def test_get_j3system_connection_success(self, mock_config, mock_pymssql):
+        db = Database()
+        db.connect()
+        j3_conn = db.get_j3system_connection()
+        assert j3_conn is mock_pymssql.connect.return_value
+        assert mock_pymssql.connect.call_count >= 2
+        j3_kwargs = mock_pymssql.connect.call_args_list[-1][1]
+        assert j3_kwargs["database"] == "J3System"
+
+    def test_get_j3system_connection_without_pymssql(self, mock_config):
+        with patch("business_analyzer.core.database.PYMSSQL_AVAILABLE", False):
+            db = Database()
+            with pytest.raises(ConnectionError, match="requires pymssql"):
+                db.get_j3system_connection()
 
 
 if __name__ == "__main__":

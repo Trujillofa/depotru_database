@@ -65,8 +65,7 @@ depotru_database/
 │   │   │       └── ollama.py               # Local Ollama
 │   │   └── __init__.py                     # Package exports
 │   ├── vanna_grok.py                       # AI chat CLI (thin wrapper)
-│   ├── business_analyzer_combined.py       # Legacy analyzer (deprecated)
-│   └── config.py                           # Legacy config (deprecated)
+│   └── config.py                           # Shared environment configuration
 │
 ├── tests/                                  # Test suite
 │   ├── test_basic.py                       # Repository structure tests
@@ -185,9 +184,10 @@ Modular analytics engine for business metrics:
 | `inventory.py` | Inventory velocity | `InventoryAnalyzer.analyze()` |
 | `unified.py` | Combined analysis | `UnifiedAnalyzer.analyze_all()` |
 
-**Legacy Support:**
-- `src/business_analyzer_combined.py` — Original monolithic analyzer (deprecated)
-- `src/config.py` — Legacy configuration (deprecated)
+**CLI entry points:**
+- `vanna_grok.py` — NL→SQL chat (Vanna + multi-provider AI)
+- `business_analyzer.reports.monthly` — Manager sales reports (`depotru-report`)
+- `business_analyzer.mcp.database_server` — MCP server (`depotru-db-mcp`)
 
 **Usage:**
 ```python
@@ -206,7 +206,7 @@ results = UnifiedAnalyzer(data).analyze_all()
 
 **Legacy CLI:**
 ```bash
-python src/business_analyzer_combined.py --limit 5000
+depotru-report --year 2024 --month 5 --format html --output report.html
 ```
 
 ### 4. Multi-Provider AI Support (`src/business_analyzer/ai/providers/`)

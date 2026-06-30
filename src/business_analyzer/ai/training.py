@@ -856,14 +856,32 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             "Ventas de productos PAVCO o EUROCERAMICA",
             """
             SELECT
-                proveedor,
+                Marca_Proveedor,
                 SUM(TotalMasIva) AS Ventas_Totales,
                 COUNT(*) AS Numero_Transacciones,
                 SUM(TotalSinIva - ValorCosto) AS Ganancia
-            FROM banco_datos
-            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND UPPER(LTRIM(RTRIM(COALESCE(proveedor, '')))) IN ('PAVCO', 'EUROCERAMICA')
-            GROUP BY proveedor
+            FROM (
+                SELECT
+                    bd.TotalMasIva,
+                    bd.TotalSinIva,
+                    bd.ValorCosto,
+                    CASE
+                        WHEN UPPER(LTRIM(RTRIM(COALESCE(bd.proveedor, pa.proveedor_descripcion, ''))))
+                             IN ('PAVCO', 'EUROCERAMICA')
+                            THEN UPPER(LTRIM(RTRIM(COALESCE(bd.proveedor, pa.proveedor_descripcion))))
+                        WHEN UPPER(LTRIM(RTRIM(COALESCE(bd.marca, pa.producto_marca, ''))))
+                             IN ('PAVCO', 'EUROCERAMICA')
+                            THEN UPPER(LTRIM(RTRIM(COALESCE(bd.marca, pa.producto_marca))))
+                        WHEN UPPER(bd.ArticulosNombre) LIKE '%PAVCO%' THEN 'PAVCO'
+                        WHEN UPPER(bd.ArticulosNombre) LIKE '%EUROCERAMICA%' THEN 'EUROCERAMICA'
+                        ELSE NULL
+                    END AS Marca_Proveedor
+                FROM banco_datos bd
+                LEFT JOIN productos_adicional pa ON bd.ArticulosCodigo = pa.producto_codigo
+                WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            ) AS ventas_marca
+            WHERE Marca_Proveedor IS NOT NULL
+            GROUP BY Marca_Proveedor
             ORDER BY Ventas_Totales DESC
             """,
         ),

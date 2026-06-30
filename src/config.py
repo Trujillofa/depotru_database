@@ -53,15 +53,16 @@ class Config:
     DB_USER = os.getenv("DB_USER", None)
     DB_PASSWORD = os.getenv("DB_PASSWORD", None)
     DB_NAME = os.getenv("DB_NAME", "SmartBusiness")
+    DB_NAME_J3SYSTEM = os.getenv("DB_NAME_J3SYSTEM", "J3System")
     DB_TABLE = os.getenv("DB_TABLE", "banco_datos")
 
     # Database connection settings
-    DB_LOGIN_TIMEOUT = int(os.getenv("DB_LOGIN_TIMEOUT", "10"))
-    DB_TIMEOUT = int(os.getenv("DB_TIMEOUT", "10"))
+    DB_LOGIN_TIMEOUT = int(os.getenv("DB_LOGIN_TIMEOUT", "30"))
+    DB_TIMEOUT = int(os.getenv("DB_TIMEOUT", "180"))
     DB_TDS_VERSION = os.getenv("DB_TDS_VERSION", "7.4")
 
     # Excluded document types (filter these out from analysis)
-    EXCLUDED_DOCUMENT_CODES = ["XY", "AS", "TS"]
+    EXCLUDED_DOCUMENT_CODES = ["XY", "AS", "TS", "YX", "ISC"]
 
     # Output Configuration
     OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", os.path.expanduser("~/business_reports")))

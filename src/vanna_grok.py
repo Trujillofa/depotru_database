@@ -15,14 +15,16 @@ Supported AI Providers (set via AI_PROVIDER env var):
 - ollama: Local Ollama (free, private)
 """
 
+import os
 import re
 import sys
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 
 # Add src to path for imports
-sys.path.insert(0, "/home/yderf/depotru_database/src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from vanna.legacy.flask import VannaFlaskApp  # noqa: E402
 
@@ -33,6 +35,10 @@ from business_analyzer.ai import (  # noqa: E402
     format_dataframe,
     full_training,
     generate_insights,
+)
+from business_analyzer.ai.charts import (  # noqa: E402
+    build_plotly_code,
+    build_smart_figure,
 )
 
 
@@ -89,6 +95,69 @@ class EnhancedAIVanna(AIVanna):
     Extends the base AIVanna with insights generation and formatting.
     """
 
+    def generate_sql(
+        self,
+        question: Optional[str] = None,
+        allow_llm_to_see_data: bool = True,
+        **kwargs,
+    ):
+        self._last_question = question
+        return super().generate_sql(
+            question=question, allow_llm_to_see_data=allow_llm_to_see_data, **kwargs
+        )
+
+    def run_sql(self, sql: str, **kwargs):
+        df = super().run_sql(sql, **kwargs)
+        if df is not None and not df.empty:
+            self._last_result_df = df.copy()
+            return format_dataframe(df)
+        return df
+
+    def should_generate_chart(self, df: pd.DataFrame) -> bool:
+        raw = getattr(self, "_last_result_df", None)
+        if raw is not None and not raw.empty:
+            return super().should_generate_chart(raw)
+        return super().should_generate_chart(df)
+
+    def generate_plotly_code(
+        self,
+        question: Optional[str] = None,
+        sql: Optional[str] = None,
+        df_metadata: Optional[str] = None,
+        **kwargs,
+    ) -> str:
+        df = getattr(self, "_last_result_df", None)
+        if df is not None and not df.empty:
+            code = build_plotly_code(df, question=question)
+            if code:
+                return code
+        if not getattr(self, "provider", None):
+            return ""
+        return super().generate_plotly_code(
+            question=question, sql=sql, df_metadata=df_metadata, **kwargs
+        )
+
+    def get_plotly_figure(
+        self, plotly_code: str, df: pd.DataFrame, dark_mode: bool = True
+    ):
+        chart_df = getattr(self, "_last_result_df", None)
+        if chart_df is None or chart_df.empty:
+            chart_df = df
+        fig = build_smart_figure(
+            chart_df,
+            question=getattr(self, "_last_question", None),
+            dark_mode=dark_mode,
+        )
+        if fig is not None:
+            return fig
+        if not getattr(self, "provider", None):
+            raise ValueError(
+                "Smart chart heuristics could not build a figure for this data"
+            )
+        return super().get_plotly_figure(
+            plotly_code=plotly_code, df=df, dark_mode=dark_mode
+        )
+
     def ask(
         self,
         question: Optional[str] = None,
@@ -112,10 +181,11 @@ class EnhancedAIVanna(AIVanna):
             # Clean LLM artifacts from SQL (intermediate_sql prefix bug - GitHub #588)
             sql = clean_sql(sql)
 
-            # Execute query
-            df = self.run_sql(sql)
+            # Execute query (run_sql returns formatted display; raw kept in _last_result_df)
+            df_display = self.run_sql(sql)
+            raw_df = getattr(self, "_last_result_df", df_display)
 
-            if df is None or df.empty:
+            if df_display is None or df_display.empty:
                 print("\n⚠️ La consulta no devolvió resultados.\n")
                 return sql, pd.DataFrame(), None
 
@@ -124,11 +194,9 @@ class EnhancedAIVanna(AIVanna):
             print("📊 RESULTADOS (con formato colombiano)")
             print("=" * 70)
             print(f"\n📝 SQL Ejecutado:\n{sql}\n")
-            print(f"✅ {len(df)} filas encontradas\n")
+            print(f"✅ {len(raw_df)} filas encontradas\n")
 
-            # Show formatted dataframe
-            df_formatted = format_dataframe(df)
-            print(df_formatted.to_string(index=False))
+            print(df_display.to_string(index=False))
             print()
 
             # ========== ENHANCEMENT 2: AI Insights (Optional) ==========
@@ -140,7 +208,7 @@ class EnhancedAIVanna(AIVanna):
                     insights = generate_insights(
                         question=question,
                         sql=sql,
-                        df=df,
+                        df=raw_df,
                         ai_client=ai_client,
                         provider=self.provider,
                     )
@@ -153,14 +221,14 @@ class EnhancedAIVanna(AIVanna):
                 print("\n💡 Insights desactivados (ENABLE_AI_INSIGHTS=false)\n")
 
             # Auto-train on successful queries (optional)
-            if auto_train and df is not None:
+            if auto_train and raw_df is not None:
                 try:
                     self.train(question=question, sql=sql)
                 except Exception:  # nosec B110
                     # Training failures shouldn't break the user experience
                     pass
 
-            return sql, df, insights
+            return sql, raw_df, insights
 
         except Exception as e:
             print(f"\n❌ Error ejecutando consulta: {e}\n")
@@ -197,15 +265,33 @@ def main():
         chart=True,  # Enable chart generation
     )
 
-    print("✓ Starting Flask development server")
+    production = os.getenv("PRODUCTION_MODE", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    threads = int(os.getenv("WAITRESS_THREADS", "8"))
+
     try:
-        app.flask_app.run(
-            host=Config.HOST,
-            port=Config.PORT,
-            debug=False,
-            use_reloader=False,
-            threaded=True,
-        )
+        if production:
+            from waitress import serve
+
+            print(f"✓ Starting Waitress production server ({threads} threads)")
+            serve(
+                app.flask_app,
+                host=Config.HOST,
+                port=Config.PORT,
+                threads=threads,
+            )
+        else:
+            print("✓ Starting Flask development server")
+            app.flask_app.run(
+                host=Config.HOST,
+                port=Config.PORT,
+                debug=False,
+                use_reloader=False,
+                threaded=True,
+            )
     except KeyboardInterrupt:
         print("\n\n👋 Server stopped gracefully! (Gracias por chatear con tus datos)")
     except Exception as e:

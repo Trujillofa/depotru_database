@@ -4,122 +4,75 @@ Anomaly Detection Background Worker.
 
 Compares yesterday's sales vs 30-day moving average.
 If drop > threshold_pct, logs alert (no Telegram/WhatsApp bot).
+
+Usage:
+  PYTHONPATH=src python scripts/utils/anomaly_worker.py
+  PYTHONPATH=src python scripts/utils/anomaly_worker.py --threshold 25
 """
 
 from __future__ import annotations
 
-import os
+import argparse
 import sys
-from datetime import date, timedelta
-from decimal import Decimal
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+ROOT = Path(__file__).resolve().parents[2]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(ROOT_DIR / ".env")
+    load_dotenv(ROOT / ".env")
 except ImportError:
     pass
 
-import pymssql
+from business_analyzer.analysis.anomaly import check_sales_anomaly  # noqa: E402
 
 
-def to_float(value: object) -> float:
-    """Convert DB scalar values to float safely."""
-    if isinstance(value, (int, float, Decimal, str, bytes)):
-        try:
-            return float(value)
-        except ValueError:
-            return 0.0
-    return 0.0
-
-
-def require_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise ValueError(f"Missing required environment variable: {name}")
-    return value
-
-
-def get_connection():
-    return pymssql.connect(
-        server=require_env("DB_SERVER"),
-        user=require_env("DB_USER"),
-        password=require_env("DB_PASSWORD"),
-        database=os.getenv("DB_NAME", "SmartBusiness"),
-        port=os.getenv("DB_PORT", "1433"),
-        login_timeout=30,
-        timeout=180,
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Check daily sales anomaly")
+    parser.add_argument(
+        "--days-ago",
+        type=int,
+        default=1,
+        help="How many days back to compare (default: 1 = yesterday)",
     )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=20.0,
+        help="Alert when drop exceeds this percent (default: 20)",
+    )
+    args = parser.parse_args(argv)
 
+    result = check_sales_anomaly(
+        days_ago=args.days_ago, threshold_pct=args.threshold
+    )
+    y = result["yesterday_sales"]
+    avg = result["avg_sales"]
+    drop = result["drop_pct"]
 
-def check_anomaly(days: int = 1, threshold_pct: float = 20.0) -> bool:
-    """
-    Check for sales anomalies.
-    Returns True if anomaly detected (drop > threshold_pct).
-    """
-    yesterday = date.today() - timedelta(days=days)
-    month_ago = yesterday - timedelta(days=30)
-
-    sql = f"""
-    SELECT
-        SUM(TotalMasIva) as total_sales
-    FROM banco_datos
-    WHERE Fecha = '{yesterday.isoformat()}'
-      AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
-    """
-
-    sql_avg = f"""
-    SELECT
-        AVG(TotalMasIva) as avg_sales
-    FROM (
-        SELECT SUM(TotalMasIva) as TotalMasIva
-        FROM banco_datos
-        WHERE Fecha BETWEEN '{month_ago.isoformat()}' AND '{yesterday.isoformat()}'
-          AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
-        GROUP BY Fecha
-    ) t
-    """
-
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute(sql)
-        row = cursor.fetchone()
-        yesterday_sales = to_float(row[0]) if row else 0.0
-
-        cursor.execute(sql_avg)
-        row = cursor.fetchone()
-        avg_sales = to_float(row[0]) if row else 0.0
-
-        cursor.close()
-    finally:
-        conn.close()
-
-    if avg_sales == 0:
+    if result["anomaly"]:
         print(
-            f"[ANOMALY] Yesterday sales: ${yesterday_sales:,.2f}, 30-day avg: N/A (no data)"
+            f"[ANOMALY] {result['target_date']}: "
+            f"${y:,.2f} vs avg ${avg:,.2f}, drop {drop:.1f}% > {args.threshold:.1f}%"
         )
-        return False
+        return 1
 
-    drop_pct = ((avg_sales - yesterday_sales) / avg_sales) * 100
+    if avg == 0:
+        print(
+            f"[ANOMALY] {result['target_date']}: ${y:,.2f}, 30-day avg: N/A (no data)"
+        )
+        return 0
 
-    if drop_pct > threshold_pct:
-        print(
-            f"[ANOMALY] Yesterday sales: ${yesterday_sales:,.2f}, 30-day avg: ${avg_sales:,.2f}, drop: {drop_pct:.1f}% > {threshold_pct:.1f}%"
-        )
-        return True
-    else:
-        print(
-            f"[OK] Yesterday sales: ${yesterday_sales:,.2f}, 30-day avg: ${avg_sales:,.2f}, drop: {drop_pct:.1f}%"
-        )
-        return False
+    print(
+        f"[OK] {result['target_date']}: ${y:,.2f}, "
+        f"30-day avg ${avg:,.2f}, drop {drop:.1f}%"
+    )
+    return 0
 
 
 if __name__ == "__main__":
-    anomaly = check_anomaly(days=1, threshold_pct=20.0)
-    sys.exit(0 if not anomaly else 1)
+    raise SystemExit(main())

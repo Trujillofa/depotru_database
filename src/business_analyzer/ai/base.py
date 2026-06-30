@@ -12,7 +12,7 @@ import sys
 import time
 import warnings
 from functools import wraps
-from typing import Callable
+from typing import Callable, List
 
 # Optional dotenv import
 try:
@@ -29,6 +29,12 @@ try:
     from openai import OpenAI
 except ImportError:
     OpenAI = None
+
+from business_analyzer.core.query_cache import (
+    MemoryQueryCache,
+    SimpleQueryCache,
+    create_query_cache,
+)
 
 from .circuit_breaker import CircuitBreakerError, with_circuit_breaker
 
@@ -230,24 +236,6 @@ class Config:
     MAX_DISPLAY_ROWS = int(os.getenv("MAX_DISPLAY_ROWS", "100"))
 
 
-class SimpleQueryCache:
-    def __init__(self, ttl=300):
-        self.ttl = ttl
-        self._cache = {}
-
-    def get(self, q):
-        k = (q or "").lower().strip()
-        if k not in self._cache:
-            return None
-        if time.time() - self._cache[k]["t"] > self.ttl:
-            del self._cache[k]
-            return None
-        return self._cache[k]["v"]
-
-    def set(self, q, v):
-        self._cache[(q or "").lower().strip()] = {"v": v, "t": time.time()}
-
-
 # =============================================================================
 # ERROR HANDLING - Retry Logic
 # =============================================================================
@@ -354,7 +342,9 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
 
     def __init__(self):
         self.provider = Config.AI_PROVIDER
-        self._query_cache = SimpleQueryCache(int(os.getenv("CACHE_TTL_SECONDS", "300")))
+        self._query_cache = create_query_cache(
+            int(os.getenv("CACHE_TTL_SECONDS", "300"))
+        )
         self.ai_client, ai_config, provider_type = create_ai_client(self.provider)
 
         # 1. ChromaDB for RAG (local, private, fast)
@@ -429,6 +419,94 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
             token in lower for token in ("rentable", "rentables", "ganancia", "margen")
         )
         return has_brand and has_profit
+
+    @staticmethod
+    def _extract_vendor_brands(question: str) -> List[str]:
+        """Pull known vendor/brand tokens from a natural-language question."""
+        lower = (question or "").lower()
+        catalog = (
+            "pavco",
+            "euroceramica",
+            "cemex",
+            "sika",
+            "acesco",
+            "hylsa",
+            "corona",
+            "pintuco",
+            "holcim",
+        )
+        found = [name.upper() for name in catalog if name in lower]
+        for match in re.finditer(
+            r"\b([a-záéíóúñ]{4,})\b",
+            lower,
+        ):
+            token = match.group(1).upper()
+            if token in {"VENTAS", "PRODUCTOS", "MARCA", "PROVEEDOR", "TOTAL"}:
+                continue
+            if " O " in f" {lower} " and token not in found:
+                found.append(token)
+        # de-duplicate preserving order
+        seen = set()
+        ordered: List[str] = []
+        for brand in found:
+            if brand not in seen:
+                seen.add(brand)
+                ordered.append(brand)
+        return ordered
+
+    @staticmethod
+    def _is_multi_vendor_sales_question(question: str) -> bool:
+        lower = (question or "").lower()
+        has_sales = any(
+            token in lower
+            for token in ("venta", "ventas", "factur", "ingreso", "vendido")
+        )
+        brands = AIVanna._extract_vendor_brands(question)
+        return has_sales and len(brands) >= 1
+
+    @staticmethod
+    def _multi_vendor_sales_sql_template(brands: List[str]) -> str:
+        """Aggregate sales by vendor/brand with master-data enrichment."""
+        safe_brands = [
+            re.sub(r"[^A-Z0-9]", "", brand.upper()) for brand in brands if brand
+        ]
+        if not safe_brands:
+            return ""
+        in_list = ", ".join(f"'{brand}'" for brand in safe_brands)
+        name_cases = "\n".join(
+            f"            WHEN UPPER(bd.ArticulosNombre) LIKE '%{brand}%' "
+            f"THEN '{brand}'"
+            for brand in safe_brands
+        )
+        return f"""
+SELECT
+    Marca_Proveedor,
+    SUM(TotalMasIva) AS Ventas_Totales,
+    COUNT(*) AS Numero_Transacciones,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia
+FROM (
+    SELECT
+        bd.TotalMasIva,
+        bd.TotalSinIva,
+        bd.ValorCosto,
+        CASE
+            WHEN UPPER(LTRIM(RTRIM(COALESCE(bd.proveedor, pa.proveedor_descripcion, ''))))
+                 IN ({in_list})
+                THEN UPPER(LTRIM(RTRIM(COALESCE(bd.proveedor, pa.proveedor_descripcion))))
+            WHEN UPPER(LTRIM(RTRIM(COALESCE(bd.marca, pa.producto_marca, ''))))
+                 IN ({in_list})
+                THEN UPPER(LTRIM(RTRIM(COALESCE(bd.marca, pa.producto_marca))))
+{name_cases}
+            ELSE NULL
+        END AS Marca_Proveedor
+    FROM banco_datos bd
+    LEFT JOIN productos_adicional pa ON bd.ArticulosCodigo = pa.producto_codigo
+    WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+) AS ventas_marca
+WHERE Marca_Proveedor IS NOT NULL
+GROUP BY Marca_Proveedor
+ORDER BY Ventas_Totales DESC
+        """.strip()
 
     @staticmethod
     def _insert_before_tail(sql: str, fragment: str) -> str:
@@ -631,12 +709,16 @@ ORDER BY Dia_Orden
         except AttributeError:
             import pymssql
 
+            login_timeout = int(os.getenv("DB_LOGIN_TIMEOUT", "30"))
+            query_timeout = int(os.getenv("DB_TIMEOUT", "180"))
             self.connection = pymssql.connect(
                 server=Config.DB_HOST,
                 user=Config.DB_USER,
                 password=Config.DB_PASSWORD,
                 database=Config.DB_NAME,
                 port=int(os.getenv("DB_PORT", "1433")),
+                login_timeout=login_timeout,
+                timeout=query_timeout,
                 as_dict=True,
             )
             self.run_sql_is_set = True
@@ -651,7 +733,21 @@ ORDER BY Dia_Orden
         try:
             cached = self._query_cache.get(question)
             if cached:
+                if self._is_multi_vendor_sales_question(question):
+                    if "productos_adicional" not in cached.lower():
+                        brands = self._extract_vendor_brands(question)
+                        template = self._multi_vendor_sales_sql_template(brands)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
                 return cached
+
+            if self._is_multi_vendor_sales_question(question):
+                brands = self._extract_vendor_brands(question)
+                template = self._multi_vendor_sales_sql_template(brands)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
             # Apply circuit breaker based on provider
             decorator = with_circuit_breaker(self.provider)
             decorated_gen = decorator(super().generate_sql)
@@ -701,23 +797,19 @@ ORDER BY Dia_Orden
             raise
 
     def run_sql(self, sql: str, **kwargs):
-        """Execute SQL with improved error handling."""
+        """Execute SQL via shared Database layer (pooling, timeouts, retry)."""
         import pandas as pd
+
+        from business_analyzer.core.db_factory import (
+            get_database,
+            release_thread_connections,
+        )
 
         if not sql:
             return pd.DataFrame()
 
         sql = self._repair_sika_center_customer_sql(sql)
-
-        def _execute_to_dataframe(query: str):
-            cursor = self.connection.cursor()
-            try:
-                cursor.execute(query)
-                columns = [desc[0] for desc in cursor.description]
-                rows = cursor.fetchall()
-                return pd.DataFrame(rows, columns=columns)
-            finally:
-                cursor.close()
+        sql = self._ensure_document_exclusion(sql)
 
         def _with_customer_space_normalization(query: str) -> str:
             normalized = query.replace(
@@ -734,29 +826,32 @@ ORDER BY Dia_Orden
             message = str(error).lower()
             transient_markers = [
                 "08s01",
+                "10060",
+                "0x274c",
                 "sqlexecdirectw",
                 "tcp provider",
                 "communication link failure",
+                "connection timed out",
+                "connection reset",
+                "broken pipe",
             ]
             return any(marker in message for marker in transient_markers)
 
-        def _reconnect_if_possible() -> bool:
-            try:
-                if hasattr(self, "connection") and self.connection:
-                    try:
-                        self.connection.close()
-                    except Exception:
-                        pass
-                    self.connection = None
-                self.connect_to_mssql_odbc()
-                return bool(getattr(self, "connection", None))
-            except Exception as reconnect_error:
-                print(f"⚠️ Database reconnect failed: {reconnect_error}")
-                return False
+        def _execute_via_database(query: str) -> pd.DataFrame:
+            db = get_database(reuse=True)
+            if not db.is_connected():
+                db.connect()
+            rows = db.execute_query(query)
+            if not isinstance(rows, list):
+                return pd.DataFrame()
+            return pd.DataFrame(rows) if rows else pd.DataFrame()
 
-        try:
-            if hasattr(self, "connection") and self.connection:
-                df = _execute_to_dataframe(sql)
+        max_attempts = int(os.getenv("DB_QUERY_RETRIES", "2")) + 1
+        last_error: Exception | None = None
+
+        for attempt in range(max_attempts):
+            try:
+                df = _execute_via_database(sql)
                 if (
                     df.empty
                     and "tercerosnombres" in sql.lower()
@@ -764,26 +859,30 @@ ORDER BY Dia_Orden
                 ):
                     normalized_sql = _with_customer_space_normalization(sql)
                     if normalized_sql != sql:
-                        normalized_df = _execute_to_dataframe(normalized_sql)
+                        normalized_df = _execute_via_database(normalized_sql)
                         if not normalized_df.empty:
                             return normalized_df
                 return df
-            super_df = super().run_sql(sql, **kwargs)
-            if super_df is None:
-                return pd.DataFrame()
-            return super_df
-        except Exception as e:
-            if _is_transient_connection_error(e) and _reconnect_if_possible():
-                try:
-                    return self.run_sql(sql, **kwargs)
-                except Exception as retry_error:
-                    print(f"❌ Database retry failed: {retry_error}")
-                    return pd.DataFrame()
-            print(f"❌ Database error executing SQL: {e}")
-            return pd.DataFrame()
+            except Exception as e:
+                last_error = e
+                if _is_transient_connection_error(e) and attempt < max_attempts - 1:
+                    print(
+                        f"⚠️ Conexión DB inestable (intento {attempt + 1}/{max_attempts}); "
+                        "reintentando…"
+                    )
+                    release_thread_connections()
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                break
+
+        if last_error is not None:
+            print(f"❌ Database error executing SQL: {last_error}")
+        return pd.DataFrame()
 
     def connect_to_mssql_odbc(self):
         """Connect & test via ODBC (Vanna's go-to for MSSQL)"""
+        login_timeout = int(os.getenv("DB_LOGIN_TIMEOUT", "30"))
+        query_timeout = int(os.getenv("DB_TIMEOUT", "180"))
         odbc_str = (
             f"DRIVER={{ODBC Driver 17 for SQL Server}};"
             f"SERVER={Config.DB_HOST};"
@@ -792,6 +891,8 @@ ORDER BY Dia_Orden
             f"PWD={Config.DB_PASSWORD};"
             f"TrustServerCertificate=yes;"
             f"Encrypt=yes;"
+            f"Connection Timeout={login_timeout};"
+            f"Query Timeout={query_timeout};"
         )
         try:
             self.connect_to_mssql(odbc_conn_str=odbc_str)
@@ -810,6 +911,8 @@ ORDER BY Dia_Orden
                 password=Config.DB_PASSWORD,
                 database=Config.DB_NAME,
                 port=int(os.getenv("DB_PORT", "1433")),
+                login_timeout=login_timeout,
+                timeout=query_timeout,
                 as_dict=True,
             )
             self.run_sql_is_set = True
@@ -846,7 +949,26 @@ ORDER BY Dia_Orden
             return "ℹ️ La consulta no devolvió registros para resumir."
 
         try:
-            summary = super().generate_summary(question, df, **kwargs)
+            from .formatting import format_dataframe
+
+            preview = format_dataframe(df.head(Config.INSIGHTS_MAX_ROWS))
+            message_log = [
+                self.system_message(
+                    "Eres un asistente de datos para una ferretería colombiana. "
+                    "Resume en español colombiano usando formato de moneda COP "
+                    "con separador de miles con punto (ej. $4.993.131). "
+                    "No uses abreviaciones tipo k/M ni formato estadounidense con comas."
+                ),
+                self.system_message(
+                    f"Pregunta del usuario: '{question}'\n\n"
+                    f"Resultados:\n{preview.to_markdown(index=False)}\n"
+                ),
+                self.user_message(
+                    "Resume brevemente los datos según la pregunta. "
+                    "No agregues explicación extra." + self._response_language()
+                ),
+            ]
+            summary = self.submit_prompt(message_log, **kwargs)
         except Exception as exc:
             return (
                 "⚠️ No se pudo generar el resumen automático para esta consulta "

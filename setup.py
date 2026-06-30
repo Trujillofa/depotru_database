@@ -36,7 +36,9 @@ setup(
         "Documentation": "https://github.com/Trujillofa/coding_omarchy/blob/main/docs/START_HERE.md",
         "Source Code": "https://github.com/Trujillofa/coding_omarchy",
     },
-    packages=find_packages(where=".", include=["src", "src.*"]),
+    package_dir={"": "src"},
+    packages=find_packages(where="src", include=["business_analyzer*"]),
+    py_modules=["vanna_grok", "api", "config"],
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -58,6 +60,7 @@ setup(
         "dev": [
             "pytest>=7.0.0",
             "pytest-cov>=4.0.0",
+            "pytest-asyncio>=0.21.0",
             "black>=22.0.0",
             "flake8>=4.0.0",
             "mypy>=0.950",
@@ -67,6 +70,9 @@ setup(
             "jupyter>=1.0.0",
             "ipython>=8.0.0",
             "ipykernel>=6.0.0",
+        ],
+        "mcp": [
+            "mcp>=1.2; python_version >= '3.10'",
         ],
         "all": [
             "pytest>=7.0.0",
@@ -82,9 +88,10 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "business-analyzer=src.business_analyzer_combined:main",
-            "vanna-grok=src.vanna_grok:main",
-            "vanna-chat=src.vanna_grok:main",
+            "depotru-report=business_analyzer.reports.monthly:main",
+            "vanna-grok=vanna_grok:main",
+            "vanna-chat=vanna_grok:main",
+            "depotru-db-mcp=business_analyzer.mcp.database_server:main",
         ],
     },
     include_package_data=True,

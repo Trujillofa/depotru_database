@@ -2,21 +2,11 @@
 Tests for business_analyzer/ai/base.py
 """
 
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
-# Mock dependencies
-sys.modules["vanna"] = Mock()
-sys.modules["vanna.base"] = Mock()
-sys.modules["openai"] = Mock()
-sys.modules["chromadb"] = Mock()
-sys.modules["chromadb.utils"] = Mock()
-sys.modules["chromadb.utils.embedding_functions"] = Mock()
-
-# Mock config
+# Standalone mock config (does not replace business_analyzer.ai.base in sys.modules)
 mock_config = Mock()
 mock_config.GROK_API_KEY = "test-key"
 mock_config.OPENAI_API_KEY = "test-openai-key"
@@ -34,8 +24,6 @@ mock_config.TESTING = False
 # Module-level constants that are exported from base.py
 mock_config.SUPPORTED_PROVIDERS = ["grok", "openai", "anthropic", "ollama"]
 mock_config.DEFAULT_PROVIDER = "grok"
-
-sys.modules["business_analyzer.ai.base"] = mock_config
 
 
 # Now test basic functionality

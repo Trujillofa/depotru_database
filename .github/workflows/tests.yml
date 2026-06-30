@@ -1,3 +1,6 @@
+# Deprecated: use .github/workflows/ci.yml as the primary test pipeline.
+# This workflow remains for quick smoke tests only.
+
 name: Tests
 
 on:
