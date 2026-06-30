@@ -76,8 +76,20 @@ RANKING_QUESTION_KEYWORDS = (
 )
 
 RANKING_LABEL_COLUMNS = frozenset(
-    {"cliente", "proveedor", "producto", "marca", "categoria", "subcategoria"}
+    {
+        "cliente",
+        "proveedor",
+        "producto",
+        "marca",
+        "categoria",
+        "subcategoria",
+        "ciudad",
+        "departamento",
+        "ubicacion",
+    }
 )
+
+GEO_LABEL = "Ubicacion"
 
 LABEL_PRIORITY = (
     "Nombre_Mes",
@@ -86,10 +98,14 @@ LABEL_PRIORITY = (
     "mes",
     "Dia",
     "dia",
+    "Ubicacion",
+    "ubicacion",
     "Categoria",
     "categoria",
     "Subcategoria",
     "subcategoria",
+    "Ciudad",
+    "ciudad",
     "Departamento",
     "departamento",
     "Producto",
@@ -252,7 +268,27 @@ def _prefers_horizontal(
     return avg_len > 15 or max_len > 20
 
 
+def _geo_columns(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str]]:
+    dept = next((c for c in df.columns if c.lower() == "departamento"), None)
+    city = next((c for c in df.columns if c.lower() == "ciudad"), None)
+    return dept, city
+
+
+def _with_geo_label(df: pd.DataFrame) -> pd.DataFrame:
+    """Combine departamento + ciudad so charts do not collapse duplicate departments."""
+    dept, city = _geo_columns(df)
+    if not dept or not city:
+        return df
+    out = df.copy()
+    out[GEO_LABEL] = (
+        out[dept].astype(str).str.strip() + " — " + out[city].astype(str).str.strip()
+    )
+    return out
+
+
 def _label_column(df: pd.DataFrame) -> Optional[str]:
+    if GEO_LABEL in df.columns and df[GEO_LABEL].nunique(dropna=True) > 1:
+        return GEO_LABEL
     for candidate in LABEL_PRIORITY:
         if candidate in df.columns and df[candidate].nunique(dropna=True) > 1:
             return candidate
@@ -575,6 +611,7 @@ def build_smart_figure(
     dark_mode: bool = False,
 ) -> Optional[go.Figure]:
     """Build a sensible chart from query results. Returns None if not chartable."""
+    df = _with_geo_label(df)
     plan = _resolve_chart_plan(df, question)
     if plan is None:
         return None
@@ -585,6 +622,7 @@ def build_plotly_code(
     df: pd.DataFrame, question: Optional[str] = None
 ) -> Optional[str]:
     """Return executable plotly code matching build_smart_figure heuristics."""
+    df = _with_geo_label(df)
     plan = _resolve_chart_plan(df, question)
     if plan is None:
         return None

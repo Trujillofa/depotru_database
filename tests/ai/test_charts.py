@@ -283,6 +283,21 @@ class TestSmartCharts:
         assert sentinel["called"]
         assert fig == "super-figure"
 
+    def test_geo_query_uses_departamento_ciudad_composite_label(self):
+        df = pd.DataFrame(
+            {
+                "Departamento": ["HUILA", "HUILA", "CAQUETÁ"],
+                "Ciudad": ["NEIVA", "PALERMO", "SAN VICENTE DEL CAGUÁN"],
+                "Ventas_Totales": [25766450550.81, 1588071736.42, 1631913520.81],
+            }
+        )
+        fig = build_smart_figure(df, question="Ventas por departamento y ciudad")
+        assert fig is not None
+        labels = list(fig.data[0].y)
+        assert any("NEIVA" in label for label in labels)
+        assert any("PALERMO" in label for label in labels)
+        assert labels.count("HUILA") <= 1
+
     def test_top_products_chart_uses_colombian_bar_labels(self):
         df = pd.DataFrame(
             {

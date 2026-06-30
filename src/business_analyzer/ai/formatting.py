@@ -58,6 +58,7 @@ INTEGER_COLUMNS = [
     "Unidades",
     "Numero_Transacciones",
     "Numero_Ventas",
+    "Clientes_Unicos",
     "order_count",
 ]
 

@@ -956,8 +956,9 @@ ORDER BY Dia_Orden
                 self.system_message(
                     "Eres un asistente de datos para una ferretería colombiana. "
                     "Resume en español colombiano usando formato de moneda COP "
-                    "con separador de miles con punto (ej. $4.993.131). "
-                    "No uses abreviaciones tipo k/M ni formato estadounidense con comas."
+                    "con separador de miles con punto (ej. $25.766.450.551). "
+                    "Los valores ya vienen formateados: repítelos tal cual, sin "
+                    "convertir a miles/millones ni abreviar (nada de 25.88 ni 9.6K)."
                 ),
                 self.system_message(
                     f"Pregunta del usuario: '{question}'\n\n"
