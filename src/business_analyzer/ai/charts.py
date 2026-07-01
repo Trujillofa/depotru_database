@@ -295,6 +295,15 @@ def _select_primary_metric(
             for col in currency_cols:
                 if "ventas_totales" in col.lower():
                     return col
+        if "producto" in q and ("vendid" in q or "top" in q):
+            if "cantidad" in q and "factur" not in q:
+                for col in currency_cols:
+                    if "cantidad" in col.lower():
+                        return col
+            for col in currency_cols:
+                col_lower = col.lower()
+                if "facturacion" in col_lower or col_lower == "ventas":
+                    return col
         for col in currency_cols:
             col_lower = col.lower()
             if "ganancia" in q and "ganancia" in col_lower:

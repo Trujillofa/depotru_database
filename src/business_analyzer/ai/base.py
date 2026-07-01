@@ -479,8 +479,57 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         )
 
     @staticmethod
+    def _is_product_ranking_question(question: str) -> bool:
+        lower = (question or "").lower()
+        if "baja rotación" in lower or "baja rotacion" in lower:
+            return False
+        has_product = "producto" in lower
+        has_ranking = any(
+            token in lower
+            for token in ("más vendid", "mas vendid", "principales producto")
+        ) or bool(re.search(r"top\s*\d+\s+productos?", lower))
+        return has_product and has_ranking
+
+    @staticmethod
+    def _extract_product_category(question: str) -> str | None:
+        lower = (question or "").lower()
+        match = re.search(
+            r"\bde\s+([a-záéíóúñ0-9][a-záéíóúñ0-9\s]*?)"
+            r"(?:\s+(?:más|mas|este|por)|$)",
+            lower,
+        )
+        if not match:
+            match = re.search(
+                r"categor[ií]a\s+([a-záéíóúñ0-9][a-záéíóúñ0-9\s]*)",
+                lower,
+            )
+        if not match:
+            return None
+        category = re.sub(r"\s+", " ", match.group(1).strip()).upper()
+        skip = {"SIKA", "ACESCO", "PAVCO", "CEMEX", "EUROCERAMICA", "HOLCIM"}
+        if category in skip:
+            return None
+        return category or None
+
+    @staticmethod
+    def _is_brand_top_products_question(question: str) -> bool:
+        if not AIVanna._is_product_ranking_question(question):
+            return False
+        brands = AIVanna._extract_vendor_brands(question)
+        category = AIVanna._extract_product_category(question)
+        return len(brands) >= 1 or category is not None
+
+    @staticmethod
+    def _is_generic_top_products_question(question: str) -> bool:
+        return AIVanna._is_product_ranking_question(
+            question
+        ) and not AIVanna._is_brand_top_products_question(question)
+
+    @staticmethod
     def _is_multi_vendor_sales_question(question: str) -> bool:
         if AIVanna._is_branch_store_sales_question(question):
+            return False
+        if AIVanna._is_product_ranking_question(question):
             return False
         lower = (question or "").lower()
         has_sales = any(
@@ -648,6 +697,7 @@ ORDER BY Ventas_Totales DESC
             r"top\s*(\d+)",
             r"(\d+)\s+clientes?",
             r"(\d+)\s+vendedores?",
+            r"(\d+)\s+productos?",
         ):
             match = re.search(pattern, lower)
             if match:
@@ -690,6 +740,100 @@ WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
   AND NULLIF(LTRIM(RTRIM(TercerosNombres)), '') IS NOT NULL{year_filter}
 GROUP BY {cliente_norm}
 ORDER BY Facturacion_Total DESC
+        """.strip()
+
+    @staticmethod
+    def _brand_match_filter(brand: str) -> str:
+        safe = re.sub(r"[^A-Z0-9]", "", brand.upper())
+        if not safe:
+            return "1 = 0"
+        fields = (
+            "proveedor",
+            "marca",
+            "categoria",
+            "subcategoria",
+            "ArticulosNombre",
+        )
+        clauses = [
+            f"UPPER(LTRIM(RTRIM(COALESCE({field}, '')))) LIKE '%{safe}%'"
+            for field in fields
+        ]
+        return "(\n        " + "\n        OR ".join(clauses) + "\n    )"
+
+    @staticmethod
+    def _product_ranking_order(question: str) -> str:
+        lower = (question or "").lower()
+        if "por cantidad" in lower or "cantidad" in lower and "factur" not in lower:
+            return "Cantidad_Vendida DESC"
+        if "factur" in lower:
+            return "Facturacion_Total DESC"
+        return "Ventas DESC"
+
+    @staticmethod
+    def _brand_top_products_sql_template(question: str = "") -> str:
+        n = AIVanna._extract_top_n(question)
+        year_filter = AIVanna._year_filter_from_question(question)
+        order_clause = AIVanna._product_ranking_order(question)
+        brands = AIVanna._extract_vendor_brands(question)
+        category = AIVanna._extract_product_category(question)
+
+        scope_filter = ""
+        if brands:
+            brand_clauses = [
+                AIVanna._brand_match_filter(brand) for brand in brands[:3]
+            ]
+            scope_filter = "\n  AND (" + " OR ".join(brand_clauses) + ")"
+        elif category:
+            safe_category = re.sub(r"[^A-Z0-9 ]", "", category.upper()).strip()
+            scope_filter = (
+                f"\n  AND UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) = "
+                f"'{safe_category}'"
+            )
+
+        revenue_col = (
+            "Facturacion_Total"
+            if "factur" in (question or "").lower()
+            else "Ventas"
+        )
+        return f"""
+SELECT TOP {n}
+    ArticulosNombre AS Producto,
+    SUM(TotalMasIva) AS {revenue_col},
+    SUM(Cantidad) AS Cantidad_Vendida,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC'){year_filter}{scope_filter}
+GROUP BY ArticulosNombre
+ORDER BY {order_clause}
+        """.strip()
+
+    @staticmethod
+    def _generic_top_products_sql_template(question: str = "") -> str:
+        n = AIVanna._extract_top_n(question)
+        year_filter = AIVanna._year_filter_from_question(question)
+        order_clause = AIVanna._product_ranking_order(question)
+        lower = (question or "").lower()
+        if "factur" in lower:
+            return f"""
+SELECT TOP {n}
+    ArticulosNombre AS Producto,
+    SUM(Cantidad) AS Unidades_Vendidas,
+    SUM(TotalMasIva) AS Facturacion_Total,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia_Neta
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC'){year_filter}
+GROUP BY ArticulosNombre
+ORDER BY {order_clause}
+            """.strip()
+        return f"""
+SELECT TOP {n}
+    ArticulosNombre AS Producto,
+    SUM(Cantidad) AS Cantidad_Vendida,
+    COUNT(*) AS Numero_Transacciones
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC'){year_filter}
+GROUP BY ArticulosNombre
+ORDER BY {order_clause}
         """.strip()
 
     @staticmethod
@@ -909,6 +1053,39 @@ WHERE Marca NOT LIKE '%MATERIALES%'
   AND LEN(Marca) > 2
 GROUP BY Marca
 ORDER BY Ganancia DESC
+        """.strip()
+
+    @staticmethod
+    def _is_credit_vs_cash_question(question: str) -> bool:
+        lower = (question or "").lower()
+        has_credit = any(
+            token in lower for token in ("crédito", "credito", "contado")
+        )
+        has_compare = any(
+            token in lower for token in ("vs", "versus", "frente a", "compar")
+        )
+        has_sales = any(token in lower for token in ("venta", "ventas", "factur"))
+        return has_credit and has_compare and has_sales
+
+    @staticmethod
+    def _credit_vs_cash_sql_template(question: str = "") -> str:
+        year_filter = AIVanna._year_filter_from_question(question)
+        if not year_filter:
+            year_filter = "\n  AND YEAR(Fecha) = YEAR(GETDATE())"
+        return f"""
+SELECT
+    CASE
+        WHEN DiasCredito = 0 THEN 'Contado'
+        ELSE 'Credito'
+    END AS Tipo_Venta,
+    COUNT(*) AS Numero_Ventas,
+    SUM(TotalMasIva) AS Ventas_Total,
+    AVG(DiasCredito) AS Promedio_Dias_Credito,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC'){year_filter}
+GROUP BY CASE WHEN DiasCredito = 0 THEN 'Contado' ELSE 'Credito' END
+ORDER BY Ventas_Total DESC
         """.strip()
 
     @staticmethod
@@ -1172,6 +1349,14 @@ ORDER BY Dia_Orden
                         if template:
                             self._query_cache.set(question, template)
                             return template
+                if self._is_credit_vs_cash_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = "diascredito" not in cached_lower
+                    if needs_upgrade:
+                        template = self._credit_vs_cash_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
                 if self._is_top_customers_question(question):
                     cached_lower = cached.lower()
                     needs_upgrade = (
@@ -1180,6 +1365,28 @@ ORDER BY Dia_Orden
                     )
                     if needs_upgrade:
                         template = self._top_customers_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
+                if self._is_brand_top_products_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "marca_proveedor" in cached_lower
+                        or "group by articulosnombre" not in cached_lower
+                    )
+                    if needs_upgrade:
+                        template = self._brand_top_products_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
+                if self._is_generic_top_products_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "group by articulosnombre" not in cached_lower
+                        or "marca_proveedor" in cached_lower
+                    )
+                    if needs_upgrade:
+                        template = self._generic_top_products_sql_template(question)
                         if template:
                             self._query_cache.set(question, template)
                             return template
@@ -1222,8 +1429,23 @@ ORDER BY Dia_Orden
                 if template:
                     self._query_cache.set(question, template)
                     return template
+            if self._is_credit_vs_cash_question(question):
+                template = self._credit_vs_cash_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
             if self._is_top_customers_question(question):
                 template = self._top_customers_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
+            if self._is_brand_top_products_question(question):
+                template = self._brand_top_products_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
+            if self._is_generic_top_products_question(question):
+                template = self._generic_top_products_sql_template(question)
                 if template:
                     self._query_cache.set(question, template)
                     return template
@@ -1285,10 +1507,32 @@ ORDER BY Dia_Orden
                         post_candidate = self._last_n_days_sales_sql_template(question)
                         self._query_cache.set(question, post_candidate)
                         return post_candidate
+                if self._is_credit_vs_cash_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._credit_vs_cash_sql_template(question)
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
                 if self._is_top_customers_question(question):
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
                         post_candidate = self._top_customers_sql_template(question)
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
+                if self._is_brand_top_products_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._brand_top_products_sql_template(
+                            question
+                        )
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
+                if self._is_generic_top_products_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._generic_top_products_sql_template(
+                            question
+                        )
                         self._query_cache.set(question, post_candidate)
                         return post_candidate
                 if self._is_brand_profit_question(question):
@@ -1498,7 +1742,12 @@ ORDER BY Dia_Orden
             "promedio_transacciones_diarias",
         )
         label_col = _pick(
-            "tipo_venta", "descripcion", "vendedor", "cliente", "nombre_mes"
+            "producto",
+            "tipo_venta",
+            "descripcion",
+            "vendedor",
+            "cliente",
+            "nombre_mes",
         )
         clientes_col = _pick("clientes_unicos", "numero_clientes", "clientes")
         dept_col = _pick("departamento")

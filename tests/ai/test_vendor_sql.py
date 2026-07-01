@@ -314,6 +314,75 @@ class TestLastNDaysSalesTemplate:
         cache.set.assert_called_with(self.QUESTION, result)
 
 
+class TestBrandTopProductsTemplate:
+    SIKA_QUESTION = "Productos de SIKA más vendidos"
+    HIERRO_QUESTION = "Productos más vendidos de HIERRO"
+    ACESCO_QUESTION = "Productos ACESCO más vendidos este año"
+
+    def test_detects_sika_product_ranking(self):
+        assert AIVanna._is_brand_top_products_question(self.SIKA_QUESTION)
+        assert not AIVanna._is_multi_vendor_sales_question(self.SIKA_QUESTION)
+
+    def test_ventas_de_productos_sika_stays_multi_vendor(self):
+        assert not AIVanna._is_brand_top_products_question(
+            "Ventas de productos SIKA"
+        )
+        assert AIVanna._is_multi_vendor_sales_question("Ventas de productos SIKA")
+
+    def test_sika_template_groups_by_product(self):
+        sql = AIVanna._brand_top_products_sql_template(self.SIKA_QUESTION)
+        lower = sql.lower()
+        assert "top 10" in lower
+        assert "group by articulosnombre" in lower
+        assert "like '%sika%'" in lower
+        assert "marca_proveedor" not in lower
+
+    def test_hierro_template_filters_category(self):
+        sql = AIVanna._brand_top_products_sql_template(self.HIERRO_QUESTION)
+        lower = sql.lower()
+        assert "categoria" in lower
+        assert "'hierro'" in lower
+        assert "group by articulosnombre" in lower
+
+    def test_acesco_template_includes_year_filter(self):
+        sql = AIVanna._brand_top_products_sql_template(self.ACESCO_QUESTION)
+        assert "year(fecha) = year(getdate())" in sql.lower()
+
+    def test_generate_sql_upgrades_stale_brand_rollup_cache(self):
+        stale_sql = """
+            SELECT Marca_Proveedor, SUM(TotalMasIva) AS Ventas_Totales
+            FROM banco_datos
+            GROUP BY Marca_Proveedor
+        """
+        cache = MagicMock()
+        cache.get.return_value = stale_sql
+
+        vn = object.__new__(AIVanna)
+        vn._query_cache = cache
+
+        result = AIVanna.generate_sql(vn, self.SIKA_QUESTION)
+
+        assert "group by articulosnombre" in result.lower()
+        assert "marca_proveedor" not in result.lower()
+        cache.set.assert_called_with(self.SIKA_QUESTION, result)
+
+
+class TestGenericTopProductsTemplate:
+    QUESTION = "Top 10 productos más vendidos por facturación este año"
+
+    def test_detects_generic_product_ranking(self):
+        assert AIVanna._is_generic_top_products_question(self.QUESTION)
+        assert not AIVanna._is_brand_top_products_question(self.QUESTION)
+
+    def test_template_uses_facturacion_and_year(self):
+        sql = AIVanna._generic_top_products_sql_template(self.QUESTION)
+        lower = sql.lower()
+        assert "top 10" in lower
+        assert "facturacion_total" in lower
+        assert "year(fecha) = year(getdate())" in lower
+        assert "group by articulosnombre" in lower
+
+
 class TestRunSqlRetry:
     def test_retries_on_transient_connection_error(self, monkeypatch):
         calls = {"count": 0}

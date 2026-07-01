@@ -122,6 +122,25 @@ class TestSmartCharts:
         assert fig.data[0].orientation != "h"
         assert "Junio 2026" in list(fig.data[0].x)
 
+    def test_sika_product_ranking_horizontal_bar(self):
+        df = pd.DataFrame(
+            {
+                "Producto": [f"Producto SIKA {i}" for i in range(1, 11)],
+                "Ventas": [
+                    5_000_000_000 - i * 100_000_000 for i in range(10)
+                ],
+                "Cantidad_Vendida": list(range(1000, 900, -10)),
+                "Ganancia": [500_000_000 - i * 10_000_000 for i in range(10)],
+            }
+        )
+        fig = build_smart_figure(
+            df, question="Productos de SIKA más vendidos", dark_mode=False
+        )
+        assert fig is not None
+        assert len(fig.data) == 1
+        assert fig.data[0].type == "bar"
+        assert fig.data[0].orientation == "h"
+
     def test_credito_vs_contado_single_metric_bar(self):
         df = pd.DataFrame(
             {
