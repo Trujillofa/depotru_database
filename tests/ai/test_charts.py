@@ -164,6 +164,29 @@ class TestSmartCharts:
         assert any("ONG FUNDACION" in str(label) for label in labels)
         assert max(fig.data[0].x) > 700_000_000
 
+    def test_vendedor_performance_chart_uses_total_vendido(self):
+        df = pd.DataFrame(
+            {
+                "Vendedor": [
+                    "OSCAR IVAN POLANIA GARCIA",
+                    "DANIEL ENRIQUE CAICEDO",
+                    "FELIPE RAMIREZ",
+                ],
+                "Ventas_Este_Mes": [1164, 871, 1827],
+                "Total_Vendido": [602_118_006, 525_781_825, 458_738_635],
+                "Ganancia_Generada": [68_670_869, 67_352_457, 52_050_755],
+            }
+        )
+        fig = build_smart_figure(
+            df,
+            question="Vendedores con mejor desempeño este mes",
+            dark_mode=False,
+        )
+        assert fig is not None
+        assert fig.data[0].orientation == "h"
+        assert max(fig.data[0].x) > 500_000_000
+        assert fig.layout.xaxis.showticklabels is False
+
     def test_client_ranking_hides_confusing_x_axis_ticks(self):
         df = pd.DataFrame(
             {

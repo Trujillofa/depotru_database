@@ -65,6 +65,10 @@ RANKING_QUESTION_KEYWORDS = (
     "ganancia",
     "clientes",
     "cliente",
+    "vendedores",
+    "vendedor",
+    "desempeño",
+    "desempeno",
     "top",
     "proveedores",
     "proveedor",
@@ -78,6 +82,7 @@ RANKING_QUESTION_KEYWORDS = (
 RANKING_LABEL_COLUMNS = frozenset(
     {
         "cliente",
+        "vendedor",
         "proveedor",
         "producto",
         "marca",
@@ -116,6 +121,8 @@ LABEL_PRIORITY = (
     "articulosnombre",
     "Cliente",
     "cliente",
+    "Vendedor",
+    "vendedor",
     "Proveedor",
     "proveedor",
     "Marca",
@@ -184,8 +191,21 @@ def _is_percentage_column(df: pd.DataFrame, col: str) -> bool:
     return vmax <= 100 and vmin >= 0 and vmax < 1000
 
 
+COUNT_COLUMN_NAMES = frozenset(
+    {
+        "ventas_este_mes",
+        "numero_ventas",
+        "numero_transacciones",
+        "numero_compras",
+        "total_transacciones",
+    }
+)
+
+
 def _is_currency_column(df: pd.DataFrame, col: str) -> bool:
     col_lower = col.lower()
+    if col_lower in COUNT_COLUMN_NAMES or col_lower.startswith("numero_"):
+        return False
     if _is_percentage_column(df, col):
         return False
     if any(kw in col_lower for kw in CURRENCY_KEYWORDS):
@@ -235,6 +255,10 @@ def _select_primary_metric(
         return None
     if question:
         q = question.lower()
+        if "vendedor" in q or "desempeño" in q or "desempeno" in q:
+            for col in currency_cols:
+                if "total_vendido" in col.lower():
+                    return col
         for col in currency_cols:
             col_lower = col.lower()
             if "ganancia" in q and "ganancia" in col_lower:
@@ -243,6 +267,8 @@ def _select_primary_metric(
                 if "facturacion" in col_lower or "facturación" in col_lower:
                     return col
             if "ventas" in q and "ventas" in col_lower:
+                if col_lower in COUNT_COLUMN_NAMES:
+                    continue
                 return col
             if "ingreso" in q and ("ingreso" in col_lower or "revenue" in col_lower):
                 return col
@@ -509,7 +535,9 @@ def _build_from_plan(
         )
         fig.update_layout(xaxis_title="", yaxis_title="")
         hide_ticks = bool(
-            plan.label_col and plan.label_col.lower() in ("cliente", "tercerosnombres")
+            plan.label_col
+            and plan.label_col.lower()
+            in ("cliente", "tercerosnombres", "vendedor", "vendedorfactura")
         )
         fig = _apply_colombian_value_axis(fig, horizontal=True, hide_ticks=hide_ticks)
         return _apply_layout(fig, dark_mode, horizontal=True)

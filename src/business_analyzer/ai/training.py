@@ -978,15 +978,25 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             "Vendedores con mejor desempeño este mes",
             """
             SELECT TOP 10
-                COALESCE(VendedorFactura, 'Código: ' + vendedor_codigo) AS Vendedor,
+                COALESCE(
+                    NULLIF(LTRIM(RTRIM(VendedorFactura)), ''),
+                    'Código: ' + vendedor_codigo,
+                    VendedorAsignado
+                ) AS Vendedor,
                 COUNT(*) AS Ventas_Este_Mes,
                 SUM(TotalMasIva) AS Total_Vendido,
                 SUM(TotalSinIva - ValorCosto) AS Ganancia_Generada
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            AND Fecha >= DATEADD(MONTH, -1, GETDATE())
-            AND (VendedorFactura IS NOT NULL OR vendedor_codigo IS NOT NULL)
-            GROUP BY VendedorFactura, vendedor_codigo
+            AND YEAR(Fecha) = YEAR(GETDATE())
+            AND MONTH(Fecha) = MONTH(GETDATE())
+            AND (VendedorFactura IS NOT NULL OR vendedor_codigo IS NOT NULL
+                 OR VendedorAsignado IS NOT NULL)
+            GROUP BY COALESCE(
+                NULLIF(LTRIM(RTRIM(VendedorFactura)), ''),
+                'Código: ' + vendedor_codigo,
+                VendedorAsignado
+            )
             ORDER BY Total_Vendido DESC
             """,
         ),

@@ -38,3 +38,21 @@ class TestDeterministicSummary:
         assert "FERRETERIA MAGRETH" in text
         assert "$12.731.981.609" in text
         assert "$728.105.320" in text
+
+    def test_vendedor_summary_uses_colombian_format(self):
+        df = pd.DataFrame(
+            {
+                "Vendedor": ["OSCAR IVAN POLANIA GARCIA"],
+                "Ventas_Este_Mes": [1164],
+                "Total_Vendido": [602_118_006.64],
+                "Ganancia_Generada": [68_670_869.72],
+            }
+        )
+        text = AIVanna._deterministic_summary(
+            "Vendedores con mejor desempeño este mes", df
+        )
+        assert "OSCAR IVAN POLANIA GARCIA" in text
+        assert "$602.118.007" in text
+        assert "$68.670.870" in text
+        assert "1.164 transacciones" in text
+        assert "60,271" not in text

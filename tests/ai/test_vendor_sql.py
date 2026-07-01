@@ -98,6 +98,59 @@ class TestTopCustomersTemplate:
         cache.set.assert_called_with(self.QUESTION, result)
 
 
+class TestVendedorPerformanceTemplate:
+    QUESTION = "Vendedores con mejor desempeño este mes"
+
+    def test_detects_vendedor_performance_question(self):
+        assert AIVanna._is_vendedor_performance_question(self.QUESTION)
+
+    def test_excludes_named_vendor_drilldown(self):
+        assert not AIVanna._is_vendedor_performance_question(
+            "Ventas del vendedor CARLOS EFREY PASCUAS"
+        )
+
+    def test_template_unifies_vendor_and_uses_calendar_month(self):
+        sql = AIVanna._vendedor_performance_sql_template(self.QUESTION)
+        lower = sql.lower()
+        assert "coalesce(" in lower
+        assert "vendedorasignado" in lower
+        assert "month(fecha) = month(getdate())" in lower
+        assert "group by vendedorfactura, vendedor_codigo" not in lower
+        assert "total_vendido" in lower
+        assert "ganancia_generada" in lower
+
+    def test_mes_pasado_filter(self):
+        sql = AIVanna._vendedor_performance_sql_template(
+            "Top 5 vendedores con mejor desempeño el mes pasado"
+        )
+        assert "dateadd(month, -1, getdate())" in sql.lower()
+        assert "top 5" in sql.lower()
+
+    def test_generate_sql_upgrades_stale_vendedor_cache(self):
+        stale_sql = """
+            SELECT TOP 10 COALESCE(VendedorFactura, vendedor_codigo) AS Vendedor,
+                COUNT(*) AS Ventas_Este_Mes, SUM(TotalMasIva) AS Total_Vendido
+            FROM banco_datos
+            WHERE Fecha >= DATEADD(MONTH, -1, GETDATE())
+            GROUP BY VendedorFactura, vendedor_codigo
+            ORDER BY Total_Vendido DESC
+        """
+        cache = MagicMock()
+        cache.get.return_value = stale_sql
+
+        vn = object.__new__(AIVanna)
+        vn._query_cache = cache
+
+        with patch.object(
+            AIVanna, "_is_vendedor_performance_question", return_value=True
+        ):
+            result = AIVanna.generate_sql(vn, self.QUESTION)
+
+        assert "month(fecha) = month(getdate())" in result.lower()
+        assert "group by vendedorfactura, vendedor_codigo" not in result.lower()
+        cache.set.assert_called_with(self.QUESTION, result)
+
+
 class TestRunSqlRetry:
     def test_retries_on_transient_connection_error(self, monkeypatch):
         calls = {"count": 0}

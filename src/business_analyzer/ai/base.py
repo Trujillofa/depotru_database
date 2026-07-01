@@ -618,7 +618,11 @@ ORDER BY Ventas_Totales DESC
     @staticmethod
     def _extract_top_n(question: str, default: int = 10) -> int:
         lower = (question or "").lower()
-        for pattern in (r"top\s*(\d+)", r"(\d+)\s+clientes?"):
+        for pattern in (
+            r"top\s*(\d+)",
+            r"(\d+)\s+clientes?",
+            r"(\d+)\s+vendedores?",
+        ):
             match = re.search(pattern, lower)
             if match:
                 return max(1, min(int(match.group(1)), 50))
@@ -660,6 +664,115 @@ WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
   AND NULLIF(LTRIM(RTRIM(TercerosNombres)), '') IS NOT NULL{year_filter}
 GROUP BY {cliente_norm}
 ORDER BY Facturacion_Total DESC
+        """.strip()
+
+    @staticmethod
+    def _norm_vendedor_sql() -> str:
+        """Single vendor identity across factura/código/asignado fields."""
+        return (
+            "COALESCE("
+            "NULLIF(LTRIM(RTRIM(VendedorFactura)), ''), "
+            "'Código: ' + vendedor_codigo, "
+            "VendedorAsignado"
+            ")"
+        )
+
+    @staticmethod
+    def _is_vendedor_performance_question(question: str) -> bool:
+        lower = (question or "").lower()
+        if "proveedor" in lower and "vendedor" not in lower:
+            return False
+        if " del vendedor " in f" {lower} ":
+            return False
+        has_vendedor = "vendedor" in lower
+        has_performance = any(
+            token in lower
+            for token in (
+                "desempeño",
+                "desempeno",
+                "mejor",
+                "top",
+                "mayor",
+                "ranking",
+                "ventas",
+                "factur",
+                "ganancia",
+                "transacciones",
+                "comision",
+                "comisión",
+            )
+        )
+        return has_vendedor and has_performance
+
+    @staticmethod
+    def _month_filter_from_question(question: str) -> str:
+        """Calendar month filter for 'este mes', named months, or mes pasado."""
+        lower = (question or "").lower()
+        month_names = {
+            "enero": 1,
+            "febrero": 2,
+            "marzo": 3,
+            "abril": 4,
+            "mayo": 5,
+            "junio": 6,
+            "julio": 7,
+            "agosto": 8,
+            "septiembre": 9,
+            "setiembre": 9,
+            "octubre": 10,
+            "noviembre": 11,
+            "diciembre": 12,
+        }
+        for month_name, month_number in month_names.items():
+            if month_name in lower:
+                year_match = re.search(r"\b(20\d{2})\b", lower)
+                if year_match:
+                    return (
+                        f"\n  AND YEAR(Fecha) = {year_match.group(1)}"
+                        f" AND MONTH(Fecha) = {month_number}"
+                    )
+                return (
+                    f"\n  AND YEAR(Fecha) = YEAR(GETDATE())"
+                    f" AND MONTH(Fecha) = {month_number}"
+                )
+
+        if any(
+            phrase in lower
+            for phrase in ("mes pasado", "último mes", "ultimo mes", "mes anterior")
+        ):
+            return (
+                "\n  AND YEAR(Fecha) = YEAR(DATEADD(MONTH, -1, GETDATE()))"
+                " AND MONTH(Fecha) = MONTH(DATEADD(MONTH, -1, GETDATE()))"
+            )
+
+        if any(
+            phrase in lower
+            for phrase in ("este mes", "este período", "este periodo")
+        ):
+            return (
+                "\n  AND YEAR(Fecha) = YEAR(GETDATE())"
+                " AND MONTH(Fecha) = MONTH(GETDATE())"
+            )
+
+        return AIVanna._year_filter_from_question(question)
+
+    @staticmethod
+    def _vendedor_performance_sql_template(question: str = "") -> str:
+        n = AIVanna._extract_top_n(question)
+        month_filter = AIVanna._month_filter_from_question(question)
+        vendedor_norm = AIVanna._norm_vendedor_sql()
+        return f"""
+SELECT TOP {n}
+    {vendedor_norm} AS Vendedor,
+    COUNT(*) AS Ventas_Este_Mes,
+    SUM(TotalMasIva) AS Total_Vendido,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia_Generada
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+  AND (VendedorFactura IS NOT NULL OR vendedor_codigo IS NOT NULL
+       OR VendedorAsignado IS NOT NULL){month_filter}
+GROUP BY {vendedor_norm}
+ORDER BY Total_Vendido DESC
         """.strip()
 
     @staticmethod
@@ -834,6 +947,22 @@ ORDER BY Dia_Orden
         try:
             cached = self._query_cache.get(question)
             if cached:
+                if self._is_vendedor_performance_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "group by vendedorfactura, vendedor_codigo" in cached_lower
+                        or (
+                            "este mes" in (question or "").lower()
+                            and "month(fecha) = month(getdate())"
+                            not in cached_lower
+                            and "dateadd(month, -1" in cached_lower
+                        )
+                    )
+                    if needs_upgrade:
+                        template = self._vendedor_performance_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
                 if self._is_top_customers_question(question):
                     cached_lower = cached.lower()
                     needs_upgrade = (
@@ -859,6 +988,11 @@ ORDER BY Dia_Orden
                             return template
                 return cached
 
+            if self._is_vendedor_performance_question(question):
+                template = self._vendedor_performance_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
             if self._is_top_customers_question(question):
                 template = self._top_customers_sql_template(question)
                 if template:
@@ -888,6 +1022,14 @@ ORDER BY Dia_Orden
                     )
                     return None
 
+                if self._is_vendedor_performance_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._vendedor_performance_sql_template(
+                            question
+                        )
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
                 if self._is_top_customers_question(question):
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
@@ -1083,17 +1225,30 @@ ORDER BY Dia_Orden
             return None
 
         ventas_col = _pick(
+            "total_vendido",
             "ventas_totales",
             "facturacion_total",
             "facturacion",
             "ventas",
             "totalmasiva",
         )
-        ganancia_col = _pick("ganancia_neta", "ganancia", "ganancia_total")
+        ganancia_col = _pick(
+            "ganancia_generada",
+            "ganancia_neta",
+            "ganancia",
+            "ganancia_total",
+        )
+        count_col = _pick(
+            "ventas_este_mes",
+            "numero_ventas",
+            "numero_transacciones",
+            "numero_compras",
+        )
         clientes_col = _pick("clientes_unicos", "numero_clientes", "clientes")
         dept_col = _pick("departamento")
         city_col = _pick("ciudad")
         product_col = _pick(
+            "vendedor",
             "producto",
             "articulosnombre",
             "articulonombre",
@@ -1122,10 +1277,16 @@ ORDER BY Dia_Orden
         for _, row in df.head(5).iterrows():
             metrics: List[str] = []
             if ventas_col:
-                metrics.append(f"ventas {format_number(row[ventas_col], ventas_col)}")
+                metrics.append(
+                    f"facturación {format_number(row[ventas_col], ventas_col)}"
+                )
             if ganancia_col:
                 metrics.append(
                     f"ganancia {format_number(row[ganancia_col], ganancia_col)}"
+                )
+            if count_col:
+                metrics.append(
+                    f"{format_number(row[count_col], count_col)} transacciones"
                 )
             if clientes_col:
                 metrics.append(
