@@ -295,6 +295,10 @@ def _select_primary_metric(
             for col in currency_cols:
                 if "ventas_totales" in col.lower():
                     return col
+        if "comparando" in q or "comparar" in q:
+            for col in currency_cols:
+                if "ventas_anio_actual" in col.lower():
+                    return col
         if "producto" in q and ("vendid" in q or "top" in q):
             if "cantidad" in q and "factur" not in q:
                 for col in currency_cols:

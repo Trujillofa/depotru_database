@@ -82,6 +82,24 @@ GOLDEN_QUESTIONS = [
         ["marca_proveedor"],
         id="top_productos_facturacion",
     ),
+    pytest.param(
+        "ventas de SKA",
+        ["marca_proveedor", "totalmasiva", "sika"],
+        ["totalactiva", "totalventas"],
+        id="ska_typo_brand",
+    ),
+    pytest.param(
+        "Cuáles son las ventas de SIKA al mes?",
+        ["group by year(fecha)", "totalmasiva", "sika"],
+        ["marca_proveedor", "totalactiva"],
+        id="sika_monthly",
+    ),
+    pytest.param(
+        "Ventas por mes comparando años",
+        ["ventas_anio_actual", "ventas_anio_anterior", "totalmasiva"],
+        ["totalactiva", "totalventas", "documentocodigo"],
+        id="year_month_compare",
+    ),
 ]
 
 

@@ -69,6 +69,21 @@ GOLDEN = [
         ["top 10", "group by articulosnombre", "facturacion_total"],
         ["marca_proveedor"],
     ),
+    (
+        "ventas de SKA",
+        ["marca_proveedor", "totalmasiva", "sika"],
+        ["totalactiva"],
+    ),
+    (
+        "Cuáles son las ventas de SIKA al mes?",
+        ["group by year(fecha)", "totalmasiva"],
+        ["marca_proveedor"],
+    ),
+    (
+        "Ventas por mes comparando años",
+        ["ventas_anio_actual", "totalmasiva"],
+        ["totalactiva"],
+    ),
 ]
 
 

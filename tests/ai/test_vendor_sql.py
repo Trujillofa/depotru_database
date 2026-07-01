@@ -383,6 +383,49 @@ class TestGenericTopProductsTemplate:
         assert "group by articulosnombre" in lower
 
 
+class TestBrandAliasesAndMonthly:
+    def test_ska_alias_maps_to_sika(self):
+        assert "SIKA" in AIVanna._extract_vendor_brands("ventas de SKA")
+
+    def test_sra_alias_maps_to_sika(self):
+        assert "SIKA" in AIVanna._extract_vendor_brands("ventas de SRA")
+
+    def test_ska_uses_multi_vendor_template(self):
+        sql = AIVanna._multi_vendor_sales_sql_template(["SIKA"])
+        assert "sika" in sql.lower()
+        assert "marca_proveedor" in sql.lower()
+
+    def test_sika_monthly_template(self):
+        q = "Cuáles son las ventas de SIKA al mes?"
+        assert AIVanna._is_brand_monthly_sales_question(q)
+        sql = AIVanna._brand_monthly_sales_sql_template(q)
+        lower = sql.lower()
+        assert "group by year(fecha)" in lower
+        assert "like '%sika%'" in lower
+        assert "totalmasiva" in lower
+
+    def test_repair_totalactiva_hallucination(self):
+        sql = "SELECT SUM(TotalActiva) FROM banco_datos WHERE DocumentoCodigo = 'FEF'"
+        fixed = AIVanna._repair_common_sql_hallucinations(sql)
+        assert "TotalMasIva" in fixed
+        assert "DocumentosCodigo" in fixed
+
+
+class TestYearMonthComparison:
+    QUESTION = "Ventas por mes comparando años"
+
+    def test_detects_comparison_question(self):
+        assert AIVanna._is_year_month_comparison_question(self.QUESTION)
+
+    def test_template_uses_pivot_columns(self):
+        sql = AIVanna._year_month_comparison_sql_template(self.QUESTION)
+        lower = sql.lower()
+        assert "ventas_anio_actual" in lower
+        assert "ventas_anio_anterior" in lower
+        assert "totalmasiva" in lower
+        assert "group by month(fecha)" in lower
+
+
 class TestRunSqlRetry:
     def test_retries_on_transient_connection_error(self, monkeypatch):
         calls = {"count": 0}

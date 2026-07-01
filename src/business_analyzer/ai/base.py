@@ -420,6 +420,11 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         )
         return has_brand and has_profit
 
+    BRAND_ALIASES = {
+        "ska": "SIKA",
+        "sra": "SIKA",
+    }
+
     @staticmethod
     def _extract_vendor_brands(question: str) -> List[str]:
         """Pull known vendor/brand tokens from a natural-language question."""
@@ -436,6 +441,10 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
             "holcim",
         )
         found = [name.upper() for name in catalog if name in lower]
+        for alias, canonical in AIVanna.BRAND_ALIASES.items():
+            if re.search(rf"\b{re.escape(alias)}\b", lower):
+                if canonical not in found:
+                    found.append(canonical)
         for match in re.finditer(
             r"\b([a-záéíóúñ]{4,})\b",
             lower,
@@ -659,6 +668,117 @@ ORDER BY Ventas_Totales DESC
             )
 
         return AIVanna._insert_before_tail(normalized_sql, f"WHERE {canonical_filter}")
+
+    @staticmethod
+    def _repair_common_sql_hallucinations(sql: str) -> str:
+        """Fix frequent LLM column/table typos before execution."""
+        if not sql:
+            return sql
+
+        repaired = sql
+        replacements = (
+            (r"\bTotalActiva\b", "TotalMasIva"),
+            (r"\bTotalVentas\b", "TotalMasIva"),
+            (r"\bVentaTotal\b", "TotalMasIva"),
+            (r"\bDocumentoCodigo\b", "DocumentosCodigo"),
+            (r"'YY'", "'YX'"),
+        )
+        for pattern, replacement in replacements:
+            repaired = re.sub(pattern, replacement, repaired, flags=re.IGNORECASE)
+
+        lower = repaired.lower()
+        if "from banco_datos" in lower:
+            repaired = re.sub(
+                r"SUM\s*\(\s*TotalMasIva\s*-\s*ValorCosto\s*\)",
+                "SUM(TotalSinIva - ValorCosto)",
+                repaired,
+                flags=re.IGNORECASE,
+            )
+        return repaired
+
+    @staticmethod
+    def _is_year_month_comparison_question(question: str) -> bool:
+        lower = (question or "").lower()
+        has_month = "mes" in lower or "mensual" in lower
+        has_sales = any(
+            token in lower for token in ("venta", "ventas", "factur", "ingreso")
+        )
+        has_compare = any(
+            token in lower
+            for token in ("comparando", "comparar", "comparación", "comparacion")
+        )
+        has_years = any(
+            token in lower for token in ("año", "años", "anos", "ano", "year")
+        )
+        return has_month and has_sales and has_compare and has_years
+
+    @staticmethod
+    def _year_month_comparison_sql_template(question: str = "") -> str:
+        lower = (question or "").lower()
+        year_span = 2
+        if re.search(r"\b(3|tres)\s+años?\b", lower) or "últimos 3" in lower:
+            year_span = 3
+        return f"""
+SELECT
+    MONTH(Fecha) AS Mes,
+    DATENAME(MONTH, Fecha) AS Nombre_Mes,
+    SUM(CASE WHEN YEAR(Fecha) = YEAR(GETDATE()) THEN TotalMasIva ELSE 0 END)
+        AS Ventas_Anio_Actual,
+    SUM(CASE WHEN YEAR(Fecha) = YEAR(GETDATE()) - 1 THEN TotalMasIva ELSE 0 END)
+        AS Ventas_Anio_Anterior,
+    SUM(CASE WHEN YEAR(Fecha) = YEAR(GETDATE()) THEN TotalSinIva - ValorCosto ELSE 0 END)
+        AS Ganancia_Actual
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+  AND YEAR(Fecha) >= YEAR(GETDATE()) - {year_span - 1}
+GROUP BY MONTH(Fecha), DATENAME(MONTH, Fecha)
+ORDER BY Mes
+        """.strip()
+
+    @staticmethod
+    def _is_brand_monthly_sales_question(question: str) -> bool:
+        if AIVanna._is_product_ranking_question(question):
+            return False
+        if AIVanna._is_branch_store_sales_question(question):
+            return False
+        if AIVanna._is_year_month_comparison_question(question):
+            return False
+        lower = (question or "").lower()
+        brands = AIVanna._extract_vendor_brands(question)
+        has_month = any(
+            token in lower
+            for token in ("mes", "mensual", "al mes", "por mes", "mensuales")
+        )
+        has_sales = any(
+            token in lower for token in ("venta", "ventas", "factur", "ingreso")
+        )
+        return len(brands) >= 1 and has_month and has_sales
+
+    @staticmethod
+    def _brand_monthly_sales_sql_template(question: str = "") -> str:
+        brands = AIVanna._extract_vendor_brands(question)
+        if not brands:
+            return ""
+        brand_clauses = [
+            AIVanna._brand_match_filter(brand) for brand in brands[:3]
+        ]
+        scope_filter = "\n  AND (" + " OR ".join(brand_clauses) + ")"
+        year_filter = AIVanna._year_filter_from_question(question)
+        if not year_filter and "comparando" not in (question or "").lower():
+            year_filter = "\n  AND YEAR(Fecha) >= YEAR(GETDATE()) - 2"
+        return f"""
+SELECT
+    YEAR(Fecha) AS Año,
+    MONTH(Fecha) AS Mes,
+    DATENAME(MONTH, Fecha) AS Nombre_Mes,
+    SUM(TotalMasIva) AS Ventas_Totales,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia,
+    COUNT(*) AS Numero_Transacciones
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC'){year_filter}{scope_filter}
+GROUP BY YEAR(Fecha), MONTH(Fecha), DATENAME(MONTH, Fecha)
+ORDER BY Año DESC, Mes DESC
+        """.strip()
 
     @staticmethod
     def _norm_cliente_sql() -> str:
@@ -1296,6 +1416,18 @@ ORDER BY Dia_Orden
                         if template:
                             self._query_cache.set(question, template)
                             return template
+                if self._is_year_month_comparison_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "totalactiva" in cached_lower
+                        or "totalventas" in cached_lower
+                        or "ventas_anio_actual" not in cached_lower
+                    )
+                    if needs_upgrade:
+                        template = self._year_month_comparison_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
                 if self._is_daily_average_by_month_question(question):
                     cached_lower = cached.lower()
                     needs_upgrade = (
@@ -1390,11 +1522,25 @@ ORDER BY Dia_Orden
                         if template:
                             self._query_cache.set(question, template)
                             return template
+                if self._is_brand_monthly_sales_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "totalactiva" in cached_lower
+                        or "totalventas" in cached_lower
+                        or "group by year(fecha)" not in cached_lower
+                    )
+                    if needs_upgrade:
+                        template = self._brand_monthly_sales_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
                 if self._is_multi_vendor_sales_question(question):
                     cached_lower = cached.lower()
                     needs_upgrade = (
                         "productos_adicional" not in cached_lower
                         or "collate database_default" not in cached_lower
+                        or "totalmasiva" not in cached_lower
+                        or "from banco_datos" not in cached_lower
                     )
                     if needs_upgrade:
                         brands = self._extract_vendor_brands(question)
@@ -1406,6 +1552,11 @@ ORDER BY Dia_Orden
 
             if self._is_document_type_sales_question(question):
                 template = self._document_type_sales_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
+            if self._is_year_month_comparison_question(question):
+                template = self._year_month_comparison_sql_template(question)
                 if template:
                     self._query_cache.set(question, template)
                     return template
@@ -1449,6 +1600,11 @@ ORDER BY Dia_Orden
                 if template:
                     self._query_cache.set(question, template)
                     return template
+            if self._is_brand_monthly_sales_question(question):
+                template = self._brand_monthly_sales_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
             if self._is_multi_vendor_sales_question(question):
                 brands = self._extract_vendor_brands(question)
                 template = self._multi_vendor_sales_sql_template(brands)
@@ -1477,6 +1633,14 @@ ORDER BY Dia_Orden
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
                         post_candidate = self._document_type_sales_sql_template(
+                            question
+                        )
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
+                if self._is_year_month_comparison_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._year_month_comparison_sql_template(
                             question
                         )
                         self._query_cache.set(question, post_candidate)
@@ -1535,6 +1699,14 @@ ORDER BY Dia_Orden
                         )
                         self._query_cache.set(question, post_candidate)
                         return post_candidate
+                if self._is_brand_monthly_sales_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._brand_monthly_sales_sql_template(
+                            question
+                        )
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
                 if self._is_brand_profit_question(question):
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
@@ -1548,6 +1720,9 @@ ORDER BY Dia_Orden
                         self._query_cache.set(question, post_candidate)
                         return post_candidate
                 repaired_generated = self._repair_sika_center_customer_sql(generated)
+                repaired_generated = self._repair_common_sql_hallucinations(
+                    repaired_generated
+                )
                 post_candidate = self._ensure_document_exclusion(repaired_generated)
                 self._query_cache.set(question, post_candidate)
                 return post_candidate
@@ -1572,6 +1747,7 @@ ORDER BY Dia_Orden
             return pd.DataFrame()
 
         sql = self._repair_sika_center_customer_sql(sql)
+        sql = self._repair_common_sql_hallucinations(sql)
         sql = self._ensure_document_exclusion(sql)
 
         def _with_customer_space_normalization(query: str) -> str:
@@ -1718,6 +1894,8 @@ ORDER BY Dia_Orden
             return None
 
         ventas_col = _pick(
+            "ventas_anio_actual",
+            "ventas_anio_anterior",
             "ventas_total",
             "total_vendido",
             "promedio_ventas_diarias",
@@ -1742,6 +1920,7 @@ ORDER BY Dia_Orden
             "promedio_transacciones_diarias",
         )
         label_col = _pick(
+            "periodo",
             "producto",
             "tipo_venta",
             "descripcion",
