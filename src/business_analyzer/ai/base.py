@@ -1497,7 +1497,9 @@ ORDER BY Dia_Orden
             "numero_compras",
             "promedio_transacciones_diarias",
         )
-        label_col = _pick("descripcion", "vendedor", "cliente", "nombre_mes")
+        label_col = _pick(
+            "tipo_venta", "descripcion", "vendedor", "cliente", "nombre_mes"
+        )
         clientes_col = _pick("clientes_unicos", "numero_clientes", "clientes")
         dept_col = _pick("departamento")
         city_col = _pick("ciudad")

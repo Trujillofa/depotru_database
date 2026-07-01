@@ -122,6 +122,24 @@ class TestSmartCharts:
         assert fig.data[0].orientation != "h"
         assert "Junio 2026" in list(fig.data[0].x)
 
+    def test_credito_vs_contado_single_metric_bar(self):
+        df = pd.DataFrame(
+            {
+                "Tipo_Venta": ["Credito", "Contado"],
+                "Numero_Ventas": [65317, 129266],
+                "Ventas_Total": [26_972_371_085.04, 24_318_696_028.85],
+                "Promedio_Dias_Credito": [28.262335, 0.0],
+                "Ganancia": [3_085_086_290.82, 2_917_145_121.65],
+            }
+        )
+        fig = build_smart_figure(
+            df, question="Ventas a crédito vs contado", dark_mode=False
+        )
+        assert fig is not None
+        assert len(fig.data) == 1
+        assert fig.data[0].type == "bar"
+        assert list(fig.data[0].x) == ["Credito", "Contado"]
+
     def test_last_30_days_chart_uses_ventas_diarias(self):
         df = pd.DataFrame(
             {

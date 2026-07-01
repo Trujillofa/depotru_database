@@ -127,6 +127,8 @@ LABEL_PRIORITY = (
     "articulonombre",
     "ArticulosNombre",
     "articulosnombre",
+    "Tipo_Venta",
+    "tipo_venta",
     "Cliente",
     "cliente",
     "Vendedor",
@@ -182,6 +184,9 @@ def _is_percentage_column(df: pd.DataFrame, col: str) -> bool:
     col_lower = col.lower()
     if any(kw in col_lower for kw in PERCENTAGE_KEYWORDS):
         return True
+    # Credit-term averages (e.g. Promedio_Dias_Credito) are days, not percentages.
+    if "dias" in col_lower or "días" in col_lower or "days" in col_lower:
+        return False
     if col_lower in ("mes", "month", "año", "ano", "year", "dia", "day"):
         return False
     if (
@@ -252,6 +257,13 @@ def _is_ranking_or_topn_question(question: Optional[str]) -> bool:
         return False
     q = question.lower()
     return any(kw in q for kw in RANKING_QUESTION_KEYWORDS)
+
+
+def _is_comparison_question(question: Optional[str]) -> bool:
+    if not question:
+        return False
+    q = question.lower()
+    return " vs " in q or " versus " in q or " frente a " in q
 
 
 def _select_primary_metric(
@@ -474,7 +486,12 @@ def _resolve_chart_plan(
     time_series = _is_time_series(df, label_col)
     mixed = _has_mixed_scales(df, all_numeric)
     ranking = _is_ranking_or_topn_question(question)
+    comparison = _is_comparison_question(question)
     horizontal = _prefers_horizontal(df, label_col, question)
+
+    if comparison and currency_cols:
+        primary = _select_primary_metric(df, currency_cols, question) or currency_cols[0]
+        return ChartPlan(ChartStrategy.VERTICAL_SINGLE, label_col, primary)
 
     if time_series:
         value_cols = _value_columns(df)
