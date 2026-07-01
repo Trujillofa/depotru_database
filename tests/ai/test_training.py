@@ -197,14 +197,18 @@ class TestTrainingExamples:
         base_code = source.read_text(encoding="utf-8")
 
         assert "def _is_sika_center_branch_question" in base_code
-        assert 'return "sika center" in lower' in base_code
+        assert "def _branch_document_code" in base_code
+        assert '"sika center" in lower' in base_code
+        assert "def _branch_store_sql_template" in base_code
         assert "def _sika_center_branch_sql_template" in base_code
         assert "def _repair_sika_center_customer_sql" in base_code
         assert "sql = self._repair_sika_center_customer_sql(sql)" in base_code
-        template_code = base_code.split("def _sika_center_branch_sql_template", 1)[1]
-        template_code = template_code.split("def _weekday_sales_sql_template", 1)[0]
+        template_code = base_code.split("def _branch_store_sql_template", 1)[1]
+        template_code = template_code.split("def _sika_center_branch_sql_template", 1)[
+            0
+        ]
 
-        assert "DocumentosCodigo = 'FEF'" in template_code
+        assert "DocumentosCodigo = '{doc_code}'" in template_code
         assert "YEAR(Fecha) = YEAR(GETDATE())" in template_code
         assert "MONTH(Fecha) = {month_number}" in template_code
         assert "TercerosNombres" not in template_code
@@ -220,7 +224,7 @@ class TestTrainingExamples:
 
         assert '"tercerosnombres" in lower' in repair_code
         assert '"sika" in lower' in repair_code
-        assert "return AIVanna._sika_center_branch_sql_template(sql)" in repair_code
+        assert "return AIVanna._branch_store_sql_template(sql)" in repair_code
 
 
 class TestGenerateTrainingData:

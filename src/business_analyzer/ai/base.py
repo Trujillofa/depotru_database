@@ -455,7 +455,33 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         return ordered
 
     @staticmethod
+    def _branch_document_code(question: str) -> str | None:
+        lower = (question or "").lower()
+        if "sika center" in lower:
+            return "FEF"
+        if "calle 5" in lower or "distribuciones" in lower:
+            return "FET"
+        if "almacén" in lower or "almacen" in lower:
+            return "FED"
+        return None
+
+    @staticmethod
+    def _is_branch_store_sales_question(question: str) -> bool:
+        lower = (question or "").lower()
+        if AIVanna._branch_document_code(question):
+            has_sales = any(
+                token in lower
+                for token in ("venta", "ventas", "factur", "ingreso", "sede")
+            )
+            return has_sales
+        return "sede" in lower and any(
+            token in lower for token in ("venta", "ventas", "factur")
+        )
+
+    @staticmethod
     def _is_multi_vendor_sales_question(question: str) -> bool:
+        if AIVanna._is_branch_store_sales_question(question):
+            return False
         lower = (question or "").lower()
         has_sales = any(
             token in lower
@@ -746,8 +772,7 @@ ORDER BY Facturacion_Total DESC
             )
 
         if any(
-            phrase in lower
-            for phrase in ("este mes", "este período", "este periodo")
+            phrase in lower for phrase in ("este mes", "este período", "este periodo")
         ):
             return (
                 "\n  AND YEAR(Fecha) = YEAR(GETDATE())"
@@ -831,13 +856,9 @@ ORDER BY Ventas_Total DESC
     def _is_daily_average_by_month_question(question: str) -> bool:
         lower = (question or "").lower()
         has_daily = "diari" in lower
-        has_average = any(
-            token in lower for token in ("promedio", "media", "average")
-        )
+        has_average = any(token in lower for token in ("promedio", "media", "average"))
         has_month = "mes" in lower or "mensual" in lower
-        has_sales = any(
-            token in lower for token in ("venta", "ventas", "factur")
-        )
+        has_sales = any(token in lower for token in ("venta", "ventas", "factur"))
         return has_daily and has_average and has_month and has_sales
 
     @staticmethod
@@ -901,8 +922,41 @@ ORDER BY Ganancia DESC
 
     @staticmethod
     def _is_sika_center_branch_question(question: str) -> bool:
+        return AIVanna._is_branch_store_sales_question(question)
+
+    @staticmethod
+    def _is_last_n_days_sales_question(question: str) -> bool:
         lower = (question or "").lower()
-        return "sika center" in lower
+        has_sales = any(token in lower for token in ("venta", "ventas", "factur"))
+        has_window = any(
+            token in lower
+            for token in ("últimos", "ultimos", "último", "ultimo", "last")
+        )
+        has_days = bool(re.search(r"\d+\s*d[ií]as", lower))
+        return has_sales and has_window and has_days
+
+    @staticmethod
+    def _extract_days_window(question: str, default: int = 30) -> int:
+        lower = (question or "").lower()
+        match = re.search(r"(\d+)\s*d[ií]as", lower)
+        if match:
+            return max(1, min(int(match.group(1)), 365))
+        return default
+
+    @staticmethod
+    def _last_n_days_sales_sql_template(question: str = "") -> str:
+        days = AIVanna._extract_days_window(question)
+        return f"""
+SELECT
+    Fecha,
+    SUM(TotalMasIva) AS Ventas_Diarias,
+    COUNT(*) AS Numero_Transacciones
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+  AND Fecha >= DATEADD(DAY, -{days}, GETDATE())
+GROUP BY Fecha
+ORDER BY Fecha DESC
+        """.strip()
 
     @staticmethod
     def _month_number_from_question(question: str) -> int:
@@ -934,11 +988,28 @@ ORDER BY Ganancia DESC
         return 0
 
     @staticmethod
-    def _sika_center_branch_sql_template(question: str = "") -> str:
+    def _branch_store_sql_template(question: str = "") -> str:
+        doc_code = AIVanna._branch_document_code(question) or "FEF"
+        lower = (question or "").lower()
+        year_filter = ""
+        year_match = re.search(r"\b(20\d{2})\b", lower)
+        if year_match:
+            year_filter = f"\n  AND YEAR(Fecha) = {year_match.group(1)}"
+        elif any(
+            phrase in lower
+            for phrase in ("este año", "este ano", "año actual", "ano actual")
+        ):
+            year_filter = "\n  AND YEAR(Fecha) = YEAR(GETDATE())"
+        elif "por mes" not in lower and "mensual" not in lower:
+            year_filter = "\n  AND YEAR(Fecha) = YEAR(GETDATE())"
+
         month_number = AIVanna._month_number_from_question(question)
         month_filter = f"\n  AND MONTH(Fecha) = {month_number}" if month_number else ""
+        order_clause = (
+            "Año DESC, Mes DESC" if "por mes" in lower or "mensual" in lower else "Mes"
+        )
 
-        return """
+        return f"""
 SELECT
     YEAR(Fecha) AS Año,
     MONTH(Fecha) AS Mes,
@@ -947,13 +1018,14 @@ SELECT
     SUM(TotalSinIva - ValorCosto) AS Ganancia,
     COUNT(*) AS Numero_Transacciones
 FROM banco_datos
-WHERE DocumentosCodigo = 'FEF'
-  AND YEAR(Fecha) = YEAR(GETDATE()){month_filter}
+WHERE DocumentosCodigo = '{doc_code}'{year_filter}{month_filter}
 GROUP BY YEAR(Fecha), MONTH(Fecha), DATENAME(MONTH, Fecha)
-ORDER BY Mes
-        """.strip().format(
-            month_filter=month_filter
-        )
+ORDER BY {order_clause}
+        """.strip()
+
+    @staticmethod
+    def _sika_center_branch_sql_template(question: str = "") -> str:
+        return AIVanna._branch_store_sql_template(question)
 
     @staticmethod
     def _repair_sika_center_customer_sql(sql: str) -> str:
@@ -969,7 +1041,7 @@ ORDER BY Mes
         if not references_sika_customer:
             return sql
 
-        return AIVanna._sika_center_branch_sql_template(sql)
+        return AIVanna._branch_store_sql_template(sql)
 
     @staticmethod
     def _weekday_sales_sql_template() -> str:
@@ -1039,7 +1111,8 @@ ORDER BY Dia_Orden
                     needs_upgrade = (
                         "ventatotal" in cached_lower
                         or "sum(total)" in cached_lower
-                        or "documentoscodigo in ('fed', 'fef', 'fet')" not in cached_lower
+                        or "documentoscodigo in ('fed', 'fef', 'fet')"
+                        not in cached_lower
                     )
                     if needs_upgrade:
                         template = self._document_type_sales_sql_template(question)
@@ -1064,13 +1137,38 @@ ORDER BY Dia_Orden
                         "group by vendedorfactura, vendedor_codigo" in cached_lower
                         or (
                             "este mes" in (question or "").lower()
-                            and "month(fecha) = month(getdate())"
-                            not in cached_lower
+                            and "month(fecha) = month(getdate())" not in cached_lower
                             and "dateadd(month, -1" in cached_lower
                         )
                     )
                     if needs_upgrade:
                         template = self._vendedor_performance_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
+                if self._is_branch_store_sales_question(question):
+                    cached_lower = cached.lower()
+                    doc_code = (self._branch_document_code(question) or "fef").lower()
+                    needs_upgrade = (
+                        "marca_proveedor" in cached_lower
+                        or "productos_adicional" in cached_lower
+                        or f"documentoscodigo = '{doc_code}'" not in cached_lower
+                    )
+                    if needs_upgrade:
+                        template = self._branch_store_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
+                if self._is_last_n_days_sales_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "ventatotal" in cached_lower
+                        or "sum(total)" in cached_lower
+                        or "tabla" in cached_lower
+                        or "sum(totalmasiva)" not in cached_lower
+                    )
+                    if needs_upgrade:
+                        template = self._last_n_days_sales_sql_template(question)
                         if template:
                             self._query_cache.set(question, template)
                             return template
@@ -1111,6 +1209,16 @@ ORDER BY Dia_Orden
                     return template
             if self._is_vendedor_performance_question(question):
                 template = self._vendedor_performance_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
+            if self._is_branch_store_sales_question(question):
+                template = self._branch_store_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
+            if self._is_last_n_days_sales_question(question):
+                template = self._last_n_days_sales_sql_template(question)
                 if template:
                     self._query_cache.set(question, template)
                     return template
@@ -1165,6 +1273,18 @@ ORDER BY Dia_Orden
                         )
                         self._query_cache.set(question, post_candidate)
                         return post_candidate
+                if self._is_branch_store_sales_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._branch_store_sql_template(question)
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
+                if self._is_last_n_days_sales_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._last_n_days_sales_sql_template(question)
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
                 if self._is_top_customers_question(question):
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
@@ -1181,12 +1301,6 @@ ORDER BY Dia_Orden
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
                         post_candidate = self._weekday_sales_sql_template()
-                        self._query_cache.set(question, post_candidate)
-                        return post_candidate
-                if self._is_sika_center_branch_question(question):
-                    generated_lower = generated.lower()
-                    if "from banco_datos" in generated_lower:
-                        post_candidate = self._sika_center_branch_sql_template(question)
                         self._query_cache.set(question, post_candidate)
                         return post_candidate
                 repaired_generated = self._repair_sika_center_customer_sql(generated)
@@ -1427,14 +1541,8 @@ ORDER BY Dia_Orden
                 )
             if count_col:
                 count_lower = str(count_col).lower()
-                unit = (
-                    "documentos"
-                    if "documento" in count_lower
-                    else "transacciones"
-                )
-                metrics.append(
-                    f"{format_number(row[count_col], count_col)} {unit}"
-                )
+                unit = "documentos" if "documento" in count_lower else "transacciones"
+                metrics.append(f"{format_number(row[count_col], count_col)} {unit}")
             if clientes_col:
                 metrics.append(
                     f"clientes {format_number(row[clientes_col], clientes_col)}"

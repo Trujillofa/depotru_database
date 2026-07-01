@@ -122,6 +122,21 @@ class TestSmartCharts:
         assert fig.data[0].orientation != "h"
         assert "Junio 2026" in list(fig.data[0].x)
 
+    def test_last_30_days_chart_uses_ventas_diarias(self):
+        df = pd.DataFrame(
+            {
+                "Fecha": pd.to_datetime(["2026-06-28", "2026-06-29", "2026-06-30"]),
+                "Ventas_Diarias": [5_000_000, 4_200_000, 6_100_000],
+                "Numero_Transacciones": [25, 22, 31],
+            }
+        )
+        fig = build_smart_figure(
+            df, question="Ventas de los últimos 30 días", dark_mode=False
+        )
+        assert fig is not None
+        assert fig.data[0].type == "bar"
+        assert fig.data[0].y is not None
+
     def test_build_plotly_code_returns_bar_for_time_series(self):
         df = pd.DataFrame(
             {

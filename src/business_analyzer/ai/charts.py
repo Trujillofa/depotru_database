@@ -103,6 +103,8 @@ LABEL_PRIORITY = (
     "descripcion",
     "Periodo",
     "periodo",
+    "Fecha",
+    "fecha",
     "Nombre_Mes",
     "nombre_mes",
     "Mes",
@@ -269,9 +271,17 @@ def _select_primary_metric(
             for col in currency_cols:
                 if "promedio_ventas_diarias" in col.lower():
                     return col
+        if "últimos" in q or "ultimos" in q:
+            for col in currency_cols:
+                if "ventas_diarias" in col.lower():
+                    return col
         if "vendedor" in q or "desempeño" in q or "desempeno" in q:
             for col in currency_cols:
                 if "total_vendido" in col.lower():
+                    return col
+        if "sika center" in q or "calle 5" in q or "sede" in q:
+            for col in currency_cols:
+                if "ventas_totales" in col.lower():
                     return col
         for col in currency_cols:
             col_lower = col.lower()
@@ -314,7 +324,9 @@ def _geo_columns(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str]]:
     return dept, city
 
 
-def _year_month_columns(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+def _year_month_columns(
+    df: pd.DataFrame,
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     año = next(
         (c for c in df.columns if str(c).lower() in ("año", "ano", "anio")),
         None,
@@ -366,6 +378,8 @@ def _label_column(df: pd.DataFrame) -> Optional[str]:
 
 
 def _is_time_series(df: pd.DataFrame, label_col: Optional[str]) -> bool:
+    if label_col and str(label_col).lower() == "fecha":
+        return True
     if label_col and label_col in (
         YEAR_MONTH_LABEL,
         "Periodo",
@@ -385,6 +399,8 @@ def _is_time_series(df: pd.DataFrame, label_col: Optional[str]) -> bool:
 
 
 def _sort_by_month(df: pd.DataFrame, label_col: str) -> pd.DataFrame:
+    if str(label_col).lower() == "fecha" and label_col in df.columns:
+        return df.sort_values(label_col)
     año, mes, _ = _year_month_columns(df)
     if año and mes:
         return df.sort_values([año, mes])

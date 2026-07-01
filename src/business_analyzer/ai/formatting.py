@@ -48,6 +48,7 @@ CURRENCY_COLUMNS = [
     "Ganancia_Total",
     "Total_Vendido",
     "Ventas_Total",
+    "Ventas_Diarias",
     "Promedio_Ventas_Diarias",
     "Promedio_Por_Documento",
     "total_revenue",
