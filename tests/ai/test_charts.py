@@ -120,7 +120,7 @@ class TestSmartCharts:
         assert fig is not None
         assert fig.data[0].type == "bar"
         assert fig.data[0].orientation != "h"
-        assert "Junio" in list(fig.data[0].x)
+        assert "Junio 2026" in list(fig.data[0].x)
 
     def test_build_plotly_code_returns_bar_for_time_series(self):
         df = pd.DataFrame(
@@ -186,6 +186,51 @@ class TestSmartCharts:
         assert fig.data[0].orientation == "h"
         assert max(fig.data[0].x) > 500_000_000
         assert fig.layout.xaxis.showticklabels is False
+
+    def test_document_type_chart_uses_ventas_total(self):
+        df = pd.DataFrame(
+            {
+                "Descripcion": [
+                    "Factura Almacén",
+                    "Factura Calle 5",
+                    "Factura Florencia (Sika Center)",
+                ],
+                "Numero_Documentos": [168770, 20515, 1546],
+                "Ventas_Total": [47_199_625_900, 4_859_592_471, 266_908_988],
+                "Ganancia_Total": [5_000_000_000, 500_000_000, 50_000_000],
+            }
+        )
+        fig = build_smart_figure(
+            df,
+            question="Comparación de ventas por tipo de documento",
+            dark_mode=False,
+        )
+        assert fig is not None
+        assert fig.data[0].orientation == "h"
+        assert max(fig.data[0].x) > 40_000_000_000
+
+    def test_daily_average_chart_uses_year_month_period_label(self):
+        df = pd.DataFrame(
+            {
+                "Año": [2026, 2026, 2025],
+                "Mes": [6, 5, 12],
+                "Nombre_Mes": ["June", "May", "December"],
+                "Promedio_Ventas_Diarias": [
+                    338_678_637,
+                    328_806_929,
+                    368_241_396,
+                ],
+                "Promedio_Transacciones_Diarias": [1376, 1259, 1354],
+            }
+        )
+        fig = build_smart_figure(
+            df,
+            question="Promedio de ventas diarias por mes",
+            dark_mode=False,
+        )
+        assert fig is not None
+        labels = list(fig.data[0].x)
+        assert any("202" in str(label) for label in labels)
 
     def test_client_ranking_hides_confusing_x_axis_ticks(self):
         df = pd.DataFrame(

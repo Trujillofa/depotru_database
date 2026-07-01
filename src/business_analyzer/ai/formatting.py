@@ -47,6 +47,9 @@ CURRENCY_COLUMNS = [
     "Ganancia_Generada",
     "Ganancia_Total",
     "Total_Vendido",
+    "Ventas_Total",
+    "Promedio_Ventas_Diarias",
+    "Promedio_Por_Documento",
     "total_revenue",
     "Ticket_Promedio",
     "Revenue_Neto",
@@ -62,6 +65,8 @@ INTEGER_COLUMNS = [
     "Numero_Ventas",
     "Numero_Compras",
     "Ventas_Este_Mes",
+    "Numero_Documentos",
+    "Promedio_Transacciones_Diarias",
     "Clientes_Unicos",
     "order_count",
 ]

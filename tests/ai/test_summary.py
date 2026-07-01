@@ -56,3 +56,19 @@ class TestDeterministicSummary:
         assert "$68.670.870" in text
         assert "1.164 transacciones" in text
         assert "60,271" not in text
+
+    def test_document_type_summary_uses_descripcion(self):
+        df = pd.DataFrame(
+            {
+                "Descripcion": ["Factura Almacén"],
+                "Numero_Documentos": [168770],
+                "Ventas_Total": [47_199_625_900.40],
+                "Ganancia_Total": [5_500_000_000.12],
+            }
+        )
+        text = AIVanna._deterministic_summary(
+            "Comparación de ventas por tipo de documento", df
+        )
+        assert "Factura Almacén" in text
+        assert "$47.199.625.900" in text
+        assert "168.770 documentos" in text

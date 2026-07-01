@@ -151,6 +151,79 @@ class TestVendedorPerformanceTemplate:
         cache.set.assert_called_with(self.QUESTION, result)
 
 
+class TestDocumentTypeSalesTemplate:
+    QUESTION = "Comparación de ventas por tipo de documento"
+
+    def test_detects_document_type_question(self):
+        assert AIVanna._is_document_type_sales_question(self.QUESTION)
+
+    def test_template_uses_totalmasiva_and_sales_documents_only(self):
+        sql = AIVanna._document_type_sales_sql_template(self.QUESTION)
+        lower = sql.lower()
+        assert "totalmasiva" in lower
+        assert "documentoscodigo in ('fed', 'fef', 'fet')" in lower
+        assert "ventatotal" not in lower
+        assert "ganancia_total" in lower
+        assert "descripcion" in lower
+
+    def test_generate_sql_upgrades_stale_document_cache(self):
+        stale_sql = """
+            SELECT DocumentosCodigo, SUM(VentaTotal) AS Ventas_Total
+            FROM banco_datos
+            WHERE DocumentosCodigo NOT IN ('Y', 'AS')
+            GROUP BY DocumentosCodigo
+        """
+        cache = MagicMock()
+        cache.get.return_value = stale_sql
+
+        vn = object.__new__(AIVanna)
+        vn._query_cache = cache
+
+        with patch.object(
+            AIVanna, "_is_document_type_sales_question", return_value=True
+        ):
+            result = AIVanna.generate_sql(vn, self.QUESTION)
+
+        assert "totalmasiva" in result.lower()
+        assert "documentoscodigo in ('fed', 'fef', 'fet')" in result.lower()
+        cache.set.assert_called_with(self.QUESTION, result)
+
+
+class TestDailyAverageByMonthTemplate:
+    QUESTION = "Promedio de ventas diarias por mes"
+
+    def test_detects_daily_average_question(self):
+        assert AIVanna._is_daily_average_by_month_question(self.QUESTION)
+
+    def test_template_uses_totalmasiva_and_daily_subquery(self):
+        sql = AIVanna._daily_average_by_month_sql_template()
+        lower = sql.lower()
+        assert "sum(totalmasiva)" in lower
+        assert "group by fecha" in lower
+        assert "promedio_ventas_diarias" in lower
+
+    def test_generate_sql_upgrades_stale_daily_average_cache(self):
+        stale_sql = """
+            SELECT AVG(Ventas_Diarias) FROM (
+                SELECT Fecha, SUM(Total) AS Ventas_Diarias
+                FROM banco_datos GROUP BY Fecha
+            ) x
+        """
+        cache = MagicMock()
+        cache.get.return_value = stale_sql
+
+        vn = object.__new__(AIVanna)
+        vn._query_cache = cache
+
+        with patch.object(
+            AIVanna, "_is_daily_average_by_month_question", return_value=True
+        ):
+            result = AIVanna.generate_sql(vn, self.QUESTION)
+
+        assert "sum(totalmasiva)" in result.lower()
+        cache.set.assert_called_with(self.QUESTION, result)
+
+
 class TestRunSqlRetry:
     def test_retries_on_transient_connection_error(self, monkeypatch):
         calls = {"count": 0}

@@ -83,6 +83,7 @@ RANKING_LABEL_COLUMNS = frozenset(
     {
         "cliente",
         "vendedor",
+        "descripcion",
         "proveedor",
         "producto",
         "marca",
@@ -95,8 +96,13 @@ RANKING_LABEL_COLUMNS = frozenset(
 )
 
 GEO_LABEL = "Ubicacion"
+YEAR_MONTH_LABEL = "Periodo"
 
 LABEL_PRIORITY = (
+    "Descripcion",
+    "descripcion",
+    "Periodo",
+    "periodo",
     "Nombre_Mes",
     "nombre_mes",
     "Mes",
@@ -255,6 +261,14 @@ def _select_primary_metric(
         return None
     if question:
         q = question.lower()
+        if "documento" in q or "tipo de documento" in q:
+            for col in currency_cols:
+                if "ventas_total" in col.lower():
+                    return col
+        if "diari" in q and "promedio" in q:
+            for col in currency_cols:
+                if "promedio_ventas_diarias" in col.lower():
+                    return col
         if "vendedor" in q or "desempeño" in q or "desempeno" in q:
             for col in currency_cols:
                 if "total_vendido" in col.lower():
@@ -300,6 +314,31 @@ def _geo_columns(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str]]:
     return dept, city
 
 
+def _year_month_columns(df: pd.DataFrame) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    año = next(
+        (c for c in df.columns if str(c).lower() in ("año", "ano", "anio")),
+        None,
+    )
+    mes = next((c for c in df.columns if str(c).lower() == "mes"), None)
+    mes_name = next(
+        (c for c in df.columns if str(c).lower() == "nombre_mes"),
+        None,
+    )
+    return año, mes, mes_name
+
+
+def _with_year_month_label(df: pd.DataFrame) -> pd.DataFrame:
+    """Combine año + mes so multi-year monthly charts do not collapse."""
+    año, mes, mes_name = _year_month_columns(df)
+    if not año or not mes_name:
+        return df
+    out = df.copy()
+    out[YEAR_MONTH_LABEL] = (
+        out[mes_name].astype(str).str.strip() + " " + out[año].astype(str)
+    )
+    return out
+
+
 def _with_geo_label(df: pd.DataFrame) -> pd.DataFrame:
     """Combine departamento + ciudad so charts do not collapse duplicate departments."""
     dept, city = _geo_columns(df)
@@ -327,7 +366,16 @@ def _label_column(df: pd.DataFrame) -> Optional[str]:
 
 
 def _is_time_series(df: pd.DataFrame, label_col: Optional[str]) -> bool:
-    if label_col and label_col in ("Nombre_Mes", "nombre_mes"):
+    if label_col and label_col in (
+        YEAR_MONTH_LABEL,
+        "Periodo",
+        "periodo",
+        "Nombre_Mes",
+        "nombre_mes",
+    ):
+        return True
+    año, mes, _ = _year_month_columns(df)
+    if año and mes:
         return True
     if "Mes" in df.columns and label_col in ("Nombre_Mes", "nombre_mes", "Mes", "mes"):
         return True
@@ -337,6 +385,9 @@ def _is_time_series(df: pd.DataFrame, label_col: Optional[str]) -> bool:
 
 
 def _sort_by_month(df: pd.DataFrame, label_col: str) -> pd.DataFrame:
+    año, mes, _ = _year_month_columns(df)
+    if año and mes:
+        return df.sort_values([año, mes])
     if "Mes" in df.columns:
         return df.sort_values("Mes")
     if label_col in df.columns and set(df[label_col].dropna().unique()).issubset(
@@ -537,7 +588,13 @@ def _build_from_plan(
         hide_ticks = bool(
             plan.label_col
             and plan.label_col.lower()
-            in ("cliente", "tercerosnombres", "vendedor", "vendedorfactura")
+            in (
+                "cliente",
+                "tercerosnombres",
+                "vendedor",
+                "vendedorfactura",
+                "descripcion",
+            )
         )
         fig = _apply_colombian_value_axis(fig, horizontal=True, hide_ticks=hide_ticks)
         return _apply_layout(fig, dark_mode, horizontal=True)
@@ -646,7 +703,7 @@ def build_smart_figure(
     dark_mode: bool = False,
 ) -> Optional[go.Figure]:
     """Build a sensible chart from query results. Returns None if not chartable."""
-    df = _with_geo_label(df)
+    df = _with_year_month_label(_with_geo_label(df))
     plan = _resolve_chart_plan(df, question)
     if plan is None:
         return None
@@ -657,7 +714,7 @@ def build_plotly_code(
     df: pd.DataFrame, question: Optional[str] = None
 ) -> Optional[str]:
     """Return executable plotly code matching build_smart_figure heuristics."""
-    df = _with_geo_label(df)
+    df = _with_year_month_label(_with_geo_label(df))
     plan = _resolve_chart_plan(df, question)
     if plan is None:
         return None

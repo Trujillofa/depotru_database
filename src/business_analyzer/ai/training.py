@@ -1291,16 +1291,17 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             SELECT
                 DocumentosCodigo AS Tipo_Documento,
                 CASE
-                    WHEN DocumentosCodigo = 'FED' THEN 'Factura Almacen'
-                    WHEN DocumentosCodigo = 'FEF' THEN 'Factura Florencia'
+                    WHEN DocumentosCodigo = 'FED' THEN 'Factura Almacén'
+                    WHEN DocumentosCodigo = 'FEF' THEN 'Factura Florencia (Sika Center)'
                     WHEN DocumentosCodigo = 'FET' THEN 'Factura Calle 5'
                     ELSE DocumentosCodigo
                 END AS Descripcion,
                 COUNT(*) AS Numero_Documentos,
                 SUM(TotalMasIva) AS Ventas_Total,
+                SUM(TotalSinIva - ValorCosto) AS Ganancia_Total,
                 AVG(TotalMasIva) AS Promedio_Por_Documento
             FROM banco_datos
-            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+            WHERE DocumentosCodigo IN ('FED', 'FEF', 'FET')
             AND YEAR(Fecha) = YEAR(GETDATE())
             GROUP BY DocumentosCodigo
             ORDER BY Ventas_Total DESC

@@ -776,6 +776,93 @@ ORDER BY Total_Vendido DESC
         """.strip()
 
     @staticmethod
+    def _document_type_description_sql() -> str:
+        return """
+        CASE
+            WHEN DocumentosCodigo = 'FED' THEN 'Factura Almacén'
+            WHEN DocumentosCodigo = 'FEF' THEN 'Factura Florencia (Sika Center)'
+            WHEN DocumentosCodigo = 'FET' THEN 'Factura Calle 5'
+            WHEN DocumentosCodigo = 'DVD' THEN 'Devolución DVD'
+            WHEN DocumentosCodigo = 'DVE' THEN 'Devolución DVE'
+            WHEN DocumentosCodigo = 'DVF' THEN 'Devolución DVF'
+            ELSE DocumentosCodigo
+        END""".strip()
+
+    @staticmethod
+    def _is_document_type_sales_question(question: str) -> bool:
+        lower = (question or "").lower()
+        has_document = any(
+            token in lower
+            for token in (
+                "tipo de documento",
+                "tipos de documento",
+                "documentos codigo",
+                "documentoscodigo",
+                "por documento",
+            )
+        )
+        has_sales = any(
+            token in lower
+            for token in ("venta", "ventas", "factur", "comparación", "comparacion")
+        )
+        return has_document and has_sales
+
+    @staticmethod
+    def _document_type_sales_sql_template(question: str = "") -> str:
+        year_filter = AIVanna._year_filter_from_question(question)
+        if not year_filter and "este año" not in (question or "").lower():
+            year_filter = "\n  AND YEAR(Fecha) = YEAR(GETDATE())"
+        descripcion = AIVanna._document_type_description_sql()
+        return f"""
+SELECT
+    DocumentosCodigo AS Tipo_Documento,
+    {descripcion} AS Descripcion,
+    COUNT(*) AS Numero_Documentos,
+    SUM(TotalMasIva) AS Ventas_Total,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia_Total,
+    AVG(TotalMasIva) AS Promedio_Por_Documento
+FROM banco_datos
+WHERE DocumentosCodigo IN ('FED', 'FEF', 'FET'){year_filter}
+GROUP BY DocumentosCodigo
+ORDER BY Ventas_Total DESC
+        """.strip()
+
+    @staticmethod
+    def _is_daily_average_by_month_question(question: str) -> bool:
+        lower = (question or "").lower()
+        has_daily = "diari" in lower
+        has_average = any(
+            token in lower for token in ("promedio", "media", "average")
+        )
+        has_month = "mes" in lower or "mensual" in lower
+        has_sales = any(
+            token in lower for token in ("venta", "ventas", "factur")
+        )
+        return has_daily and has_average and has_month and has_sales
+
+    @staticmethod
+    def _daily_average_by_month_sql_template() -> str:
+        return """
+SELECT
+    YEAR(Fecha) AS Año,
+    MONTH(Fecha) AS Mes,
+    DATENAME(MONTH, Fecha) AS Nombre_Mes,
+    AVG(Ventas_Diarias) AS Promedio_Ventas_Diarias,
+    AVG(Num_Transacciones) AS Promedio_Transacciones_Diarias
+FROM (
+    SELECT
+        Fecha,
+        SUM(TotalMasIva) AS Ventas_Diarias,
+        COUNT(*) AS Num_Transacciones
+    FROM banco_datos
+    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+    GROUP BY Fecha
+) AS Ventas_Diarias
+GROUP BY YEAR(Fecha), MONTH(Fecha), DATENAME(MONTH, Fecha)
+ORDER BY Año DESC, Mes DESC
+        """.strip()
+
+    @staticmethod
     def _brand_profit_sql_template() -> str:
         return """
 SELECT TOP 10
@@ -947,6 +1034,30 @@ ORDER BY Dia_Orden
         try:
             cached = self._query_cache.get(question)
             if cached:
+                if self._is_document_type_sales_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "ventatotal" in cached_lower
+                        or "sum(total)" in cached_lower
+                        or "documentoscodigo in ('fed', 'fef', 'fet')" not in cached_lower
+                    )
+                    if needs_upgrade:
+                        template = self._document_type_sales_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
+                if self._is_daily_average_by_month_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "ventatotal" in cached_lower
+                        or "sum(total)" in cached_lower
+                        or "sum(totalmasiva)" not in cached_lower
+                    )
+                    if needs_upgrade:
+                        template = self._daily_average_by_month_sql_template()
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
                 if self._is_vendedor_performance_question(question):
                     cached_lower = cached.lower()
                     needs_upgrade = (
@@ -988,6 +1099,16 @@ ORDER BY Dia_Orden
                             return template
                 return cached
 
+            if self._is_document_type_sales_question(question):
+                template = self._document_type_sales_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
+            if self._is_daily_average_by_month_question(question):
+                template = self._daily_average_by_month_sql_template()
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
             if self._is_vendedor_performance_question(question):
                 template = self._vendedor_performance_sql_template(question)
                 if template:
@@ -1022,6 +1143,20 @@ ORDER BY Dia_Orden
                     )
                     return None
 
+                if self._is_document_type_sales_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._document_type_sales_sql_template(
+                            question
+                        )
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
+                if self._is_daily_average_by_month_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._daily_average_by_month_sql_template()
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
                 if self._is_vendedor_performance_question(question):
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
@@ -1225,7 +1360,9 @@ ORDER BY Dia_Orden
             return None
 
         ventas_col = _pick(
+            "ventas_total",
             "total_vendido",
+            "promedio_ventas_diarias",
             "ventas_totales",
             "facturacion_total",
             "facturacion",
@@ -1235,25 +1372,29 @@ ORDER BY Dia_Orden
         ganancia_col = _pick(
             "ganancia_generada",
             "ganancia_neta",
-            "ganancia",
             "ganancia_total",
+            "ganancia",
         )
         count_col = _pick(
+            "numero_documentos",
             "ventas_este_mes",
             "numero_ventas",
             "numero_transacciones",
             "numero_compras",
+            "promedio_transacciones_diarias",
         )
+        label_col = _pick("descripcion", "vendedor", "cliente", "nombre_mes")
         clientes_col = _pick("clientes_unicos", "numero_clientes", "clientes")
         dept_col = _pick("departamento")
         city_col = _pick("ciudad")
-        product_col = _pick(
+        product_col = label_col or _pick(
             "vendedor",
             "producto",
             "articulosnombre",
             "articulonombre",
             "cliente",
             "tercerosnombres",
+            "tipo_documento",
         )
 
         if not ventas_col and not ganancia_col:
@@ -1285,8 +1426,14 @@ ORDER BY Dia_Orden
                     f"ganancia {format_number(row[ganancia_col], ganancia_col)}"
                 )
             if count_col:
+                count_lower = str(count_col).lower()
+                unit = (
+                    "documentos"
+                    if "documento" in count_lower
+                    else "transacciones"
+                )
                 metrics.append(
-                    f"{format_number(row[count_col], count_col)} transacciones"
+                    f"{format_number(row[count_col], count_col)} {unit}"
                 )
             if clientes_col:
                 metrics.append(
