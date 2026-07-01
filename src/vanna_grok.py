@@ -17,6 +17,8 @@ Supported AI Providers (set via AI_PROVIDER env var):
 
 import os
 import re
+import socket
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -87,6 +89,49 @@ def clean_sql(sql: str) -> str:
 def train_vanna(vn: AIVanna):
     """Train Vanna on SmartBusiness schema and examples."""
     full_training(vn, schema_name="SmartBusiness")
+
+
+def _port_is_available(host: str, port: int) -> bool:
+    bind_host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((bind_host, port))
+        except OSError:
+            return False
+    return True
+
+
+def _pids_on_port(port: int) -> list[str]:
+    try:
+        output = subprocess.check_output(
+            ["ss", "-tlnp"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return []
+    pids: list[str] = []
+    needle = f":{port}"
+    for line in output.splitlines():
+        if needle not in line or "users:" not in line:
+            continue
+        for token in line.split("pid=")[1:]:
+            pids.append(token.split(",")[0])
+    return pids
+
+
+def _exit_if_port_busy(host: str, port: int) -> None:
+    if _port_is_available(host, port):
+        return
+    pids = _pids_on_port(port)
+    pid_hint = f"kill {' '.join(pids)}" if pids else f"fuser -k {port}/tcp"
+    print(f"\n❌ Puerto {port} ya está en uso — Vanna ya está corriendo.")
+    print(f"   → Abre http://localhost:{port} (no necesitas iniciar otro)")
+    print(f"   → Para reiniciar: {pid_hint}")
+    print(f"   → O usa otro puerto: PORT=8085 uv run python src/vanna_grok.py")
+    print("   → O: scripts/utils/vanna_serve.sh restart\n")
+    sys.exit(1)
 
 
 class EnhancedAIVanna(AIVanna):
@@ -240,6 +285,8 @@ def main():
     print("🚀 VANNA 2.0.1 MULTI-PROVIDER – SMARTBUSINESS BI DASHBOARD")
     print(f"   Proveedor AI: {Config.AI_PROVIDER.upper()}")
     print("=" * 70)
+
+    _exit_if_port_busy(Config.HOST, Config.PORT)
 
     # 1. Instantiate Vanna with selected provider
     vn = EnhancedAIVanna()

@@ -164,6 +164,22 @@ class TestSmartCharts:
         assert any("ONG FUNDACION" in str(label) for label in labels)
         assert max(fig.data[0].x) > 700_000_000
 
+    def test_client_ranking_hides_confusing_x_axis_ticks(self):
+        df = pd.DataFrame(
+            {
+                "Cliente": ["FERRETERIA MAGRETH S A S", "ONG FUNDACION GESTION SOCIAL"],
+                "Facturacion_Total": [12_731_981_609, 7_680_276_777],
+                "Numero_Compras": [15101, 3218],
+            }
+        )
+        fig = build_smart_figure(
+            df,
+            question="Top 10 clientes con mayor facturación",
+            dark_mode=False,
+        )
+        assert fig is not None
+        assert fig.layout.xaxis.showticklabels is False
+
     def test_client_profit_no_grouped_three_trace_chart(self):
         fig = build_smart_figure(
             CLIENT_PROFIT_DF,

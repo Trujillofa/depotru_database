@@ -465,6 +465,28 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         return has_sales and len(brands) >= 1
 
     @staticmethod
+    def _norm_proveedor_sql() -> str:
+        """Collation-safe proveedor from banco_datos + productos_adicional."""
+        return (
+            "UPPER(LTRIM(RTRIM(COALESCE("
+            "bd.proveedor COLLATE DATABASE_DEFAULT, "
+            "pa.proveedor_descripcion COLLATE DATABASE_DEFAULT, "
+            "''"
+            "))))"
+        )
+
+    @staticmethod
+    def _norm_marca_sql() -> str:
+        """Collation-safe marca from banco_datos + productos_adicional."""
+        return (
+            "UPPER(LTRIM(RTRIM(COALESCE("
+            "bd.marca COLLATE DATABASE_DEFAULT, "
+            "pa.producto_marca COLLATE DATABASE_DEFAULT, "
+            "''"
+            "))))"
+        )
+
+    @staticmethod
     def _multi_vendor_sales_sql_template(brands: List[str]) -> str:
         """Aggregate sales by vendor/brand with master-data enrichment."""
         safe_brands = [
@@ -473,9 +495,11 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         if not safe_brands:
             return ""
         in_list = ", ".join(f"'{brand}'" for brand in safe_brands)
+        proveedor_norm = AIVanna._norm_proveedor_sql()
+        marca_norm = AIVanna._norm_marca_sql()
         name_cases = "\n".join(
-            f"            WHEN UPPER(bd.ArticulosNombre) LIKE '%{brand}%' "
-            f"THEN '{brand}'"
+            "            WHEN UPPER(bd.ArticulosNombre COLLATE DATABASE_DEFAULT) "
+            f"LIKE '%{brand}%' THEN '{brand}'"
             for brand in safe_brands
         )
         return f"""
@@ -490,17 +514,17 @@ FROM (
         bd.TotalSinIva,
         bd.ValorCosto,
         CASE
-            WHEN UPPER(LTRIM(RTRIM(COALESCE(bd.proveedor, pa.proveedor_descripcion, ''))))
-                 IN ({in_list})
-                THEN UPPER(LTRIM(RTRIM(COALESCE(bd.proveedor, pa.proveedor_descripcion))))
-            WHEN UPPER(LTRIM(RTRIM(COALESCE(bd.marca, pa.producto_marca, ''))))
-                 IN ({in_list})
-                THEN UPPER(LTRIM(RTRIM(COALESCE(bd.marca, pa.producto_marca))))
+            WHEN {proveedor_norm} IN ({in_list})
+                THEN {proveedor_norm}
+            WHEN {marca_norm} IN ({in_list})
+                THEN {marca_norm}
 {name_cases}
             ELSE NULL
         END AS Marca_Proveedor
     FROM banco_datos bd
-    LEFT JOIN productos_adicional pa ON bd.ArticulosCodigo = pa.producto_codigo
+    LEFT JOIN productos_adicional pa
+        ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
+         = pa.producto_codigo COLLATE DATABASE_DEFAULT
     WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
 ) AS ventas_marca
 WHERE Marca_Proveedor IS NOT NULL
@@ -560,6 +584,83 @@ ORDER BY Ventas_Totales DESC
             )
 
         return AIVanna._insert_before_tail(normalized_sql, f"WHERE {canonical_filter}")
+
+    @staticmethod
+    def _norm_cliente_sql() -> str:
+        """Collapse duplicate spaces in customer names for consistent grouping."""
+        return "REPLACE(REPLACE(LTRIM(RTRIM(TercerosNombres)), '  ', ' '), '  ', ' ')"
+
+    @staticmethod
+    def _is_top_customers_question(question: str) -> bool:
+        lower = (question or "").lower()
+        has_customer = "cliente" in lower
+        has_metric = any(
+            token in lower
+            for token in ("factur", "venta", "ganancia", "rentable", "ingreso")
+        )
+        has_ranking = any(
+            token in lower
+            for token in (
+                "top",
+                "mayor",
+                "mejor",
+                "principales",
+                "ranking",
+                "más",
+                "mas",
+            )
+        )
+        has_top_n = bool(re.search(r"top\s*\d+", lower)) or bool(
+            re.search(r"\d+\s+clientes?", lower)
+        )
+        return has_customer and has_metric and (has_ranking or has_top_n)
+
+    @staticmethod
+    def _extract_top_n(question: str, default: int = 10) -> int:
+        lower = (question or "").lower()
+        for pattern in (r"top\s*(\d+)", r"(\d+)\s+clientes?"):
+            match = re.search(pattern, lower)
+            if match:
+                return max(1, min(int(match.group(1)), 50))
+        return default
+
+    @staticmethod
+    def _year_filter_from_question(question: str) -> str:
+        lower = (question or "").lower()
+        year_match = re.search(r"\b(20\d{2})\b", lower)
+        if year_match:
+            return f"\n  AND YEAR(Fecha) = {year_match.group(1)}"
+        if any(
+            phrase in lower
+            for phrase in (
+                "este año",
+                "este ano",
+                "año actual",
+                "ano actual",
+                "ytd",
+            )
+        ):
+            return "\n  AND YEAR(Fecha) = YEAR(GETDATE())"
+        return ""
+
+    @staticmethod
+    def _top_customers_sql_template(question: str = "") -> str:
+        n = AIVanna._extract_top_n(question)
+        year_filter = AIVanna._year_filter_from_question(question)
+        cliente_norm = AIVanna._norm_cliente_sql()
+        return f"""
+SELECT TOP {n}
+    {cliente_norm} AS Cliente,
+    SUM(TotalMasIva) AS Facturacion_Total,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia_Neta,
+    COUNT(*) AS Numero_Compras,
+    AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0)) AS Margen_Promedio
+FROM banco_datos
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+  AND NULLIF(LTRIM(RTRIM(TercerosNombres)), '') IS NOT NULL{year_filter}
+GROUP BY {cliente_norm}
+ORDER BY Facturacion_Total DESC
+        """.strip()
 
     @staticmethod
     def _brand_profit_sql_template() -> str:
@@ -733,8 +834,24 @@ ORDER BY Dia_Orden
         try:
             cached = self._query_cache.get(question)
             if cached:
+                if self._is_top_customers_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "ganancia_neta" not in cached_lower
+                        or "replace(replace" not in cached_lower
+                    )
+                    if needs_upgrade:
+                        template = self._top_customers_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
                 if self._is_multi_vendor_sales_question(question):
-                    if "productos_adicional" not in cached.lower():
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "productos_adicional" not in cached_lower
+                        or "collate database_default" not in cached_lower
+                    )
+                    if needs_upgrade:
                         brands = self._extract_vendor_brands(question)
                         template = self._multi_vendor_sales_sql_template(brands)
                         if template:
@@ -742,6 +859,11 @@ ORDER BY Dia_Orden
                             return template
                 return cached
 
+            if self._is_top_customers_question(question):
+                template = self._top_customers_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
             if self._is_multi_vendor_sales_question(question):
                 brands = self._extract_vendor_brands(question)
                 template = self._multi_vendor_sales_sql_template(brands)
@@ -766,6 +888,12 @@ ORDER BY Dia_Orden
                     )
                     return None
 
+                if self._is_top_customers_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._top_customers_sql_template(question)
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
                 if self._is_brand_profit_question(question):
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
@@ -938,6 +1066,78 @@ ORDER BY Dia_Orden
             return None
         return None
 
+    @staticmethod
+    def _deterministic_summary(question: str, df) -> str | None:
+        """Build a Spanish summary with Colombian formatting (no LLM guesswork)."""
+        from .formatting import format_number
+
+        if df is None or not hasattr(df, "empty") or df.empty:
+            return None
+
+        colmap = {str(c).lower(): c for c in df.columns}
+
+        def _pick(*names: str) -> str | None:
+            for name in names:
+                if name in colmap:
+                    return colmap[name]
+            return None
+
+        ventas_col = _pick(
+            "ventas_totales",
+            "facturacion_total",
+            "facturacion",
+            "ventas",
+            "totalmasiva",
+        )
+        ganancia_col = _pick("ganancia_neta", "ganancia", "ganancia_total")
+        clientes_col = _pick("clientes_unicos", "numero_clientes", "clientes")
+        dept_col = _pick("departamento")
+        city_col = _pick("ciudad")
+        product_col = _pick(
+            "producto",
+            "articulosnombre",
+            "articulonombre",
+            "cliente",
+            "tercerosnombres",
+        )
+
+        if not ventas_col and not ganancia_col:
+            return None
+
+        def _label(row) -> str:
+            if dept_col and city_col:
+                return f"{row[dept_col]} — {row[city_col]}"
+            if product_col:
+                return str(row[product_col])
+            if dept_col:
+                return str(row[dept_col])
+            if city_col:
+                return str(row[city_col])
+            return "Registro"
+
+        lines: List[str] = []
+        if question:
+            lines.append(question.strip())
+
+        for _, row in df.head(5).iterrows():
+            metrics: List[str] = []
+            if ventas_col:
+                metrics.append(f"ventas {format_number(row[ventas_col], ventas_col)}")
+            if ganancia_col:
+                metrics.append(
+                    f"ganancia {format_number(row[ganancia_col], ganancia_col)}"
+                )
+            if clientes_col:
+                metrics.append(
+                    f"clientes {format_number(row[clientes_col], clientes_col)}"
+                )
+            if metrics:
+                lines.append(f"{_label(row)}: {', '.join(metrics)}")
+            else:
+                lines.append(_label(row))
+
+        return "\n".join(lines) if lines else None
+
     def generate_summary(self, question: str, df, **kwargs) -> str:
         if df is None:
             return (
@@ -947,6 +1147,16 @@ ORDER BY Dia_Orden
 
         if hasattr(df, "empty") and df.empty:
             return "ℹ️ La consulta no devolvió registros para resumir."
+
+        raw_df = getattr(self, "_last_result_df", None)
+        summary_source = (
+            raw_df
+            if raw_df is not None and hasattr(raw_df, "empty") and not raw_df.empty
+            else df
+        )
+        deterministic = self._deterministic_summary(question, summary_source)
+        if deterministic:
+            return deterministic
 
         try:
             from .formatting import format_dataframe

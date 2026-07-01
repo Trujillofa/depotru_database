@@ -454,13 +454,15 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             "Top 10 clientes con mayor facturación",
             """
             SELECT TOP 10
-                TercerosNombres AS Cliente,
+                REPLACE(REPLACE(LTRIM(RTRIM(TercerosNombres)), '  ', ' '), '  ', ' ') AS Cliente,
                 SUM(TotalMasIva) AS Facturacion_Total,
+                SUM(TotalSinIva - ValorCosto) AS Ganancia_Neta,
                 COUNT(*) AS Numero_Compras,
-                AVG(TotalMasIva) AS Ticket_Promedio
+                AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0)) AS Margen_Promedio
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-            GROUP BY TercerosNombres
+              AND NULLIF(LTRIM(RTRIM(TercerosNombres)), '') IS NOT NULL
+            GROUP BY REPLACE(REPLACE(LTRIM(RTRIM(TercerosNombres)), '  ', ' '), '  ', ' ')
             ORDER BY Facturacion_Total DESC
             """,
         ),
@@ -866,18 +868,28 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
                     bd.TotalSinIva,
                     bd.ValorCosto,
                     CASE
-                        WHEN UPPER(LTRIM(RTRIM(COALESCE(bd.proveedor, pa.proveedor_descripcion, ''))))
+                        WHEN UPPER(LTRIM(RTRIM(COALESCE(
+                            bd.proveedor COLLATE DATABASE_DEFAULT,
+                            pa.proveedor_descripcion COLLATE DATABASE_DEFAULT, ''))))
                              IN ('PAVCO', 'EUROCERAMICA')
-                            THEN UPPER(LTRIM(RTRIM(COALESCE(bd.proveedor, pa.proveedor_descripcion))))
-                        WHEN UPPER(LTRIM(RTRIM(COALESCE(bd.marca, pa.producto_marca, ''))))
+                            THEN UPPER(LTRIM(RTRIM(COALESCE(
+                            bd.proveedor COLLATE DATABASE_DEFAULT,
+                            pa.proveedor_descripcion COLLATE DATABASE_DEFAULT, ''))))
+                        WHEN UPPER(LTRIM(RTRIM(COALESCE(
+                            bd.marca COLLATE DATABASE_DEFAULT,
+                            pa.producto_marca COLLATE DATABASE_DEFAULT, ''))))
                              IN ('PAVCO', 'EUROCERAMICA')
-                            THEN UPPER(LTRIM(RTRIM(COALESCE(bd.marca, pa.producto_marca))))
-                        WHEN UPPER(bd.ArticulosNombre) LIKE '%PAVCO%' THEN 'PAVCO'
-                        WHEN UPPER(bd.ArticulosNombre) LIKE '%EUROCERAMICA%' THEN 'EUROCERAMICA'
+                            THEN UPPER(LTRIM(RTRIM(COALESCE(
+                            bd.marca COLLATE DATABASE_DEFAULT,
+                            pa.producto_marca COLLATE DATABASE_DEFAULT, ''))))
+                        WHEN UPPER(bd.ArticulosNombre COLLATE DATABASE_DEFAULT) LIKE '%PAVCO%' THEN 'PAVCO'
+                        WHEN UPPER(bd.ArticulosNombre COLLATE DATABASE_DEFAULT) LIKE '%EUROCERAMICA%' THEN 'EUROCERAMICA'
                         ELSE NULL
                     END AS Marca_Proveedor
                 FROM banco_datos bd
-                LEFT JOIN productos_adicional pa ON bd.ArticulosCodigo = pa.producto_codigo
+                LEFT JOIN productos_adicional pa
+                    ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
+                     = pa.producto_codigo COLLATE DATABASE_DEFAULT
                 WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
             ) AS ventas_marca
             WHERE Marca_Proveedor IS NOT NULL

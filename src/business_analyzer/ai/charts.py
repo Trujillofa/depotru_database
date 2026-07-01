@@ -328,18 +328,22 @@ def _formatted_bar_texts(df: pd.DataFrame, column: str) -> List[str]:
     return [format_number(value, column) for value in df[column]]
 
 
-def _apply_colombian_value_axis(fig: go.Figure, *, horizontal: bool) -> go.Figure:
+def _apply_colombian_value_axis(
+    fig: go.Figure,
+    *,
+    horizontal: bool,
+    hide_ticks: bool = False,
+) -> go.Figure:
     """Avoid Plotly SI abbreviations (4.99k / 880.5M) on value axes."""
     axis_name = "xaxis" if horizontal else "yaxis"
-    fig.update_layout(
-        {
-            axis_name: dict(
-                tickformat=",.0f",
-                separatethousands=True,
-                showexponent="none",
-            )
-        }
+    axis_kwargs = dict(
+        tickformat=",.0f",
+        separatethousands=True,
+        showexponent="none",
     )
+    if hide_ticks:
+        axis_kwargs.update(showticklabels=False, showgrid=False, zeroline=False)
+    fig.update_layout({axis_name: axis_kwargs})
     return fig
 
 
@@ -504,7 +508,10 @@ def _build_from_plan(
             name=plan.primary_col,
         )
         fig.update_layout(xaxis_title="", yaxis_title="")
-        fig = _apply_colombian_value_axis(fig, horizontal=True)
+        hide_ticks = bool(
+            plan.label_col and plan.label_col.lower() in ("cliente", "tercerosnombres")
+        )
+        fig = _apply_colombian_value_axis(fig, horizontal=True, hide_ticks=hide_ticks)
         return _apply_layout(fig, dark_mode, horizontal=True)
 
     if plan.strategy == ChartStrategy.DUAL_AXIS and plan.secondary_col:

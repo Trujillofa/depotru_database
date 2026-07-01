@@ -58,6 +58,7 @@ INTEGER_COLUMNS = [
     "Unidades",
     "Numero_Transacciones",
     "Numero_Ventas",
+    "Numero_Compras",
     "Clientes_Unicos",
     "order_count",
 ]
@@ -65,6 +66,7 @@ INTEGER_COLUMNS = [
 # Known percentage columns
 PERCENTAGE_COLUMNS = [
     "Margen_Promedio_Pct",
+    "Margen_Promedio",
     "profit_margin_pct",
     "Margen",
     "margin_pct",

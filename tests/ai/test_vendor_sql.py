@@ -23,6 +23,7 @@ class TestMultiVendorSalesTemplate:
         sql = AIVanna._multi_vendor_sales_sql_template(brands)
         lower = sql.lower()
         assert "productos_adicional" in lower
+        assert "collate database_default" in lower
         assert "articulosnombre" in lower
         assert "pavco" in lower
         assert "euroceramica" in lower
@@ -30,9 +31,9 @@ class TestMultiVendorSalesTemplate:
 
     def test_generate_sql_upgrades_stale_cache(self):
         stale_sql = (
-            "SELECT proveedor, SUM(TotalMasIva) AS Ventas_Totales "
-            "FROM banco_datos WHERE proveedor IN ('PAVCO', 'EUROCERAMICA') "
-            "GROUP BY proveedor"
+            "SELECT proveedor FROM banco_datos bd "
+            "LEFT JOIN productos_adicional pa ON bd.ArticulosCodigo = pa.producto_codigo "
+            "WHERE proveedor IN ('EUROCERAMICA')"
         )
         cache = MagicMock()
         cache.get.return_value = stale_sql
@@ -51,6 +52,49 @@ class TestMultiVendorSalesTemplate:
                 result = AIVanna.generate_sql(vn, self.QUESTION)
 
         assert "productos_adicional" in result.lower()
+        cache.set.assert_called_with(self.QUESTION, result)
+
+
+class TestTopCustomersTemplate:
+    QUESTION = "Top 10 clientes con mayor facturación"
+
+    def test_detects_top_customers_question(self):
+        assert AIVanna._is_top_customers_question(self.QUESTION)
+
+    def test_template_normalizes_names_and_includes_margin(self):
+        sql = AIVanna._top_customers_sql_template(self.QUESTION)
+        lower = sql.lower()
+        assert "replace(replace" in lower
+        assert "ganancia_neta" in lower
+        assert "margen_promedio" in lower
+        assert "group by" in lower
+        assert "top 10" in lower
+
+    def test_year_filter_for_current_year(self):
+        sql = AIVanna._top_customers_sql_template(
+            "Top 5 clientes con mayor facturación este año"
+        )
+        assert "year(fecha) = year(getdate())" in sql.lower()
+        assert "top 5" in sql.lower()
+
+    def test_generate_sql_upgrades_stale_top_customers_cache(self):
+        stale_sql = """
+            SELECT TOP 10 TercerosNombres AS Cliente,
+                SUM(TotalMasIva) AS Facturacion_Total
+            FROM banco_datos
+            GROUP BY TercerosNombres
+        """
+        cache = MagicMock()
+        cache.get.return_value = stale_sql
+
+        vn = object.__new__(AIVanna)
+        vn._query_cache = cache
+
+        with patch.object(AIVanna, "_is_top_customers_question", return_value=True):
+            result = AIVanna.generate_sql(vn, self.QUESTION)
+
+        assert "ganancia_neta" in result.lower()
+        assert "replace(replace" in result.lower()
         cache.set.assert_called_with(self.QUESTION, result)
 
 
