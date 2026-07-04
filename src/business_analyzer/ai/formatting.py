@@ -5,6 +5,7 @@ Contains number formatting utilities for Colombian pesos, percentages, and thous
 """
 
 import locale
+import re
 from typing import Any, List, Optional
 
 import pandas as pd
@@ -161,6 +162,88 @@ def format_number(value: Any, column_name: str = "") -> str:
         return f"{int(num):,}".replace(",", ".")
     else:
         return f"{num:,.2f}".replace(",", "TEMP").replace(".", ",").replace("TEMP", ".")
+
+
+def _parse_colombian_display_number(value: Any, column_name: str = "") -> Any:
+    """Best-effort parse of Colombian-formatted display strings back to numbers."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value
+
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "nat"}:
+        return value
+
+    col_lower = column_name.lower()
+    if text.endswith("%"):
+        cleaned = text[:-1].strip().replace(",", ".")
+        try:
+            return float(cleaned)
+        except ValueError:
+            return value
+
+    if text.startswith("$"):
+        cleaned = text[1:].strip()
+        if "," in cleaned and "." in cleaned:
+            cleaned = cleaned.replace(".", "").replace(",", ".")
+        elif "," in cleaned:
+            cleaned = cleaned.replace(",", ".")
+        else:
+            cleaned = cleaned.replace(".", "")
+        try:
+            return float(cleaned)
+        except ValueError:
+            return value
+
+    if re.fullmatch(r"\d{1,3}(\.\d{3})+", text):
+        try:
+            return int(text.replace(".", ""))
+        except ValueError:
+            return value
+
+    # US thousands + decimal: 43,513,462.2216
+    if re.fullmatch(r"-?[\d,]+\.\d+", text):
+        try:
+            return float(text.replace(",", ""))
+        except ValueError:
+            return value
+
+    # US thousands integer: 43,513,462
+    if "," in text and re.fullmatch(r"-?[\d,]+", text):
+        try:
+            return float(text.replace(",", ""))
+        except ValueError:
+            return value
+
+    normalized = text.replace(",", ".")
+    try:
+        if col_lower in {c.lower() for c in INTEGER_COLUMNS} or col_lower in {
+            "año",
+            "ano",
+            "anio",
+            "mes",
+            "dia",
+        }:
+            return int(float(normalized))
+        return float(normalized)
+    except ValueError:
+        return value
+
+
+def coerce_chart_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Restore numeric dtypes from Colombian-formatted table display strings."""
+    if df is None or df.empty:
+        return df
+
+    out = df.copy()
+    for col in out.columns:
+        if pd.api.types.is_numeric_dtype(out[col]):
+            continue
+        parsed = out[col].map(lambda v: _parse_colombian_display_number(v, col))
+        if parsed.map(lambda v: isinstance(v, (int, float)) and not pd.isna(v)).any():
+            out[col] = pd.to_numeric(parsed, errors="coerce")
+    return out
 
 
 def format_dataframe(df: pd.DataFrame, max_rows: int = 100) -> pd.DataFrame:

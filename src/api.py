@@ -3,6 +3,7 @@ REST API for Business Data Analyzer.
 
 Provides endpoints for programmatic access to business metrics.
 """
+
 # pyright: reportMissingImports=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedImport=false, reportDeprecated=false, reportImplicitRelativeImport=false, reportCallInDefaultInitializer=false, reportUntypedFunctionDecorator=false, reportArgumentType=false, reportExplicitAny=false
 
 import asyncio
@@ -80,9 +81,7 @@ async def get_combined_analysis(
     end_date: Optional[str] = None,
 ):
     """Get combined business analysis metrics."""
-    provider_status = {
-        name: breaker.state.value for name, breaker in breakers.items()
-    }
+    provider_status = {name: breaker.state.value for name, breaker in breakers.items()}
 
     if not Config.has_direct_db_config() and not os.path.exists(Config.NCX_FILE_PATH):
         return {
@@ -97,9 +96,7 @@ async def get_combined_analysis(
 
     def _run_analysis() -> Dict[str, Any]:
         with Database() as db:
-            rows = db.fetch_data(
-                limit=limit, start_date=start_date, end_date=end_date
-            )
+            rows = db.fetch_data(limit=limit, start_date=start_date, end_date=end_date)
         analyzer = UnifiedAnalyzer(rows)
         return analyzer.analyze_all()
 

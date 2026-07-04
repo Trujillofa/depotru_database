@@ -746,6 +746,20 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             """,
         ),
         (
+            "dame una lista de los productos menos vendidos en el sika center",
+            """
+            SELECT TOP 10
+                ArticulosNombre AS Producto,
+                SUM(TotalMasIva) AS Ventas,
+                SUM(Cantidad) AS Cantidad_Vendida,
+                SUM(TotalSinIva - ValorCosto) AS Ganancia
+            FROM banco_datos
+            WHERE DocumentosCodigo = 'FEF'
+            GROUP BY ArticulosNombre
+            ORDER BY Ventas ASC
+            """,
+        ),
+        (
             "Ventas de Calle 5 este año",
             """
             SELECT

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify golden-question SQL routing (no LLM, no cache)."""
+
 from __future__ import annotations
 
 import argparse
@@ -13,7 +14,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from business_analyzer.ai.base import AIVanna  # noqa: E402
 
 # Reuse matrix from tests/ai/test_sql_routing.py
-GOLDEN = [
+GOLDEN: list[tuple[str, list[str], list[str]]] = [
     (
         "Top 10 clientes con mayor facturación",
         ["ganancia_neta", "top 10"],
@@ -43,6 +44,11 @@ GOLDEN = [
         "Ventas de la sede Sika Center por mes",
         ["documentoscodigo = 'fef'"],
         ["marca_proveedor"],
+    ),
+    (
+        "dame una lista de los productos menos vendidos en el sika center",
+        ["documentoscodigo = 'fef'", "group by articulosnombre", "order by ventas asc"],
+        ["marca_proveedor", "productos_adicional"],
     ),
     (
         "Ventas a crédito vs contado",
@@ -92,7 +98,8 @@ def _generate_sql(question: str) -> str:
     vn._query_cache = MagicMock()
     vn._query_cache.get.return_value = None
     vn.provider = "grok"
-    return AIVanna.generate_sql(vn, question)
+    sql = AIVanna.generate_sql(vn, question)
+    return sql if isinstance(sql, str) else ""
 
 
 def main() -> int:

@@ -8,15 +8,46 @@ currency and percentage on a shared Y-axis.
 
 from __future__ import annotations
 
+import base64
+import json
+import struct
+import threading
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from business_analyzer.ai.formatting import format_number
+from business_analyzer.ai.formatting import coerce_chart_dataframe, format_number
+
+_chart_tls = threading.local()
+
+
+def clear_chart_query_context() -> None:
+    """Reset per-request chart context (call at the start of each HTTP handler)."""
+    _chart_tls.raw_df = None
+    _chart_tls.question = None
+
+
+def set_chart_query_context(
+    raw_df: Optional[pd.DataFrame] = None,
+    question: Optional[str] = None,
+) -> None:
+    """Per-request chart context (safe under Waitress multi-threading)."""
+    if raw_df is not None:
+        _chart_tls.raw_df = raw_df.copy()
+    if question is not None:
+        _chart_tls.question = question
+
+
+def get_chart_query_context() -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    return (
+        getattr(_chart_tls, "raw_df", None),
+        getattr(_chart_tls, "question", None),
+    )
+
 
 MONTH_ORDER = [
     "Enero",
@@ -79,6 +110,16 @@ RANKING_QUESTION_KEYWORDS = (
     "menor",
 )
 
+MONTHLY_QUESTION_KEYWORDS = (
+    "al mes",
+    "mes a mes",
+    "mensual",
+    "por mes",
+    "mensuales",
+    "cada mes",
+    "monthly",
+)
+
 RANKING_LABEL_COLUMNS = frozenset(
     {
         "cliente",
@@ -97,6 +138,17 @@ RANKING_LABEL_COLUMNS = frozenset(
 
 GEO_LABEL = "Ubicacion"
 YEAR_MONTH_LABEL = "Periodo"
+MONTH_LABEL = "_Mes_Etiqueta"
+YEAR_LEGEND_COL = "_Año_Grupo"
+
+YEAR_COLOR_SEQUENCE = [
+    "#3b82f6",
+    "#f59e0b",
+    "#10b981",
+    "#ef4444",
+    "#8b5cf6",
+    "#06b6d4",
+]
 
 LABEL_PRIORITY = (
     "Descripcion",
@@ -141,6 +193,21 @@ LABEL_PRIORITY = (
 
 MONTH_ORDER_MAP = {name: idx for idx, name in enumerate(MONTH_ORDER)}
 
+ENGLISH_MONTH_NAMES = {
+    "january": "Enero",
+    "february": "Febrero",
+    "march": "Marzo",
+    "april": "Abril",
+    "may": "Mayo",
+    "june": "Junio",
+    "july": "Julio",
+    "august": "Agosto",
+    "september": "Septiembre",
+    "october": "Octubre",
+    "november": "Noviembre",
+    "december": "Diciembre",
+}
+
 DF_PLOT_PREP_CODE = """\
 df_plot = df.copy()
 if 'Mes' in df_plot.columns:
@@ -156,6 +223,7 @@ elif '{label_col}' in df_plot.columns:
 
 class ChartStrategy(str, Enum):
     TIME_SERIES_VERTICAL = "time_series_vertical"
+    YEAR_MONTH_GROUPED = "year_month_grouped"
     HORIZONTAL_SINGLE = "horizontal_single"
     VERTICAL_SINGLE = "vertical_single"
     DUAL_AXIS = "dual_axis"
@@ -168,12 +236,14 @@ class ChartPlan:
     label_col: Optional[str]
     primary_col: str
     secondary_col: Optional[str] = None
+    color_col: Optional[str] = None
 
 
 def _is_useful_numeric(df: pd.DataFrame, col: str) -> bool:
-    if col not in df.columns or not pd.api.types.is_numeric_dtype(df[col]):
+    series = _series_as_numeric(df, col)
+    if series is None:
         return False
-    return df[col].nunique(dropna=True) > 1
+    return bool(series.nunique(dropna=True) > 1)
 
 
 def _numeric_columns(df: pd.DataFrame) -> List[str]:
@@ -214,16 +284,54 @@ COUNT_COLUMN_NAMES = frozenset(
     }
 )
 
+TEMPORAL_NUMERIC_COLUMNS = frozenset(
+    {
+        "año",
+        "ano",
+        "anio",
+        "year",
+        "mes",
+        "month",
+        "dia",
+        "day",
+    }
+)
+
+
+def _series_as_numeric(df: pd.DataFrame, col: str) -> Optional[pd.Series]:
+    if col not in df.columns:
+        return None
+    return pd.to_numeric(df[col], errors="coerce")
+
+
+def _normalize_chart_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Coerce Decimal/object SQL aggregates so chart heuristics see real metrics."""
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    for col in out.columns:
+        converted = _series_as_numeric(out, col)
+        if converted is None or not converted.notna().any():
+            continue
+        if converted.notna().sum() >= max(1, int(out[col].notna().sum() * 0.8)):
+            out[col] = converted
+    return out
+
 
 def _is_currency_column(df: pd.DataFrame, col: str) -> bool:
     col_lower = col.lower()
+    if col_lower in TEMPORAL_NUMERIC_COLUMNS:
+        return False
     if col_lower in COUNT_COLUMN_NAMES or col_lower.startswith("numero_"):
         return False
     if _is_percentage_column(df, col):
         return False
     if any(kw in col_lower for kw in CURRENCY_KEYWORDS):
         return True
-    series = df[col].dropna()
+    series = _series_as_numeric(df, col)
+    if series is None:
+        return False
+    series = series.dropna()
     if series.empty:
         return False
     return float(series.max()) >= 1000
@@ -233,7 +341,13 @@ def _classify_value_columns(df: pd.DataFrame) -> Tuple[List[str], List[str], Lis
     numeric = _numeric_columns(df)
     currency = [c for c in numeric if _is_currency_column(df, c)]
     percentage = [c for c in numeric if _is_percentage_column(df, c)]
-    counts = [c for c in numeric if c not in currency and c not in percentage]
+    counts = [
+        c
+        for c in numeric
+        if c not in currency
+        and c not in percentage
+        and str(c).lower() not in TEMPORAL_NUMERIC_COLUMNS
+    ]
     return currency, percentage, counts
 
 
@@ -256,6 +370,8 @@ def _is_ranking_or_topn_question(question: Optional[str]) -> bool:
     if not question:
         return False
     q = question.lower()
+    if any(kw in q for kw in MONTHLY_QUESTION_KEYWORDS):
+        return False
     return any(kw in q for kw in RANKING_QUESTION_KEYWORDS)
 
 
@@ -364,15 +480,86 @@ def _year_month_columns(
     return año, mes, mes_name
 
 
+def _month_label_series(df: pd.DataFrame) -> Optional[pd.Series]:
+    """Spanish month names for grouping (Enero…Diciembre)."""
+    _, mes, mes_name = _year_month_columns(df)
+    if not mes_name and not mes:
+        return None
+    if mes_name:
+        labels = df[mes_name].apply(
+            lambda value: ENGLISH_MONTH_NAMES.get(
+                str(value).strip().lower(),
+                str(value).strip(),
+            )
+        )
+        return pd.Series(labels, index=df.index, name=MONTH_LABEL)
+    mapped = df[mes].map(
+        lambda value: (
+            MONTH_ORDER[int(value) - 1]
+            if pd.notna(value) and 1 <= int(value) <= 12
+            else str(value)
+        )
+    )
+    return pd.Series(mapped, index=df.index, name=MONTH_LABEL)
+
+
+def _with_month_label(df: pd.DataFrame) -> pd.DataFrame:
+    series = _month_label_series(df)
+    if series is None:
+        return df
+    out = df.copy()
+    out[MONTH_LABEL] = series
+    return out
+
+
+def _is_multi_year_monthly(df: pd.DataFrame) -> bool:
+    año, mes, mes_name = _year_month_columns(df)
+    if not año or (not mes and not mes_name):
+        return False
+    return bool(df[año].nunique(dropna=True) >= 2)
+
+
+def _ordered_month_categories(df: pd.DataFrame, label_col: str) -> List[str]:
+    present = set(df[label_col].dropna().astype(str))
+    return [name for name in MONTH_ORDER if name in present]
+
+
+def _year_legend_series(series: pd.Series, column_name: str) -> pd.Series:
+    """Normalize Año values (int/float/formatted strings) for discrete legend groups."""
+    from business_analyzer.ai.formatting import _parse_colombian_display_number
+
+    parsed = series.map(
+        lambda value: _parse_colombian_display_number(value, column_name)
+    )
+    numeric = pd.to_numeric(parsed, errors="coerce")
+    return numeric.round().astype("Int64").astype(str)
+
+
 def _with_year_month_label(df: pd.DataFrame) -> pd.DataFrame:
     """Combine año + mes so multi-year monthly charts do not collapse."""
     año, mes, mes_name = _year_month_columns(df)
-    if not año or not mes_name:
+    if not año or (not mes_name and not mes):
         return df
     out = df.copy()
-    out[YEAR_MONTH_LABEL] = (
-        out[mes_name].astype(str).str.strip() + " " + out[año].astype(str)
-    )
+    if mes_name:
+        month_labels = out[mes_name].apply(
+            lambda value: ENGLISH_MONTH_NAMES.get(
+                str(value).strip().lower(),
+                str(value).strip(),
+            )
+        )
+        out[YEAR_MONTH_LABEL] = month_labels.astype(str) + " " + out[año].astype(str)
+    else:
+        month_labels = out[mes].map(
+            lambda value: (
+                MONTH_ORDER[int(value) - 1]
+                if pd.notna(value) and 1 <= int(value) <= 12
+                else str(value)
+            )
+        )
+        out[YEAR_MONTH_LABEL] = (
+            month_labels.astype(str).str.strip() + " " + out[año].astype(str)
+        )
     return out
 
 
@@ -398,7 +585,7 @@ def _label_column(df: pd.DataFrame) -> Optional[str]:
         if pd.api.types.is_numeric_dtype(df[col]):
             continue
         if 1 < df[col].nunique(dropna=True) <= 50:
-            return col
+            return str(col)
     return None
 
 
@@ -472,6 +659,8 @@ def _chart_title(question: Optional[str], metric_col: str) -> str:
 
 
 def _prepare_df(df: pd.DataFrame, plan: ChartPlan) -> pd.DataFrame:
+    if plan.strategy == ChartStrategy.YEAR_MONTH_GROUPED and plan.label_col:
+        return _sort_by_month(df.copy(), plan.label_col)
     if plan.strategy == ChartStrategy.TIME_SERIES_VERTICAL and plan.label_col:
         return _sort_by_month(df.copy(), plan.label_col)
     if plan.strategy in (ChartStrategy.HORIZONTAL_SINGLE, ChartStrategy.DUAL_AXIS):
@@ -503,24 +692,34 @@ def _resolve_chart_plan(
     horizontal = _prefers_horizontal(df, label_col, question)
 
     if comparison and currency_cols:
-        primary = _select_primary_metric(df, currency_cols, question) or currency_cols[0]
+        primary = (
+            _select_primary_metric(df, currency_cols, question) or currency_cols[0]
+        )
         return ChartPlan(ChartStrategy.VERTICAL_SINGLE, label_col, primary)
 
     if time_series:
         value_cols = _value_columns(df)
         if value_cols:
             metric = _select_primary_metric(df, value_cols, question) or value_cols[0]
+            año, _, _ = _year_month_columns(df)
+            if _is_multi_year_monthly(df) and MONTH_LABEL in df.columns and año:
+                return ChartPlan(
+                    ChartStrategy.YEAR_MONTH_GROUPED,
+                    MONTH_LABEL,
+                    metric,
+                    color_col=año,
+                )
             return ChartPlan(ChartStrategy.TIME_SERIES_VERTICAL, label_col, metric)
 
     if mixed:
-        primary = _select_primary_metric(df, currency_cols, question)
-        if primary and (ranking or horizontal):
-            return ChartPlan(ChartStrategy.HORIZONTAL_SINGLE, label_col, primary)
-        if primary and len(percentage_cols) == 1 and len(currency_cols) >= 1:
+        mixed_primary = _select_primary_metric(df, currency_cols, question)
+        if mixed_primary and (ranking or horizontal):
+            return ChartPlan(ChartStrategy.HORIZONTAL_SINGLE, label_col, mixed_primary)
+        if mixed_primary and len(percentage_cols) == 1 and len(currency_cols) >= 1:
             return ChartPlan(
                 ChartStrategy.DUAL_AXIS,
                 label_col,
-                primary,
+                mixed_primary,
                 percentage_cols[0],
             )
         return None
@@ -544,7 +743,8 @@ def _resolve_chart_plan(
         primary = _select_primary_metric(df, value_cols, question) or value_cols[0]
         return ChartPlan(ChartStrategy.HORIZONTAL_SINGLE, label_col, primary)
 
-    return None
+    primary = _select_primary_metric(df, value_cols, question) or value_cols[0]
+    return ChartPlan(ChartStrategy.VERTICAL_SINGLE, label_col, primary)
 
 
 def _apply_layout(
@@ -596,6 +796,41 @@ def _build_from_plan(
         )
         fig.update_traces(texttemplate="%{text}", textposition="outside")
         fig.update_layout(xaxis_title="", yaxis_title="")
+        fig = _apply_colombian_value_axis(fig, horizontal=False)
+        return _apply_layout(fig, dark_mode, horizontal=False)
+
+    if (
+        plan.strategy == ChartStrategy.YEAR_MONTH_GROUPED
+        and plan.color_col
+        and plan.label_col
+    ):
+        df_plot = df_plot.copy()
+        df_plot[YEAR_LEGEND_COL] = _year_legend_series(
+            df_plot[plan.color_col], plan.color_col
+        )
+        month_order = _ordered_month_categories(df_plot, plan.label_col)
+        year_order = sorted(df_plot[YEAR_LEGEND_COL].unique(), key=int)
+        bar_text = _formatted_bar_texts(df_plot, plan.primary_col)
+        fig = px.bar(
+            df_plot,
+            x=plan.label_col,
+            y=plan.primary_col,
+            color=YEAR_LEGEND_COL,
+            barmode="group",
+            title=title,
+            text=bar_text,
+            category_orders={
+                plan.label_col: month_order,
+                YEAR_LEGEND_COL: year_order,
+            },
+            color_discrete_sequence=YEAR_COLOR_SEQUENCE,
+        )
+        fig.update_traces(texttemplate="%{text}", textposition="outside")
+        fig.update_layout(
+            xaxis_title="",
+            yaxis_title="",
+            legend_title_text="Año",
+        )
         fig = _apply_colombian_value_axis(fig, horizontal=False)
         return _apply_layout(fig, dark_mode, horizontal=False)
 
@@ -708,6 +943,22 @@ def _emit_plotly_code(plan: ChartPlan, question: Optional[str]) -> str:
             "fig.update_traces(texttemplate='%{y:,.0f}', textposition='outside')\n"
         )
 
+    if plan.strategy == ChartStrategy.YEAR_MONTH_GROUPED and plan.color_col:
+        month_order = repr(MONTH_ORDER)
+        color_col = plan.color_col
+        return (
+            "import pandas as pd\n"
+            "import plotly.express as px\n"
+            "df_plot = df.copy()\n"
+            f"df_plot['{YEAR_LEGEND_COL}'] = pd.to_numeric(df_plot['{color_col}'], errors='coerce').round().astype('Int64').astype(str)\n"
+            f"fig = px.bar(df_plot, x='{label}', y='{plan.primary_col}', color='{YEAR_LEGEND_COL}', "
+            f"barmode='group', title='{title}', text='{plan.primary_col}', "
+            f"category_orders={{'{label}': {month_order}}}, "
+            f"color_discrete_sequence={YEAR_COLOR_SEQUENCE!r})\n"
+            "fig.update_traces(texttemplate='%{y:,.0f}', textposition='outside')\n"
+            "fig.update_layout(legend_title_text='Año')\n"
+        )
+
     if plan.strategy == ChartStrategy.VERTICAL_SINGLE:
         return (
             "import plotly.express as px\n"
@@ -743,13 +994,20 @@ def _emit_plotly_code(plan: ChartPlan, question: Optional[str]) -> str:
     raise ValueError(f"Unhandled chart plan: {plan}")
 
 
+def _chart_ready_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    prepared = _normalize_chart_dtypes(coerce_chart_dataframe(df))
+    prepared = _with_geo_label(prepared)
+    prepared = _with_month_label(prepared)
+    return _with_year_month_label(prepared)
+
+
 def build_smart_figure(
     df: pd.DataFrame,
     question: Optional[str] = None,
     dark_mode: bool = False,
 ) -> Optional[go.Figure]:
     """Build a sensible chart from query results. Returns None if not chartable."""
-    df = _with_year_month_label(_with_geo_label(df))
+    df = _chart_ready_dataframe(df)
     plan = _resolve_chart_plan(df, question)
     if plan is None:
         return None
@@ -760,8 +1018,47 @@ def build_plotly_code(
     df: pd.DataFrame, question: Optional[str] = None
 ) -> Optional[str]:
     """Return executable plotly code matching build_smart_figure heuristics."""
-    df = _with_year_month_label(_with_geo_label(df))
+    df = _chart_ready_dataframe(df)
     plan = _resolve_chart_plan(df, question)
     if plan is None:
         return None
     return _emit_plotly_code(plan, question)
+
+
+def _decode_plotly_binary_array(obj: dict) -> list:
+    """Decode Plotly orjson bdata blobs into plain Python lists."""
+    raw = base64.b64decode(obj["bdata"])
+    dtype = obj.get("dtype", "f8")
+    if dtype == "f8":
+        return list(struct.unpack(f"{len(raw) // 8}d", raw))
+    if dtype == "f4":
+        return list(struct.unpack(f"{len(raw) // 4}f", raw))
+    if dtype == "i4":
+        return list(struct.unpack(f"{len(raw) // 4}i", raw))
+    if dtype == "i2":
+        return list(struct.unpack(f"{len(raw) // 2}h", raw))
+    if dtype == "i1":
+        return list(struct.unpack(f"{len(raw)}b", raw))
+    return list(raw)
+
+
+def _plain_plotly_json_value(obj: Any) -> Any:
+    """Recursively replace binary-encoded arrays with plain JSON lists."""
+    if isinstance(obj, dict):
+        if "bdata" in obj and "dtype" in obj:
+            return _decode_plotly_binary_array(obj)
+        return {key: _plain_plotly_json_value(value) for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [_plain_plotly_json_value(value) for value in obj]
+    return obj
+
+
+def fig_to_browser_json(fig: go.Figure) -> str:
+    """
+    Serialize a Plotly figure for Vanna's browser UI.
+
+    Vanna ships plotly-latest.min.js (frozen ~v1.58), which cannot decode
+    modern Plotly Python binary ``bdata`` arrays. Plain lists render correctly.
+    """
+    payload = _plain_plotly_json_value(json.loads(fig.to_json()))
+    return json.dumps(payload)

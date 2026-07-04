@@ -225,7 +225,7 @@ def status_lower_is_better(current: float, target: float) -> str:
 
 
 def compute_scorecard(
-    results: Dict[str, List[Dict[str, Any]]]
+    results: Dict[str, List[Dict[str, Any]]],
 ) -> Dict[str, Dict[str, Any]]:
     q1 = sorted(
         results["Q1"],
@@ -272,9 +272,11 @@ def compute_scorecard(
             "baseline": baseline_profit,
             "target": profit_target,
             "current": current_profit,
-            "delta": ((current_profit / baseline_profit - 1) * 100)
-            if baseline_profit
-            else 0.0,
+            "delta": (
+                ((current_profit / baseline_profit - 1) * 100)
+                if baseline_profit
+                else 0.0
+            ),
             "status": status_higher_is_better(current_profit, profit_target),
             "delta_kind": "pct",
         },
@@ -282,9 +284,11 @@ def compute_scorecard(
             "baseline": baseline_ticket,
             "target": ticket_target,
             "current": current_ticket,
-            "delta": ((current_ticket / baseline_ticket - 1) * 100)
-            if baseline_ticket
-            else 0.0,
+            "delta": (
+                ((current_ticket / baseline_ticket - 1) * 100)
+                if baseline_ticket
+                else 0.0
+            ),
             "status": status_higher_is_better(current_ticket, ticket_target),
             "delta_kind": "pct",
         },

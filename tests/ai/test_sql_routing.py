@@ -53,6 +53,12 @@ GOLDEN_QUESTIONS = [
         id="sika_center_mes",
     ),
     pytest.param(
+        "dame una lista de los productos menos vendidos en el sika center",
+        ["documentoscodigo = 'fef'", "group by articulosnombre", "order by ventas asc"],
+        ["marca_proveedor", "productos_adicional"],
+        id="sika_center_least_sold",
+    ),
+    pytest.param(
         "Ventas a crédito vs contado",
         ["diascredito"],
         [],
@@ -112,10 +118,10 @@ def test_golden_question_sql_routing(question, must_contain, must_not_contain):
     assert sql, f"No SQL generated for: {question}"
     lower = sql.lower()
     for fragment in must_contain:
-        assert fragment in lower, (
-            f"Expected '{fragment}' in SQL for '{question}':\n{sql}"
-        )
+        assert (
+            fragment in lower
+        ), f"Expected '{fragment}' in SQL for '{question}':\n{sql}"
     for fragment in must_not_contain:
-        assert fragment not in lower, (
-            f"Unexpected '{fragment}' in SQL for '{question}':\n{sql}"
-        )
+        assert (
+            fragment not in lower
+        ), f"Unexpected '{fragment}' in SQL for '{question}':\n{sql}"

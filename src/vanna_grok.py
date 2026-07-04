@@ -28,8 +28,6 @@ import pandas as pd
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from vanna.legacy.flask import VannaFlaskApp  # noqa: E402
-
 # Import from the new modular ai package
 from business_analyzer.ai import (  # noqa: E402
     AIVanna,
@@ -39,9 +37,14 @@ from business_analyzer.ai import (  # noqa: E402
     generate_insights,
 )
 from business_analyzer.ai.charts import (  # noqa: E402
+    _normalize_chart_dtypes,
     build_plotly_code,
     build_smart_figure,
+    get_chart_query_context,
+    set_chart_query_context,
 )
+from business_analyzer.ai.flask_app import SmartVannaFlaskApp  # noqa: E402
+from business_analyzer.ai.formatting import coerce_chart_dataframe  # noqa: E402
 
 
 def clean_sql(sql: str) -> str:
@@ -147,15 +150,24 @@ class EnhancedAIVanna(AIVanna):
         **kwargs,
     ):
         self._last_question = question
+        set_chart_query_context(question=question)
         return super().generate_sql(
             question=question, allow_llm_to_see_data=allow_llm_to_see_data, **kwargs
         )
 
     def run_sql(self, sql: str, **kwargs):
+        self._ensure_project_run_sql()
         df = super().run_sql(sql, **kwargs)
         if df is not None and not df.empty:
-            self._last_result_df = df.copy()
+            normalized_df = _normalize_chart_dtypes(df.copy())
+            self._last_result_df = normalized_df
+            set_chart_query_context(
+                raw_df=normalized_df,
+                question=getattr(self, "_last_question", None),
+            )
             return format_dataframe(df)
+        self._last_result_df = None
+        set_chart_query_context(raw_df=None)
         return df
 
     def should_generate_chart(self, df: pd.DataFrame) -> bool:
@@ -171,9 +183,15 @@ class EnhancedAIVanna(AIVanna):
         df_metadata: Optional[str] = None,
         **kwargs,
     ) -> str:
-        df = getattr(self, "_last_result_df", None)
+        tls_df, tls_question = get_chart_query_context()
+        df = tls_df
+        if df is None or df.empty:
+            df = getattr(self, "_last_result_df", None)
+        chart_question = (
+            question or tls_question or getattr(self, "_last_question", None)
+        )
         if df is not None and not df.empty:
-            code = build_plotly_code(df, question=question)
+            code = build_plotly_code(df, question=chart_question)
             if code:
                 return code
         if not getattr(self, "provider", None):
@@ -183,24 +201,28 @@ class EnhancedAIVanna(AIVanna):
         )
 
     def get_plotly_figure(
-        self, plotly_code: str, df: pd.DataFrame, dark_mode: bool = True
+        self, plotly_code: str, df: pd.DataFrame, dark_mode: bool = True, **kwargs
     ):
-        chart_df = getattr(self, "_last_result_df", None)
+        tls_df, tls_question = get_chart_query_context()
+        chart_df = tls_df
         if chart_df is None or chart_df.empty:
-            chart_df = df
+            chart_df = getattr(self, "_last_result_df", None)
+        if chart_df is None or chart_df.empty:
+            chart_df = coerce_chart_dataframe(df)
+        question = (
+            kwargs.get("question")
+            or tls_question
+            or getattr(self, "_last_question", None)
+        )
         fig = build_smart_figure(
             chart_df,
-            question=getattr(self, "_last_question", None),
+            question=question,
             dark_mode=dark_mode,
         )
         if fig is not None:
             return fig
-        if not getattr(self, "provider", None):
-            raise ValueError(
-                "Smart chart heuristics could not build a figure for this data"
-            )
-        return super().get_plotly_figure(
-            plotly_code=plotly_code, df=df, dark_mode=dark_mode
+        raise ValueError(
+            "Smart chart heuristics could not build a figure for this data"
         )
 
     def ask(
@@ -304,7 +326,7 @@ def main():
     )
     print("   Auto-generates SQL, tables, & charts. Ctrl+C to stop.\n")
 
-    app = VannaFlaskApp(
+    app = SmartVannaFlaskApp(
         vn,
         allow_llm_to_see_data=True,
         title=f"SmartBusiness + {Config.AI_PROVIDER.upper()} AI",

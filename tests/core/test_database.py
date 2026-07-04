@@ -64,6 +64,7 @@ from business_analyzer.core.database import (
     QueryError,
     decrypt_navicat_password,
     get_db_connection,
+    is_transient_db_error,
     load_connections,
     validate_sql_identifier,
 )
@@ -586,6 +587,23 @@ class TestDatabaseConnection:
 # =============================================================================
 
 
+class TestTransientDbErrors:
+    def test_detects_transient_error_in_cause_chain(self):
+        cause = Exception("08S01 TCP Provider: Error code 0x68 (104)")
+        try:
+            raise QueryError("Query failed") from cause
+        except QueryError as wrapped:
+            assert is_transient_db_error(wrapped)
+
+    def test_detects_tcp_reset_0x68(self):
+        err = Exception("08S01 TCP Provider: Error code 0x68 (104) SQLExecDirectW")
+        assert is_transient_db_error(err)
+
+    def test_detects_query_timeout_10060(self):
+        err = Exception("08S01 TCP Provider: Error code 0x274C (10060)")
+        assert is_transient_db_error(err)
+
+
 class TestQueryExecution:
     """Test query execution with parameters"""
 
@@ -612,8 +630,8 @@ class TestQueryExecution:
 
         assert len(results) == 2
         assert results[0]["id"] == 1
-        # execute is called twice: once for connection test, once for actual query
-        assert mock_cursor.execute.call_count == 2
+        # connect health check + ping + query
+        assert mock_cursor.execute.call_count == 3
         mock_cursor.execute.assert_called_with("SELECT * FROM table", None)
 
     def test_execute_query_with_params(self, mock_config, mock_pymssql):
@@ -627,8 +645,8 @@ class TestQueryExecution:
 
         db.execute_query("SELECT * FROM table WHERE id = %s", (1,))
 
-        # execute is called twice: once for connection test, once for actual query
-        assert mock_cursor.execute.call_count == 2
+        # connect health check + ping + query
+        assert mock_cursor.execute.call_count == 3
         mock_cursor.execute.assert_called_with(
             "SELECT * FROM table WHERE id = %s", (1,)
         )
@@ -647,15 +665,15 @@ class TestQueryExecution:
         )
 
         assert result == 5  # Row count
-        # execute is called twice: once for connection test, once for actual query
-        assert mock_cursor.execute.call_count == 2
+        # connect health check + ping + query
+        assert mock_cursor.execute.call_count == 3
         mock_pymssql.connect.return_value.commit.assert_called_once()
 
     def test_execute_query_error(self, mock_config, mock_pymssql):
         """Test query execution error raises QueryError"""
         mock_cursor = Mock()
-        # First call is connection test (SELECT 1), second call is actual query
-        mock_cursor.execute.side_effect = [None, Exception("Query failed")]
+        # connect health check + ping + failing query
+        mock_cursor.execute.side_effect = [None, None, Exception("Query failed")]
         mock_pymssql.connect.return_value.cursor.return_value = mock_cursor
 
         db = Database(connection_type=ConnectionType.DIRECT)
@@ -663,6 +681,27 @@ class TestQueryExecution:
 
         with pytest.raises(QueryError, match="Query failed"):
             db.execute_query("SELECT * FROM table")
+
+    def test_execute_query_retries_transient_error(self, mock_config, mock_pymssql):
+        """Test query retries after TCP connection reset."""
+        mock_cursor = Mock()
+        mock_cursor.__iter__ = Mock(return_value=iter([{"id": 1}]))
+        mock_cursor.execute.side_effect = [
+            None,
+            Exception("08S01 TCP Provider: Error code 0x68 (104)"),
+            None,
+            None,
+        ]
+        mock_pymssql.connect.return_value.cursor.return_value = mock_cursor
+
+        db = Database(connection_type=ConnectionType.DIRECT)
+        db.connect()
+
+        with patch.dict(os.environ, {"DB_QUERY_RETRIES": "2"}):
+            results = db.execute_query("SELECT id FROM table")
+
+        assert results == [{"id": 1}]
+        assert mock_pymssql.connect.call_count >= 2
 
     def test_execute_query_pyodbc(self, mock_config, mock_pyodbc):
         """Test query execution with pyodbc"""
@@ -745,8 +784,8 @@ class TestFetchData:
         results = db.fetch_data(table="test_table", limit=10)
 
         assert len(results) == 2
-        # execute is called twice: once for connection test, once for actual query
-        assert mock_cursor.execute.call_count == 2
+        # connect health check + ping + fetch query
+        assert mock_cursor.execute.call_count == 3
 
     def test_fetch_data_with_excluded_codes(self, mock_config, mock_pymssql):
         """Test fetching with excluded document codes"""

@@ -8,7 +8,7 @@ for the next N days based on historical Cantidad and Fecha.
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from ..core.database import Database
@@ -122,9 +122,7 @@ def get_top_products(
     """  # nosec B608 — limit is bounded int
 
     def _run(conn: "Database") -> List[Dict[str, Any]]:
-        rows = conn.execute_query(
-            sql, (start_date.isoformat(), end_date.isoformat())
-        )
+        rows = conn.execute_query(sql, (start_date.isoformat(), end_date.isoformat()))
         return rows if isinstance(rows, list) else []
 
     if db is not None:

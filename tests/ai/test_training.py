@@ -116,6 +116,7 @@ class TestTrainingExamples:
             "Ventas de la categoría CEMENTO GRIS comparadas por marca",
             "Ventas del Sika Center este año",
             "Ventas de la sede Sika Center por mes",
+            "dame una lista de los productos menos vendidos en el sika center",
             "Ventas de Calle 5 este año",
         }
 
@@ -169,6 +170,19 @@ class TestTrainingExamples:
         assert "YEAR(Fecha) = YEAR(GETDATE())" in target_sql
         assert "TercerosNombres" not in target_sql
 
+    def test_sika_center_least_sold_products_example(self):
+        """Least-sold Sika Center products group by ArticulosNombre, not SIKA brand."""
+        examples = dict(get_default_training_examples())
+        target_sql = examples[
+            "dame una lista de los productos menos vendidos en el sika center"
+        ]
+
+        assert "DocumentosCodigo = 'FEF'" in target_sql
+        assert "GROUP BY ArticulosNombre" in target_sql
+        assert "ORDER BY Ventas ASC" in target_sql
+        assert "Marca_Proveedor" not in target_sql
+        assert "productos_adicional" not in target_sql
+
     def test_schema_documentation_maps_sika_center_to_branch(self):
         """Schema docs must explicitly disambiguate SIKA products vs SIKA CENTER."""
         from business_analyzer.ai.training import train_on_schema
@@ -202,7 +216,10 @@ class TestTrainingExamples:
         assert "def _branch_store_sql_template" in base_code
         assert "def _sika_center_branch_sql_template" in base_code
         assert "def _repair_sika_center_customer_sql" in base_code
-        assert "sql = self._repair_sika_center_customer_sql(sql)" in base_code
+        assert "def _prepare_sql_for_execution" in base_code
+        prepare_code = base_code.split("def _prepare_sql_for_execution", 1)[1]
+        prepare_code = prepare_code.split("def _multi_vendor_sales_sql_template", 1)[0]
+        assert "AIVanna._repair_sika_center_customer_sql(sql)" in prepare_code
         template_code = base_code.split("def _branch_store_sql_template", 1)[1]
         template_code = template_code.split("def _sika_center_branch_sql_template", 1)[
             0

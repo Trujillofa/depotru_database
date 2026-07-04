@@ -47,9 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    result = check_sales_anomaly(
-        days_ago=args.days_ago, threshold_pct=args.threshold
-    )
+    result = check_sales_anomaly(days_ago=args.days_ago, threshold_pct=args.threshold)
     y = result["yesterday_sales"]
     avg = result["avg_sales"]
     drop = result["drop_pct"]

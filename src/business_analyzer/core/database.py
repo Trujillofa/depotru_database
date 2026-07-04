@@ -61,6 +61,33 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+TRANSIENT_DB_ERROR_MARKERS = (
+    "08s01",
+    "10060",
+    "0x274c",
+    "0x68",
+    "104",
+    "sqlexecdirectw",
+    "tcp provider",
+    "communication link failure",
+    "connection timed out",
+    "connection reset",
+    "broken pipe",
+)
+
+
+def is_transient_db_error(error: BaseException) -> bool:
+    """True when the error looks like a dropped or timed-out DB connection."""
+    seen: set[int] = set()
+    current: Optional[BaseException] = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        message = str(current).lower()
+        if any(marker in message for marker in TRANSIENT_DB_ERROR_MARKERS):
+            return True
+        current = current.__cause__
+    return False
+
 
 def _default_pool_enabled() -> bool:
     """Pooling on in production; off during pytest unless explicitly set."""
@@ -278,13 +305,17 @@ class Database:
                         tds_version=Config.DB_TDS_VERSION,
                     )
                 if PYODBC_AVAILABLE:
-                    pyodbc.pooling = True
+                    pyodbc.pooling = False
                     connection_string = (
                         "DRIVER={ODBC Driver 17 for SQL Server};"
                         f"SERVER={host},{port};"
                         f"DATABASE={db};"
                         f"UID={user};"
                         f"PWD={password};"
+                        f"TrustServerCertificate=yes;"
+                        f"Encrypt=yes;"
+                        f"Connection Timeout={Config.DB_LOGIN_TIMEOUT};"
+                        f"Query Timeout={Config.DB_TIMEOUT};"
                     )
                     return pyodbc.connect(connection_string)
                 raise ConnectionError("No database driver available")
@@ -321,6 +352,31 @@ class Database:
 
     def is_connected(self) -> bool:
         return self._connection is not None
+
+    def ping(self) -> bool:
+        """Lightweight liveness check; invalidates dead connections."""
+        if not self._connection:
+            return False
+        try:
+            cursor_method = getattr(self._connection, "cursor")
+            cursor = (
+                cursor_method(as_dict=True) if PYMSSQL_AVAILABLE else cursor_method()
+            )
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            cursor.close()
+            return True
+        except Exception:
+            self._invalidate_connection()
+            return False
+
+    def _invalidate_connection(self) -> None:
+        if self._connection:
+            try:
+                self._connection.close()
+            except Exception:
+                pass
+        self._connection = None
 
     def get_j3system_connection(self):
         """Open a dedicated connection to the J3System ERP database.
@@ -375,31 +431,57 @@ class Database:
     def execute_query(
         self, query: str, params: Optional[tuple] = None, fetch: bool = True
     ) -> Union[List[Dict[str, Any]], int]:
+        max_attempts = int(os.getenv("DB_QUERY_RETRIES", "2")) + 1
+        last_error: Optional[Exception] = None
+
         if not self._connection:
             raise ConnectionError("Not connected. Call connect() first.")
-        try:
-            cursor_method = getattr(self._connection, "cursor")
-            cursor = (
-                cursor_method(as_dict=True) if PYMSSQL_AVAILABLE else cursor_method()
-            )
-            cursor.execute(query, params)
-            if fetch:
-                results = (
-                    list(cursor)
+
+        for attempt in range(max_attempts):
+            if not self.ping():
+                self._invalidate_connection()
+                self.connect()
+
+            try:
+                cursor_method = getattr(self._connection, "cursor")
+                cursor = (
+                    cursor_method(as_dict=True)
                     if PYMSSQL_AVAILABLE
-                    else [
-                        dict(zip([d[0] for d in cursor.description], row))
-                        for row in cursor.fetchall()
-                    ]
+                    else cursor_method()
                 )
+                cursor.execute(query, params)
+                if fetch:
+                    results = (
+                        list(cursor)
+                        if PYMSSQL_AVAILABLE
+                        else [
+                            dict(zip([d[0] for d in cursor.description], row))
+                            for row in cursor.fetchall()
+                        ]
+                    )
+                    cursor.close()
+                    return results
+                rowcount = cursor.rowcount
+                self._connection.commit()
                 cursor.close()
-                return results
-            rowcount = cursor.rowcount
-            self._connection.commit()
-            cursor.close()
-            return rowcount
-        except Exception as e:
-            raise QueryError(f"Query failed: {e}")
+                return rowcount
+            except Exception as e:
+                last_error = e
+                if is_transient_db_error(e) and attempt < max_attempts - 1:
+                    logger.warning(
+                        "Transient DB error (attempt %s/%s): %s",
+                        attempt + 1,
+                        max_attempts,
+                        e,
+                    )
+                    self._invalidate_connection()
+                    time.sleep(1.5 * (attempt + 1))
+                    continue
+                raise QueryError(f"Query failed: {e}") from e
+
+        if last_error is not None:
+            raise QueryError(f"Query failed: {last_error}") from last_error
+        raise ConnectionError("Not connected. Call connect() first.")
 
     def fetch_data(
         self,

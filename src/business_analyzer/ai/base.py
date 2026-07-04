@@ -12,7 +12,7 @@ import sys
 import time
 import warnings
 from functools import wraps
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 # Optional dotenv import
 try:
@@ -423,12 +423,14 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
     BRAND_ALIASES = {
         "ska": "SIKA",
         "sra": "SIKA",
+        "cermex": "CEMEX",
     }
 
     @staticmethod
     def _extract_vendor_brands(question: str) -> List[str]:
         """Pull known vendor/brand tokens from a natural-language question."""
         lower = (question or "").lower()
+        branch_blocks_sika_brand = "sika center" in lower
         catalog = (
             "pavco",
             "euroceramica",
@@ -438,13 +440,26 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
             "hylsa",
             "corona",
             "pintuco",
+            "gricol",
             "holcim",
         )
-        found = [name.upper() for name in catalog if name in lower]
+        found = [
+            name.upper()
+            for name in catalog
+            if name in lower and not (name == "sika" and branch_blocks_sika_brand)
+        ]
+        ventas_brand = re.search(
+            r"ventas(?:\s+de|\s+del)?\s+(?:productos?\s+)?([a-záéíóúñ][\wáéíóúñ]{3,})",
+            lower,
+        )
+        if ventas_brand:
+            token = ventas_brand.group(1).upper()
+            if token not in {"VENTAS", "PRODUCTOS", "MARCA", "PROVEEDOR", "TOTAL"}:
+                if token not in found:
+                    found.append(token)
         for alias, canonical in AIVanna.BRAND_ALIASES.items():
             if re.search(rf"\b{re.escape(alias)}\b", lower):
-                if canonical not in found:
-                    found.append(canonical)
+                found.append(canonical)
         for match in re.finditer(
             r"\b([a-záéíóúñ]{4,})\b",
             lower,
@@ -454,13 +469,14 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
                 continue
             if " O " in f" {lower} " and token not in found:
                 found.append(token)
-        # de-duplicate preserving order
+        # de-duplicate preserving order (apply typo aliases: cermex → CEMEX)
         seen = set()
         ordered: List[str] = []
         for brand in found:
-            if brand not in seen:
-                seen.add(brand)
-                ordered.append(brand)
+            canonical = AIVanna.BRAND_ALIASES.get(brand.lower(), brand)
+            if canonical not in seen:
+                seen.add(canonical)
+                ordered.append(canonical)
         return ordered
 
     @staticmethod
@@ -495,9 +511,22 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         has_product = "producto" in lower
         has_ranking = any(
             token in lower
-            for token in ("más vendid", "mas vendid", "principales producto")
+            for token in (
+                "más vendid",
+                "mas vendid",
+                "menos vendid",
+                "menor vendid",
+                "peor vendid",
+                "principales producto",
+            )
         ) or bool(re.search(r"top\s*\d+\s+productos?", lower))
         return has_product and has_ranking
+
+    @staticmethod
+    def _is_branch_product_ranking_question(question: str) -> bool:
+        return AIVanna._branch_document_code(
+            question
+        ) is not None and AIVanna._is_product_ranking_question(question)
 
     @staticmethod
     def _extract_product_category(question: str) -> str | None:
@@ -571,21 +600,194 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         )
 
     @staticmethod
-    def _multi_vendor_sales_sql_template(brands: List[str]) -> str:
-        """Aggregate sales by vendor/brand with master-data enrichment."""
-        safe_brands = [
-            re.sub(r"[^A-Z0-9]", "", brand.upper()) for brand in brands if brand
+    def _safe_brand_tokens(brands: List[str]) -> List[str]:
+        return [
+            re.sub(r"[^A-Z0-9]", "", brand.upper())
+            for brand in brands
+            if brand and re.sub(r"[^A-Z0-9]", "", brand.upper())
         ]
+
+    @staticmethod
+    def _articulos_name_match_sql(brand: str) -> str:
+        expr = "UPPER(bd.ArticulosNombre COLLATE DATABASE_DEFAULT)"
+        clause = f"{expr} LIKE '%{brand}%'"
+        for blocker in AIVanna.BRAND_SUBSTRING_BLOCKERS.get(brand, ()):
+            clause = f"({clause} AND {expr} NOT LIKE '%{blocker}%')"
+        return clause
+
+    @staticmethod
+    def _multi_vendor_brand_filter_sql(brands: List[str]) -> str:
+        safe_brands = AIVanna._safe_brand_tokens(brands)
         if not safe_brands:
             return ""
         in_list = ", ".join(f"'{brand}'" for brand in safe_brands)
         proveedor_norm = AIVanna._norm_proveedor_sql()
         marca_norm = AIVanna._norm_marca_sql()
-        name_cases = "\n".join(
-            "            WHEN UPPER(bd.ArticulosNombre COLLATE DATABASE_DEFAULT) "
-            f"LIKE '%{brand}%' THEN '{brand}'"
+        name_filters = " OR ".join(
+            AIVanna._articulos_name_match_sql(brand) for brand in safe_brands
+        )
+        return f"""(
+            {proveedor_norm} IN ({in_list})
+            OR {marca_norm} IN ({in_list})
+            OR {name_filters}
+        )"""
+
+    @staticmethod
+    def _multi_vendor_inner_subquery(sql: str) -> Optional[str]:
+        lower = (sql or "").lower()
+        marker = ") as ventas_marca"
+        if marker not in lower:
+            return None
+        return sql[: lower.index(marker)]
+
+    @staticmethod
+    def _multi_vendor_sql_has_where_prefilter(sql: str, brands: List[str]) -> bool:
+        """True when brand prefilter lives in the inner WHERE (not only in CASE)."""
+        inner = AIVanna._multi_vendor_inner_subquery(sql)
+        safe_brands = AIVanna._safe_brand_tokens(brands)
+        if not inner or not safe_brands:
+            return False
+        where_idx = inner.lower().rfind("where ")
+        if where_idx == -1:
+            return False
+        where_clause = inner[where_idx:].lower()
+        return all(
+            (
+                f"'{brand.lower()}'" in where_clause
+                or f"like '%{brand.lower()}%'" in where_clause
+            )
             for brand in safe_brands
         )
+
+    @staticmethod
+    def _brands_referenced_in_multi_vendor_sql(sql: str) -> List[str]:
+        """Infer brand tokens from a ventas_marca aggregate query."""
+        brands: List[str] = []
+        seen: set[str] = set()
+        for match in re.finditer(r"THEN\s+'([A-Z0-9]{4,})'", sql, re.IGNORECASE):
+            token = match.group(1).upper()
+            if token not in seen:
+                seen.add(token)
+                brands.append(token)
+        for match in re.finditer(
+            r"IN\s*\(\s*'([A-Z0-9]{4,})'\s*\)", sql, re.IGNORECASE
+        ):
+            token = match.group(1).upper()
+            if token not in seen:
+                seen.add(token)
+                brands.append(token)
+        return brands
+
+    _DOC_EXCLUSION_INNER = "bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')"
+    _DOC_EXCLUSION_PATTERN = re.compile(
+        r"(?:bd\.)?DocumentosCodigo\s+NOT\s+IN\s*\([^\)]*\)",
+        flags=re.IGNORECASE,
+    )
+    _INNER_DOC_WHERE_PATTERN = re.compile(
+        r"WHERE\s+(?:bd\.)?DocumentosCodigo\s+NOT\s+IN\s*\([^\)]+\)",
+        flags=re.IGNORECASE,
+    )
+    _BANCO_DATOS_JOIN_PATTERN = re.compile(
+        r"ON\s+bd\.ArticulosCodigo\s+COLLATE\s+DATABASE_DEFAULT\s*\n\s*=\s*"
+        r"pa\.producto_codigo\s+COLLATE\s+DATABASE_DEFAULT",
+        flags=re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _normalize_inner_document_exclusion(inner: str) -> str:
+        return AIVanna._DOC_EXCLUSION_PATTERN.sub(AIVanna._DOC_EXCLUSION_INNER, inner)
+
+    @staticmethod
+    def _find_inner_document_where_end(inner: str) -> Optional[int]:
+        match = AIVanna._INNER_DOC_WHERE_PATTERN.search(inner)
+        return match.end() if match else None
+
+    @staticmethod
+    def _append_inner_where_clause(inner: str, clause: str) -> str:
+        """Insert a WHERE clause after the productos_adicional JOIN."""
+        stripped = clause.strip()
+        if re.search(r"\bwhere\b", inner, flags=re.IGNORECASE):
+            addition = stripped
+            if addition.upper().startswith("WHERE "):
+                addition = f"AND {addition[6:].strip()}"
+            return inner.rstrip() + f"\n      {addition}"
+
+        join_match = AIVanna._BANCO_DATOS_JOIN_PATTERN.search(inner)
+        if join_match:
+            return (
+                inner[: join_match.end()]
+                + f"\n    {stripped}"
+                + inner[join_match.end() :]
+            )
+        return inner.rstrip() + f"\n    {stripped}"
+
+    @staticmethod
+    def _ensure_multi_vendor_inner_filters(sql: str) -> str:
+        """Ensure document exclusion and brand prefilter live in the inner subquery."""
+        inner = AIVanna._multi_vendor_inner_subquery(sql)
+        if inner is None or "from banco_datos" not in inner.lower():
+            return sql
+
+        suffix = sql[len(inner) :]
+        working = AIVanna._normalize_inner_document_exclusion(inner)
+        brands = AIVanna._brands_referenced_in_multi_vendor_sql(sql)
+
+        if "documentoscodigo" not in working.lower():
+            working = AIVanna._append_inner_where_clause(
+                working, f"WHERE {AIVanna._DOC_EXCLUSION_INNER}"
+            )
+
+        full_check = working + suffix
+        if brands and not AIVanna._multi_vendor_sql_has_where_prefilter(
+            full_check, brands
+        ):
+            brand_filter = AIVanna._multi_vendor_brand_filter_sql(brands)
+            if brand_filter:
+                anchor = AIVanna._find_inner_document_where_end(working)
+                if anchor is not None:
+                    working = (
+                        working[:anchor]
+                        + f"\n      AND {brand_filter}"
+                        + working[anchor:]
+                    )
+                else:
+                    working = AIVanna._append_inner_where_clause(
+                        working,
+                        f"WHERE {AIVanna._DOC_EXCLUSION_INNER}\n      AND {brand_filter}",
+                    )
+
+        return working + suffix
+
+    @staticmethod
+    def _repair_multi_vendor_brand_prefilter(sql: str) -> str:
+        """Backward-compatible alias for inner brand prefilter repair."""
+        return AIVanna._ensure_multi_vendor_inner_filters(sql)
+
+    @staticmethod
+    def _prepare_sql_for_execution(sql: str) -> str:
+        """Normalize LLM/cached SQL immediately before execution."""
+        if not sql:
+            return sql
+        sql = AIVanna._repair_sika_center_customer_sql(sql)
+        sql = AIVanna._repair_common_sql_hallucinations(sql)
+        if AIVanna._multi_vendor_inner_subquery(sql) is not None:
+            return AIVanna._ensure_multi_vendor_inner_filters(sql)
+        return AIVanna._ensure_document_exclusion(sql)
+
+    @staticmethod
+    def _multi_vendor_sales_sql_template(brands: List[str]) -> str:
+        """Aggregate sales by vendor/brand with master-data enrichment."""
+        safe_brands = AIVanna._safe_brand_tokens(brands)
+        if not safe_brands:
+            return ""
+        proveedor_norm = AIVanna._norm_proveedor_sql()
+        marca_norm = AIVanna._norm_marca_sql()
+        in_list = ", ".join(f"'{brand}'" for brand in safe_brands)
+        name_cases = "\n".join(
+            f"            WHEN {AIVanna._articulos_name_match_sql(brand)} THEN '{brand}'"
+            for brand in safe_brands
+        )
+        brand_filter = AIVanna._multi_vendor_brand_filter_sql(safe_brands)
         return f"""
 SELECT
     Marca_Proveedor,
@@ -610,6 +812,7 @@ FROM (
         ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
          = pa.producto_codigo COLLATE DATABASE_DEFAULT
     WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+      AND {brand_filter}
 ) AS ventas_marca
 WHERE Marca_Proveedor IS NOT NULL
 GROUP BY Marca_Proveedor
@@ -759,9 +962,7 @@ ORDER BY Mes
         brands = AIVanna._extract_vendor_brands(question)
         if not brands:
             return ""
-        brand_clauses = [
-            AIVanna._brand_match_filter(brand) for brand in brands[:3]
-        ]
+        brand_clauses = [AIVanna._brand_match_filter(brand) for brand in brands[:3]]
         scope_filter = "\n  AND (" + " OR ".join(brand_clauses) + ")"
         year_filter = AIVanna._year_filter_from_question(question)
         if not year_filter and "comparando" not in (question or "").lower():
@@ -862,32 +1063,50 @@ GROUP BY {cliente_norm}
 ORDER BY Facturacion_Total DESC
         """.strip()
 
+    BRAND_SUBSTRING_BLOCKERS = {
+        "GRICOL": ("AGRICOL",),
+    }
+
+    @staticmethod
+    def _brand_text_like_sql(field: str, brand: str) -> str:
+        """Substring match that avoids false positives (e.g. GRICOL inside AGRICOL)."""
+        safe = re.sub(r"[^A-Z0-9]", "", brand.upper())
+        if not safe:
+            return "1 = 0"
+        expr = f"UPPER(LTRIM(RTRIM(COALESCE({field}, ''))))"
+        clause = f"{expr} LIKE '%{safe}%'"
+        for blocker in AIVanna.BRAND_SUBSTRING_BLOCKERS.get(safe, ()):
+            clause = f"({clause} AND {expr} NOT LIKE '%{blocker}%')"
+        return clause
+
     @staticmethod
     def _brand_match_filter(brand: str) -> str:
         safe = re.sub(r"[^A-Z0-9]", "", brand.upper())
         if not safe:
             return "1 = 0"
-        fields = (
-            "proveedor",
-            "marca",
-            "categoria",
-            "subcategoria",
-            "ArticulosNombre",
-        )
+        exact_fields = ("proveedor", "marca")
+        text_fields = ("ArticulosNombre", "categoria", "subcategoria")
         clauses = [
-            f"UPPER(LTRIM(RTRIM(COALESCE({field}, '')))) LIKE '%{safe}%'"
-            for field in fields
+            f"UPPER(LTRIM(RTRIM(COALESCE({field}, '')))) = '{safe}'"
+            for field in exact_fields
         ]
+        clauses.extend(
+            AIVanna._brand_text_like_sql(field, safe) for field in text_fields
+        )
         return "(\n        " + "\n        OR ".join(clauses) + "\n    )"
 
     @staticmethod
     def _product_ranking_order(question: str) -> str:
         lower = (question or "").lower()
+        ascending = any(
+            token in lower for token in ("menos vendid", "menor vendid", "peor vendid")
+        )
+        direction = "ASC" if ascending else "DESC"
         if "por cantidad" in lower or "cantidad" in lower and "factur" not in lower:
-            return "Cantidad_Vendida DESC"
+            return f"Cantidad_Vendida {direction}"
         if "factur" in lower:
-            return "Facturacion_Total DESC"
-        return "Ventas DESC"
+            return f"Facturacion_Total {direction}"
+        return f"Ventas {direction}"
 
     @staticmethod
     def _brand_top_products_sql_template(question: str = "") -> str:
@@ -899,9 +1118,7 @@ ORDER BY Facturacion_Total DESC
 
         scope_filter = ""
         if brands:
-            brand_clauses = [
-                AIVanna._brand_match_filter(brand) for brand in brands[:3]
-            ]
+            brand_clauses = [AIVanna._brand_match_filter(brand) for brand in brands[:3]]
             scope_filter = "\n  AND (" + " OR ".join(brand_clauses) + ")"
         elif category:
             safe_category = re.sub(r"[^A-Z0-9 ]", "", category.upper()).strip()
@@ -911,9 +1128,7 @@ ORDER BY Facturacion_Total DESC
             )
 
         revenue_col = (
-            "Facturacion_Total"
-            if "factur" in (question or "").lower()
-            else "Ventas"
+            "Facturacion_Total" if "factur" in (question or "").lower() else "Ventas"
         )
         return f"""
 SELECT TOP {n}
@@ -923,6 +1138,27 @@ SELECT TOP {n}
     SUM(TotalSinIva - ValorCosto) AS Ganancia
 FROM banco_datos
 WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC'){year_filter}{scope_filter}
+GROUP BY ArticulosNombre
+ORDER BY {order_clause}
+        """.strip()
+
+    @staticmethod
+    def _branch_product_ranking_sql_template(question: str = "") -> str:
+        doc_code = AIVanna._branch_document_code(question) or "FEF"
+        n = AIVanna._extract_top_n(question)
+        year_filter = AIVanna._year_filter_from_question(question)
+        order_clause = AIVanna._product_ranking_order(question)
+        revenue_col = (
+            "Facturacion_Total" if "factur" in (question or "").lower() else "Ventas"
+        )
+        return f"""
+SELECT TOP {n}
+    ArticulosNombre AS Producto,
+    SUM(TotalMasIva) AS {revenue_col},
+    SUM(Cantidad) AS Cantidad_Vendida,
+    SUM(TotalSinIva - ValorCosto) AS Ganancia
+FROM banco_datos
+WHERE DocumentosCodigo = '{doc_code}'{year_filter}
 GROUP BY ArticulosNombre
 ORDER BY {order_clause}
         """.strip()
@@ -1178,9 +1414,7 @@ ORDER BY Ganancia DESC
     @staticmethod
     def _is_credit_vs_cash_question(question: str) -> bool:
         lower = (question or "").lower()
-        has_credit = any(
-            token in lower for token in ("crédito", "credito", "contado")
-        )
+        has_credit = any(token in lower for token in ("crédito", "credito", "contado"))
         has_compare = any(
             token in lower for token in ("vs", "versus", "frente a", "compar")
         )
@@ -1372,27 +1606,42 @@ GROUP BY Dia_Orden
 ORDER BY Dia_Orden
         """.strip()
 
-    def connect_to_mssql(self, **kwargs):
-        """Connect to MSSQL database using pyodbc or pymssql."""
-        try:
-            super().connect_to_mssql(**kwargs)
-        except AttributeError:
-            import pymssql
+    def _is_sqlalchemy_run_sql(self) -> bool:
+        func = getattr(self.run_sql, "__func__", self.run_sql)
+        return getattr(func, "__qualname__", "").endswith("run_sql_mssql")
 
-            login_timeout = int(os.getenv("DB_LOGIN_TIMEOUT", "30"))
-            query_timeout = int(os.getenv("DB_TIMEOUT", "180"))
-            self.connection = pymssql.connect(
-                server=Config.DB_HOST,
-                user=Config.DB_USER,
-                password=Config.DB_PASSWORD,
-                database=Config.DB_NAME,
-                port=int(os.getenv("DB_PORT", "1433")),
-                login_timeout=login_timeout,
-                timeout=query_timeout,
-                as_dict=True,
-            )
-            self.run_sql_is_set = True
-            print("✓ MSSQL connected via pymssql fallback!")
+    def _is_project_run_sql(self) -> bool:
+        """True when run_sql is our Database-backed implementation."""
+        func = getattr(self.run_sql, "__func__", self.run_sql)
+        module = getattr(func, "__module__", "")
+        qualname = getattr(func, "__qualname__", "")
+        if "business_analyzer" in module:
+            return True
+        return qualname.endswith(("AIVanna.run_sql", "EnhancedAIVanna.run_sql"))
+
+    def _bind_project_run_sql(self) -> None:
+        """Keep Vanna on the resilient Database-backed run_sql (not SQLAlchemy)."""
+        for cls in type(self).__mro__:
+            if cls.__name__ == "EnhancedAIVanna" and "run_sql" in cls.__dict__:
+                self.run_sql = cls.__dict__["run_sql"].__get__(self, type(self))
+                self.run_sql_is_set = True
+                return
+            if cls is AIVanna and "run_sql" in cls.__dict__:
+                self.run_sql = cls.__dict__["run_sql"].__get__(self, type(self))
+                self.run_sql_is_set = True
+                return
+        self.run_sql = AIVanna.run_sql.__get__(self, AIVanna)
+        self.run_sql_is_set = True
+
+    def _ensure_project_run_sql(self) -> None:
+        """Re-bind if Vanna's SQLAlchemy connect_to_mssql replaced run_sql."""
+        if self._is_sqlalchemy_run_sql() or not self._is_project_run_sql():
+            self._bind_project_run_sql()
+
+    def connect_to_mssql(self, odbc_conn_str: str = "", **kwargs):
+        """Register MSSQL dialect; SQL runs through project Database layer."""
+        self.dialect = "T-SQL / Microsoft SQL Server"
+        self._bind_project_run_sql()
 
     def generate_sql(
         self, question: str, allow_llm_to_see_data: bool = True, **kwargs
@@ -1452,6 +1701,20 @@ ORDER BY Dia_Orden
                     )
                     if needs_upgrade:
                         template = self._vendedor_performance_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
+                if self._is_branch_product_ranking_question(question):
+                    cached_lower = cached.lower()
+                    doc_code = (self._branch_document_code(question) or "fef").lower()
+                    needs_upgrade = (
+                        "marca_proveedor" in cached_lower
+                        or "productos_adicional" in cached_lower
+                        or "group by articulosnombre" not in cached_lower
+                        or f"documentoscodigo = '{doc_code}'" not in cached_lower
+                    )
+                    if needs_upgrade:
+                        template = self._branch_product_ranking_sql_template(question)
                         if template:
                             self._query_cache.set(question, template)
                             return template
@@ -1536,14 +1799,20 @@ ORDER BY Dia_Orden
                             return template
                 if self._is_multi_vendor_sales_question(question):
                     cached_lower = cached.lower()
+                    brands = self._extract_vendor_brands(question)
+                    missing_prefilter = (
+                        not AIVanna._multi_vendor_sql_has_where_prefilter(
+                            cached, brands
+                        )
+                    )
                     needs_upgrade = (
                         "productos_adicional" not in cached_lower
                         or "collate database_default" not in cached_lower
                         or "totalmasiva" not in cached_lower
                         or "from banco_datos" not in cached_lower
+                        or missing_prefilter
                     )
                     if needs_upgrade:
-                        brands = self._extract_vendor_brands(question)
                         template = self._multi_vendor_sales_sql_template(brands)
                         if template:
                             self._query_cache.set(question, template)
@@ -1567,6 +1836,11 @@ ORDER BY Dia_Orden
                     return template
             if self._is_vendedor_performance_question(question):
                 template = self._vendedor_performance_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
+            if self._is_branch_product_ranking_question(question):
+                template = self._branch_product_ranking_sql_template(question)
                 if template:
                     self._query_cache.set(question, template)
                     return template
@@ -1659,6 +1933,14 @@ ORDER BY Dia_Orden
                         )
                         self._query_cache.set(question, post_candidate)
                         return post_candidate
+                if self._is_branch_product_ranking_question(question):
+                    generated_lower = generated.lower()
+                    if "from banco_datos" in generated_lower:
+                        post_candidate = self._branch_product_ranking_sql_template(
+                            question
+                        )
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
                 if self._is_branch_store_sales_question(question):
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
@@ -1686,9 +1968,7 @@ ORDER BY Dia_Orden
                 if self._is_brand_top_products_question(question):
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
-                        post_candidate = self._brand_top_products_sql_template(
-                            question
-                        )
+                        post_candidate = self._brand_top_products_sql_template(question)
                         self._query_cache.set(question, post_candidate)
                         return post_candidate
                 if self._is_generic_top_products_question(question):
@@ -1738,17 +2018,18 @@ ORDER BY Dia_Orden
         """Execute SQL via shared Database layer (pooling, timeouts, retry)."""
         import pandas as pd
 
+        from business_analyzer.core.database import QueryError
         from business_analyzer.core.db_factory import (
             get_database,
             release_thread_connections,
         )
 
+        self._ensure_project_run_sql()
+
         if not sql:
             return pd.DataFrame()
 
-        sql = self._repair_sika_center_customer_sql(sql)
-        sql = self._repair_common_sql_hallucinations(sql)
-        sql = self._ensure_document_exclusion(sql)
+        sql = self._prepare_sql_for_execution(sql)
 
         def _with_customer_space_normalization(query: str) -> str:
             normalized = query.replace(
@@ -1761,20 +2042,14 @@ ORDER BY Dia_Orden
             )
             return normalized
 
+        from business_analyzer.core.database import is_transient_db_error
+
         def _is_transient_connection_error(error: Exception) -> bool:
-            message = str(error).lower()
-            transient_markers = [
-                "08s01",
-                "10060",
-                "0x274c",
-                "sqlexecdirectw",
-                "tcp provider",
-                "communication link failure",
-                "connection timed out",
-                "connection reset",
-                "broken pipe",
-            ]
-            return any(marker in message for marker in transient_markers)
+            if is_transient_db_error(error):
+                return True
+            if isinstance(error, QueryError) and error.__cause__ is not None:
+                return is_transient_db_error(error.__cause__)
+            return False
 
         def _execute_via_database(query: str) -> pd.DataFrame:
             db = get_database(reuse=True)
@@ -1816,50 +2091,18 @@ ORDER BY Dia_Orden
 
         if last_error is not None:
             print(f"❌ Database error executing SQL: {last_error}")
+            raise last_error
         return pd.DataFrame()
 
     def connect_to_mssql_odbc(self):
-        """Connect & test via ODBC (Vanna's go-to for MSSQL)"""
-        login_timeout = int(os.getenv("DB_LOGIN_TIMEOUT", "30"))
-        query_timeout = int(os.getenv("DB_TIMEOUT", "180"))
-        odbc_str = (
-            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-            f"SERVER={Config.DB_HOST};"
-            f"DATABASE={Config.DB_NAME};"
-            f"UID={Config.DB_USER};"
-            f"PWD={Config.DB_PASSWORD};"
-            f"TrustServerCertificate=yes;"
-            f"Encrypt=yes;"
-            f"Connection Timeout={login_timeout};"
-            f"Query Timeout={query_timeout};"
-        )
-        try:
-            self.connect_to_mssql(odbc_conn_str=odbc_str)
-            df = self.run_sql("SELECT 1 AS ping;")
-            if df is not None and not df.empty:
-                print("✓ MSSQL connected & ping successful!")
-            else:
-                raise ValueError("Ping returned empty—check DB access")
-        except (ImportError, Exception) as e:
-            print(f"⚠️  pyodbc method failed ({e}), trying pymssql fallback...")
-            import pymssql
-
-            self.connection = pymssql.connect(
-                server=Config.DB_HOST,
-                user=Config.DB_USER,
-                password=Config.DB_PASSWORD,
-                database=Config.DB_NAME,
-                port=int(os.getenv("DB_PORT", "1433")),
-                login_timeout=login_timeout,
-                timeout=query_timeout,
-                as_dict=True,
-            )
-            self.run_sql_is_set = True
-            df = self.run_sql("SELECT 1 AS ping;")
-            if df is not None and not df.empty:
-                print("✓ MSSQL connected via pymssql fallback!")
-            else:
-                raise ValueError("Ping returned empty—check DB access")
+        """Connect & verify via project Database layer (pooling, timeouts, retry)."""
+        self.connect_to_mssql()
+        self._bind_project_run_sql()
+        df = self.run_sql("SELECT 1 AS ping;")
+        if df is not None and not df.empty:
+            print("✓ MSSQL connected & ping successful!")
+        else:
+            raise ValueError("Ping returned empty—check DB access")
 
     def get_ai_client(self):
         """Get the AI client for insights generation."""

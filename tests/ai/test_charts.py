@@ -1,5 +1,6 @@
 """Tests for smart chart generation."""
 
+import json
 import os
 import sys
 
@@ -8,8 +9,17 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
-from business_analyzer.ai.charts import build_plotly_code, build_smart_figure
-from business_analyzer.ai.formatting import format_number
+from business_analyzer.ai.charts import (
+    build_plotly_code,
+    build_smart_figure,
+    clear_chart_query_context,
+    fig_to_browser_json,
+)
+from business_analyzer.ai.formatting import (
+    coerce_chart_dataframe,
+    format_dataframe,
+    format_number,
+)
 
 
 @pytest.fixture
@@ -33,8 +43,10 @@ def enhanced_vanna(monkeypatch):
         lambda provider=None: (object(), {"model": "test"}, "openai"),
     )
 
+    clear_chart_query_context()
     vn = EnhancedAIVanna()
-    return vn
+    yield vn
+    clear_chart_query_context()
 
 
 CLIENT_PROFIT_DF = pd.DataFrame(
@@ -82,6 +94,159 @@ CLIENT_PROFIT_DF = pd.DataFrame(
 
 
 class TestSmartCharts:
+    def test_object_decimal_monthly_chart_uses_ventas_totales(self):
+        """MSSQL Decimal columns arrive as object; chart must still pick Ventas_Totales."""
+        from decimal import Decimal
+
+        raw = pd.DataFrame(
+            {
+                "Año": [2026, 2026, 2025],
+                "Mes": [7, 6, 10],
+                "Ventas_Totales": [
+                    Decimal("3182633.104"),
+                    Decimal("138499128.2752"),
+                    Decimal("168369055.6898"),
+                ],
+                "Ganancia": [
+                    Decimal("421998.1867"),
+                    Decimal("20695584.1029"),
+                    Decimal("26845265.51"),
+                ],
+                "Numero_Transacciones": [27, 832, 1046],
+            }
+        )
+        fig = build_smart_figure(raw, question="ventas gricol", dark_mode=False)
+        assert fig is not None
+        assert len(fig.data) == 2
+        assert all(trace.type == "bar" for trace in fig.data)
+        assert max(max(trace.y) for trace in fig.data) > 100_000_000
+        labels = [str(label) for trace in fig.data for label in trace.x]
+        assert "Julio" in labels
+        assert not any("2025" in label or "2026" in label for label in labels)
+
+    def test_formatted_monthly_pintuco_chart_uses_ventas_totales(self):
+        raw = pd.DataFrame(
+            {
+                "Año": [2026, 2026, 2025],
+                "Mes": [7, 6, 10],
+                "Nombre_Mes": ["Julio", "Junio", "Octubre"],
+                "Ventas_Totales": [3_182_633.104, 138_499_128.2752, 168_369_055.6898],
+                "Ganancia": [421_998.1867, 20_695_584.1029, 26_845_265.51],
+                "Numero_Transacciones": [27, 832, 1046],
+            }
+        )
+        formatted = format_dataframe(raw)
+        fig = build_smart_figure(
+            formatted, question="ventas de pintuco mes a mes", dark_mode=False
+        )
+        assert fig is not None
+        assert len(fig.data) == 2
+        assert all(trace.type == "bar" for trace in fig.data)
+        assert max(max(trace.y) for trace in fig.data) > 100_000_000
+        assert min(min(trace.y) for trace in fig.data) < 10_000_000
+        month_labels = {str(label) for trace in fig.data for label in trace.x}
+        assert month_labels == {"Julio", "Junio", "Octubre"}
+        assert fig.layout.barmode == "group"
+
+    def test_coerce_chart_dataframe_restores_currency(self):
+        raw = pd.DataFrame({"Ventas_Totales": [138_499_128.27]})
+        formatted = format_dataframe(raw)
+        coerced = coerce_chart_dataframe(formatted)
+        assert coerced["Ventas_Totales"].dtype != object
+        assert float(coerced["Ventas_Totales"].iloc[0]) > 138_000_000
+
+    def test_coerce_does_not_inflate_decimal_strings(self):
+        from decimal import Decimal
+
+        from business_analyzer.ai.formatting import _parse_colombian_display_number
+
+        assert _parse_colombian_display_number(
+            Decimal("47110166.2619"), "Ventas_Totales"
+        ) == pytest.approx(47110166.2619)
+        coerced = coerce_chart_dataframe(
+            pd.DataFrame({"Ventas_Totales": [Decimal("47110166.2619")]})
+        )
+        assert float(coerced["Ventas_Totales"].iloc[0]) == pytest.approx(47110166.2619)
+
+    def test_coerce_parses_us_comma_decimal_strings(self):
+        from business_analyzer.ai.formatting import _parse_colombian_display_number
+
+        assert _parse_colombian_display_number(
+            "43,513,462.2216", "Ventas_Totales"
+        ) == pytest.approx(43513462.2216)
+
+    def test_fig_to_browser_json_uses_plain_arrays(self):
+        raw = pd.DataFrame(
+            {
+                "Año": [2025, 2024],
+                "Mes": [7, 6],
+                "Nombre_Mes": ["July", "June"],
+                "Ventas_Totales": [843_772_603, 870_317_000],
+            }
+        )
+        fig = build_smart_figure(raw, question="ventas cemex")
+        payload = json.loads(fig_to_browser_json(fig))
+        y_values = [value for trace in payload["data"] for value in trace["y"]]
+        assert isinstance(y_values, list)
+        assert "bdata" not in fig_to_browser_json(fig)
+        assert max(y_values) > 800_000_000
+
+    def test_cemex_monthly_english_month_names_chart(self):
+        raw = pd.DataFrame(
+            {
+                "Año": [2026, 2026, 2025],
+                "Mes": [7, 6, 10],
+                "Nombre_Mes": ["July", "June", "October"],
+                "Ventas_Totales": [3_182_633.104, 138_499_128.2752, 168_369_055.6898],
+                "Ganancia": [421_998.1867, 20_695_584.1029, 26_845_265.51],
+                "Numero_Transacciones": [27, 832, 1046],
+            }
+        )
+        fig = build_smart_figure(
+            raw, question="ventas de cemex mes a mes", dark_mode=False
+        )
+        assert fig is not None
+        assert len(fig.data) == 2
+        assert max(max(trace.y) for trace in fig.data) > 100_000_000
+        labels = [str(label) for trace in fig.data for label in trace.x]
+        assert "Julio" in labels
+        assert not any("2025" in label or "2026" in label for label in labels)
+
+    def test_chart_does_not_plot_mes_when_ventas_unparsed(self):
+        """Without sales column, chart must not fall back to Mes (1-12) as Y metric."""
+        broken = pd.DataFrame(
+            {
+                "Año": [2026, 2026, 2025],
+                "Mes": [7, 6, 10],
+                "Nombre_Mes": ["Julio", "Junio", "Octubre"],
+                "Ventas_Totales": ["N/A", "N/A", "N/A"],
+            }
+        )
+        fig = build_smart_figure(broken, question="ventas cemex mes a mes")
+        if fig is not None:
+            assert max(fig.data[0].y) > 1000
+
+    def test_multi_year_same_month_grouped_bars(self):
+        """Enero 2024/2025/2026 appear side-by-side, colored by year."""
+        raw = pd.DataFrame(
+            {
+                "Año": [2024, 2025, 2026],
+                "Mes": [1, 1, 1],
+                "Nombre_Mes": ["Enero", "Enero", "Enero"],
+                "Ventas_Totales": [100_000_000, 120_000_000, 150_000_000],
+            }
+        )
+        fig = build_smart_figure(
+            raw, question="ventas de pintuco mes a mes", dark_mode=False
+        )
+        assert fig is not None
+        assert len(fig.data) == 3
+        assert fig.layout.barmode == "group"
+        x_labels = [str(label) for trace in fig.data for label in trace.x]
+        assert x_labels == ["Enero", "Enero", "Enero"]
+        legend = [trace.name for trace in fig.data]
+        assert set(legend) == {"2024", "2025", "2026"}
+
     def test_sika_center_monthly_bar_chart(self):
         df = pd.DataFrame(
             {
@@ -126,9 +291,7 @@ class TestSmartCharts:
         df = pd.DataFrame(
             {
                 "Producto": [f"Producto SIKA {i}" for i in range(1, 11)],
-                "Ventas": [
-                    5_000_000_000 - i * 100_000_000 for i in range(10)
-                ],
+                "Ventas": [5_000_000_000 - i * 100_000_000 for i in range(10)],
                 "Cantidad_Vendida": list(range(1000, 900, -10)),
                 "Ganancia": [500_000_000 - i * 10_000_000 for i in range(10)],
             }
@@ -281,8 +444,11 @@ class TestSmartCharts:
             dark_mode=False,
         )
         assert fig is not None
-        labels = list(fig.data[0].x)
-        assert any("202" in str(label) for label in labels)
+        assert fig.layout.barmode == "group"
+        legend = {trace.name for trace in fig.data}
+        assert legend == {"2025", "2026"}
+        month_labels = {str(label) for trace in fig.data for label in trace.x}
+        assert month_labels == {"Junio", "Mayo", "Diciembre"}
 
     def test_client_ranking_hides_confusing_x_axis_ticks(self):
         df = pd.DataFrame(
@@ -395,29 +561,32 @@ class TestSmartCharts:
         assert fig.data[0].orientation == "h"
         assert len(fig.data) == 1
 
-    def test_enhanced_ai_vanna_get_plotly_figure_falls_back_to_super_when_not_chartable(
+    def test_enhanced_ai_vanna_chart_from_formatted_cache_df(self, enhanced_vanna):
+        raw = pd.DataFrame(
+            {
+                "Año": [2026, 2026, 2025],
+                "Mes": [7, 6, 10],
+                "Nombre_Mes": ["Julio", "Junio", "Octubre"],
+                "Ventas_Totales": [3_182_633.104, 138_499_128.2752, 168_369_055.6898],
+            }
+        )
+        enhanced_vanna._last_question = "ventas de pintuco mes a mes"
+        enhanced_vanna._last_result_df = None
+        cached_display = format_dataframe(raw)
+
+        fig = enhanced_vanna.get_plotly_figure("", cached_display, dark_mode=False)
+
+        assert fig is not None
+        assert max(fig.data[0].y) > 100_000_000
+
+    def test_enhanced_ai_vanna_get_plotly_figure_raises_when_not_chartable(
         self,
         enhanced_vanna,
-        monkeypatch,
     ):
-        from business_analyzer.ai.base import AIVanna
-
-        sentinel = {"called": False, "figure": None}
-
-        def _fake_super_get(*_args, **_kwargs):
-            sentinel["called"] = True
-            sentinel["figure"] = "super-figure"
-            return sentinel["figure"]
-
-        monkeypatch.setattr(AIVanna, "get_plotly_figure", _fake_super_get)
-
-        fig = enhanced_vanna.get_plotly_figure(
-            "", pd.DataFrame({"x": [1]}), dark_mode=False
-        )
-
-        assert enhanced_vanna.provider
-        assert sentinel["called"]
-        assert fig == "super-figure"
+        with pytest.raises(ValueError, match="could not build a figure"):
+            enhanced_vanna.get_plotly_figure(
+                "", pd.DataFrame({"x": [1]}), dark_mode=False
+            )
 
     def test_geo_query_uses_departamento_ciudad_composite_label(self):
         df = pd.DataFrame(
