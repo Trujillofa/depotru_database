@@ -149,10 +149,14 @@ class EnhancedAIVanna(AIVanna):
         allow_llm_to_see_data: bool = True,
         **kwargs,
     ):
-        self._last_question = question
-        set_chart_query_context(question=question)
+        prior = getattr(self, "_last_question", None)
+        effective = self.resolve_question_with_context(question, prior)
+        self._last_question = effective
+        set_chart_query_context(question=effective)
         return super().generate_sql(
-            question=question, allow_llm_to_see_data=allow_llm_to_see_data, **kwargs
+            question=effective,
+            allow_llm_to_see_data=allow_llm_to_see_data,
+            **kwargs,
         )
 
     def run_sql(self, sql: str, **kwargs):

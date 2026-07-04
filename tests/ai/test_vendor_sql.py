@@ -566,6 +566,44 @@ class TestBranchLeastSoldProducts:
         assert "marca_proveedor" not in lower
         cache.set.assert_called_with(self.QUESTION, result)
 
+    def test_resolve_top_n_followup_merges_prior_question(self):
+        prior = self.QUESTION
+        resolved = AIVanna.resolve_question_with_context("top 100", prior)
+        assert "sika center" in resolved.lower()
+        assert "top 100" in resolved.lower()
+
+    def test_top_n_followup_uses_prior_branch_template(self):
+        from vanna_grok import EnhancedAIVanna
+
+        cache = MagicMock()
+        cache.get.return_value = None
+
+        vn = object.__new__(EnhancedAIVanna)
+        vn._query_cache = cache
+        vn._last_question = self.QUESTION
+
+        result = EnhancedAIVanna.generate_sql(vn, "top 100")
+
+        lower = result.lower()
+        assert "top 100" in lower
+        assert "documentoscodigo = 'fef'" in lower
+        assert "order by ventas asc" in lower
+
+
+class TestBareTopNFollowup:
+    def test_bare_top_n_without_context_uses_generic_products(self):
+        resolved = AIVanna.resolve_question_with_context("top 100", None)
+        assert "productos" in resolved.lower()
+
+        cache = MagicMock()
+        cache.get.return_value = None
+        vn = object.__new__(AIVanna)
+        vn._query_cache = cache
+        result = AIVanna.generate_sql(vn, resolved)
+
+        assert "top 100" in result.lower()
+        assert "group by articulosnombre" in result.lower()
+
 
 class TestLastNDaysSalesTemplate:
     QUESTION = "Ventas de los últimos 30 días"

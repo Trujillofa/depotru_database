@@ -1022,8 +1022,26 @@ ORDER BY Año DESC, Mes DESC
         ):
             match = re.search(pattern, lower)
             if match:
-                return max(1, min(int(match.group(1)), 50))
+                return max(1, min(int(match.group(1)), 100))
         return default
+
+    @staticmethod
+    def _is_bare_top_n_followup(question: str) -> bool:
+        return bool(re.fullmatch(r"top\s*\d+\s*", (question or "").lower().strip()))
+
+    @staticmethod
+    def resolve_question_with_context(
+        question: Optional[str], prior: Optional[str] = None
+    ) -> str:
+        """Expand chat follow-ups like ``top 100`` using the prior question."""
+        q = (question or "").strip()
+        if not q or not AIVanna._is_bare_top_n_followup(q):
+            return q
+        prior_q = (prior or "").strip()
+        n = AIVanna._extract_top_n(q)
+        if prior_q and prior_q.lower() != q.lower():
+            return f"{prior_q} top {n}"
+        return f"top {n} productos más vendidos por facturación"
 
     @staticmethod
     def _year_filter_from_question(question: str) -> str:
