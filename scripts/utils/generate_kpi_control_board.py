@@ -26,6 +26,15 @@ from typing import Any, Dict, List
 
 import pymssql
 
+try:
+    from business_analyzer.ai.base import (  # pyright: ignore[reportMissingImports]
+        AIVanna,
+    )
+
+    _ai = AIVanna()
+except Exception:
+    _ai = None
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SQL_PACK_PATH = ROOT_DIR / "scripts" / "analysis" / "kpi_sql_pack.sql.template"
 OUTPUT_DIR = ROOT_DIR / "reports"
@@ -172,6 +181,41 @@ def format_delta(value: float, kind: str) -> str:
     return format_pct(value, 2) if value else "0,00%"
 
 
+def generate_narrative(
+    scorecard: Dict[str, Dict[str, Any]], results: Dict[str, List[Dict[str, Any]]]
+) -> str:
+    """Generate AI narrative summary for KPI board."""
+    if _ai is None:
+        return "AI narrative unavailable (AIVanna init failed)."
+    try:
+        margin = scorecard.get("margen", {}).get("current", 0.0)
+        profit = scorecard.get("ganancia", {}).get("current", 0.0)
+        ticket = scorecard.get("ticket", {}).get("current", 0.0)
+        concentration = scorecard.get("concentracion", {}).get("current", 0.0)
+        q2 = results.get("Q2", [])
+        top_cat = q2[0].get("Categoria", "N/A") if q2 else "N/A"
+        prompt = (
+            f"Escribe un párrafo ejecutivo en español (máximo 150 palabras) "
+            f"analizando el rendimiento semanal de la ferretería: "
+            f"Margen Bruto {margin:.2f}%, Ganancia Bruta ${profit:,.0f}, "
+            f"Ticket Promedio ${ticket:,.0f}, Concentración Top-10 {concentration:.2f}%, "
+            f"Categoría top: {top_cat}. "
+            f"Incluye una recomendación comercial accionable."
+        )
+        message_log = [
+            _ai.system_message(
+                "Eres un asistente de datos para una ferretería colombiana. "
+                "Escribe en español colombiano usando formato de moneda COP "
+                "con separador de miles con punto."
+            ),
+            _ai.user_message(prompt),
+        ]
+        summary = _ai.submit_prompt(message_log)
+        return str(summary)
+    except Exception as e:
+        return f"AI narrative generation failed: {e}"
+
+
 def status_higher_is_better(current: float, target: float) -> str:
     if current >= target:
         return "🟢"
@@ -189,7 +233,7 @@ def status_lower_is_better(current: float, target: float) -> str:
 
 
 def compute_scorecard(
-    results: Dict[str, List[Dict[str, Any]]]
+    results: Dict[str, List[Dict[str, Any]]],
 ) -> Dict[str, Dict[str, Any]]:
     q1 = sorted(
         results["Q1"],
@@ -236,9 +280,11 @@ def compute_scorecard(
             "baseline": baseline_profit,
             "target": profit_target,
             "current": current_profit,
-            "delta": ((current_profit / baseline_profit - 1) * 100)
-            if baseline_profit
-            else 0.0,
+            "delta": (
+                ((current_profit / baseline_profit - 1) * 100)
+                if baseline_profit
+                else 0.0
+            ),
             "status": status_higher_is_better(current_profit, profit_target),
             "delta_kind": "pct",
         },
@@ -246,9 +292,11 @@ def compute_scorecard(
             "baseline": baseline_ticket,
             "target": ticket_target,
             "current": current_ticket,
-            "delta": ((current_ticket / baseline_ticket - 1) * 100)
-            if baseline_ticket
-            else 0.0,
+            "delta": (
+                ((current_ticket / baseline_ticket - 1) * 100)
+                if baseline_ticket
+                else 0.0
+            ),
             "status": status_higher_is_better(current_ticket, ticket_target),
             "delta_kind": "pct",
         },
@@ -409,6 +457,12 @@ def render_markdown(
     lines.append("| Medium | Inventory |  |  |  | +capital / +margen |")
 
     lines.append("")
+    lines.append("## 6) AI Narrative Summary")
+    lines.append("")
+    narrative = generate_narrative(scorecard, results)
+    lines.append(narrative)
+    lines.append("")
+
     lines.append("## 5) SQL Blocks Used (Traceability)")
     lines.append("")
     for q in range(1, 9):

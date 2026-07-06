@@ -72,27 +72,31 @@ python src/vanna_grok.py
 - "Clientes con mayor facturación"
 - "Margen de ganancia promedio"
 
-### Option 2: Traditional Script Analysis
+### Option 2: Monthly Manager Report
 
 ```bash
-# Install dependencies
-pip install pymssql python-dotenv matplotlib numpy pandas
+# Install with report dependencies
+pip install -e ".[dev]"
 
 # Configure environment
 cp .env.example .env
 # Edit .env with your database credentials
 
-# Run analysis
-python src/business_analyzer_combined.py
-
-# Analyze more records
-python src/business_analyzer_combined.py --limit 5000
-
-# Analyze date range
-python src/business_analyzer_combined.py --start-date 2025-01-01 --end-date 2025-12-31
+# Generate a monthly sales report (text, JSON, HTML, or PDF)
+depotru-report --year 2024 --month 5
+depotru-report --year 2024 --month 5 --format html --output report_mayo_2024.html
+depotru-report --year 2024 --month 5 --format pdf --output report_mayo_2024.pdf
 ```
 
-### Option 3: Interactive Web Dashboard
+### Option 3: MCP Database Server (for AI agents)
+
+```bash
+pip install -e ".[mcp]"
+depotru-db-mcp
+# See mcp/README.md for Grok/Cursor configuration
+```
+
+### Option 4: Interactive Web Dashboard
 
 ```bash
 # Install Streamlit
@@ -103,7 +107,7 @@ streamlit run examples/streamlit_dashboard.py
 # → Opens automatically in browser
 ```
 
-### Option 4: Weekly KPI Control Board Automation
+### Option 5: Weekly KPI Control Board Automation
 
 ```bash
 # Generate KPI board for last completed week (Mon-Sun)

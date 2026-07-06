@@ -48,11 +48,21 @@ src/
 │   ├── core/                   # config.py, database.py, validation.py
 │   ├── analysis/               # customer.py, financial.py, product.py, inventory.py, unified.py
 │   └── ai/                     # base.py, formatting.py, providers/{grok,openai,anthropic,ollama}.py
-├── business_analyzer_combined.py  # LEGACY monolithic analyzer (deprecated, don't extend)
-└── config.py                   # LEGACY config (deprecated)
+└── config.py                   # Shared config (env vars, DB settings)
 ```
 
-**Rule**: Use `business_analyzer/` modular package for new code. Legacy files are frozen.
+**Rule**: Use `business_analyzer/` modular package for new code.
+
+**CLI entry points:**
+- `vanna-grok` / `python src/vanna_grok.py` — NL→SQL chat UI
+- `depotru-report` — monthly manager sales report (HTML/PDF/JSON)
+- `depotru-db-mcp` — MCP database server for AI agents
+
+**Production Vanna:** set `PRODUCTION_MODE=true` to serve with Waitress (default: Flask dev server).
+
+**REST API:** `python src/api.py` → `http://localhost:8000`. Set `API_KEY` to require `X-API-Key` header on protected routes.
+
+**Query cache:** `CACHE_BACKEND=redis` + `REDIS_URL` for distributed Vanna SQL cache (falls back to memory).
 
 ---
 

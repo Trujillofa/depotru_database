@@ -1,0 +1,14 @@
+# Depotru BI scheduled jobs — copy to crontab -e and adjust paths/user.
+# All jobs assume: cd /home/yderf/Projects/depotru_database && PYTHONPATH=src
+
+# Monthly manager report — 1st of month at 06:00
+0 6 1 * * cd /home/yderf/Projects/depotru_database && PYTHONPATH=src uv run python scripts/reports/run_scheduled_monthly_report.py --format html >> ~/business_reports/cron.log 2>&1
+
+# Daily anomaly check — weekdays at 07:30
+30 7 * * 1-5 cd /home/yderf/Projects/depotru_database && PYTHONPATH=src uv run python scripts/utils/run_scheduled_anomaly_check.py >> ~/business_reports/cron.log 2>&1
+
+# Nightly affinity mart refresh — 02:00
+0 2 * * * cd /home/yderf/Projects/depotru_database && PYTHONPATH=src uv run python scripts/analysis/refresh_affinity_mart.py >> ~/business_reports/cron.log 2>&1
+
+# Weekly Vanna training refresh (optional) — Sunday 03:00
+# 0 3 * * 0 cd /home/yderf/Projects/depotru_database && PYTHONPATH=src uv run python scripts/utils/retrain_vanna.py --reset >> ~/business_reports/cron.log 2>&1
