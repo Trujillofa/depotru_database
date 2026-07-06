@@ -65,4 +65,4 @@ ORDER BY v.Fecha DESC
 
 ## Code & Vanna Integration
 
-Python SQL builders live in `business_analyzer.analysis.j3system_sales_warehouse` (`build_sales_warehouse_detail_sql`, `build_sales_by_warehouse_sql`, `build_one_warehouse_per_sale_sql`). Vanna picks them up via `get_j3system_training_examples()` and runtime routing in `AIVanna.generate_sql` for warehouse-per-sale questions.
+Python SQL builders live in `business_analyzer.core.j3system_sales_warehouse` (`build_sales_warehouse_detail_sql`, `build_sales_by_warehouse_sql`, `build_one_warehouse_per_sale_sql`). Vanna picks them up via `get_j3system_training_examples()` and runtime routing in `AIVanna.generate_sql` for warehouse-per-sale questions.

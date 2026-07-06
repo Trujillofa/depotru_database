@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Tuple
 
 from business_analyzer.core.database import Database
 
@@ -169,15 +169,36 @@ def _has_sale_context(question: str) -> bool:
     return bool(re.search(r"\b(ventas?|facturas?|facturaci[oó]n)\b", lower))
 
 
+def _is_spanish_con_preposition(question: str) -> bool:
+    """True when ``con`` is the Spanish preposition, not warehouse code ``CON``."""
+    lower = (question or "").lower()
+    return bool(
+        re.search(
+            r"\b(?:ventas?|productos?|clientes?|listar|dame|facturas?)\s+con\b",
+            lower,
+        )
+        or re.search(r"\bcon\s+su\s+almac[eé]n\b", lower)
+    )
+
+
 def extract_warehouse_code(question: str) -> Optional[str]:
     """Return a known warehouse code mentioned in the question, if any."""
     upper = (question or "").upper()
+    lower = (question or "").lower()
     warehouse_context = _has_warehouse_context(question)
     for code in sorted(WAREHOUSE_CODES, key=len, reverse=True):
         if not re.search(rf"\b{re.escape(code)}\b", upper):
             continue
-        if code in _AMBIGUOUS_WAREHOUSE_CODES and not warehouse_context:
-            continue
+        if code in _AMBIGUOUS_WAREHOUSE_CODES:
+            if not warehouse_context:
+                continue
+            if _is_spanish_con_preposition(question):
+                continue
+            if not re.search(
+                r"\b(?:almac[eé]n|bodega|almancen)\s+con\b|\bcon\s+contabilidad\b",
+                lower,
+            ):
+                continue
         return code
     return None
 

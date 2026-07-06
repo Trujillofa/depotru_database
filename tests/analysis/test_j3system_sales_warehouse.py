@@ -2,7 +2,7 @@
 
 import pytest
 
-from business_analyzer.analysis.j3system_sales_warehouse import (
+from business_analyzer.core.j3system_sales_warehouse import (
     WAREHOUSE_CODES,
     build_one_warehouse_per_sale_sql,
     build_sales_by_warehouse_sql,
@@ -90,6 +90,12 @@ def test_extract_warehouse_code_finds_dot_rot():
 @pytest.mark.unit
 def test_extract_warehouse_code_ignores_spanish_con_preposition():
     assert extract_warehouse_code("Top 10 clientes con mayor facturación") is None
+    assert extract_warehouse_code("Listar ventas con su almacén en J3System") is None
+
+
+@pytest.mark.unit
+def test_extract_warehouse_code_finds_con_when_explicit():
+    assert extract_warehouse_code("Ventas del almacén CON en J3System") == "CON"
 
 
 @pytest.mark.unit

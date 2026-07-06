@@ -34,7 +34,7 @@ try:
 except ImportError:
     OpenAI = None
 
-from business_analyzer.analysis.j3system_sales_warehouse import (
+from business_analyzer.core.j3system_sales_warehouse import (
     build_sales_warehouse_sql_for_question,
     is_j3system_warehouse_question,
 )
@@ -1995,22 +1995,14 @@ ORDER BY Dia_Orden
                 if routed is not None:
                     self._manager_report_result = routed
                     return None
+                if self._is_j3system_warehouse_question(question):
+                    template = self._j3system_warehouse_sql_template(question)
+                    if template:
+                        self._query_cache.set(question, template)
+                        return template
 
             cached = self._query_cache.get(question)
             if cached:
-                if self._is_j3system_warehouse_question(question):
-                    cached_lower = cached.lower()
-                    needs_upgrade = (
-                        "invventas" not in cached_lower
-                        or "invimpresionfactura" not in cached_lower
-                        or "almancen" not in cached_lower
-                        or "cast(iif.ventaid as int)" not in cached_lower
-                    )
-                    if needs_upgrade:
-                        template = self._j3system_warehouse_sql_template(question)
-                        if template:
-                            self._query_cache.set(question, template)
-                            return template
                 if self._is_document_type_sales_question(question):
                     cached_lower = cached.lower()
                     needs_upgrade = (
@@ -2181,11 +2173,6 @@ ORDER BY Dia_Orden
                             return template
                 return cached
 
-            if self._is_j3system_warehouse_question(question):
-                template = self._j3system_warehouse_sql_template(question)
-                if template:
-                    self._query_cache.set(question, template)
-                    return template
             if self._is_document_type_sales_question(question):
                 template = self._document_type_sales_sql_template(question)
                 if template:

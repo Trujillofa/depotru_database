@@ -11,7 +11,7 @@ import os
 import re
 from typing import List, Optional, Tuple
 
-from business_analyzer.analysis.j3system_sales_warehouse import (
+from business_analyzer.core.j3system_sales_warehouse import (
     WAREHOUSE_CODES,
     build_one_warehouse_per_sale_sql,
     build_sales_by_warehouse_sql,
