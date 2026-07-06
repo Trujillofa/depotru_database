@@ -101,8 +101,10 @@ class TestManagerReportHelpers:
 
     def test_patched_vanna_js_content(self):
         patched = patched_vanna_js_content()
-        assert 'n.type==="manager_report"' in patched
-        assert 'E.type==="manager_report"' in patched
+        assert 'if(n.type==="manager_report")' in patched
+        assert 'if(E.type==="manager_report")' in patched
+        assert 'if(Se(n),n.type==="manager_report")' not in patched
+        assert 'if(Se(E),E.type==="manager_report")' not in patched
 
 
 class TestManagerReportFlaskRoutes:

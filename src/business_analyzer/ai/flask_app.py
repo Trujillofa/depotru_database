@@ -30,14 +30,14 @@ from business_analyzer.ai.charts import (
 from business_analyzer.ai.formatting import coerce_chart_dataframe
 
 _MANAGER_REPORT_JS_SNIPPET = (
-    'if(Se(n),n.type==="manager_report"){'
+    'if(n.type==="manager_report"){'
     'Se({type:"text",id:n.id,text:n.text||""});'
     'n.download_url&&window.open(n.download_url,"_blank");return;}'
     'if(Se(n),n.type!=="sql")return;'
 )
 
 _MANAGER_REPORT_JS_SNIPPET_E = (
-    'if(Se(E),E.type==="manager_report"){'
+    'if(E.type==="manager_report"){'
     'Se({type:"text",id:E.id,text:E.text||""});'
     'E.download_url&&window.open(E.download_url,"_blank");return;}'
     'if(Se(E),E.type!=="sql")return;'
