@@ -101,7 +101,7 @@ async def get_combined_analysis(
         return analyzer.analyze_all()
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(None, _run_analysis)
         return {
             "status": "success",
@@ -117,24 +117,26 @@ async def what_if_scenario(req: WhatIfRequest):
     """Run What-If scenario for a product."""
 
     def _run_what_if():
+        excluded = Config.EXCLUDED_DOCUMENT_CODES
+        placeholders = ", ".join(["%s"] * len(excluded))
         with Database() as db:
             rows = db.execute_query(
-                """
+                f"""
                 SELECT TOP 1
                     AVG((TotalSinIva - ValorCosto) / NULLIF(TotalSinIva, 0) * 100) as margin_pct,
                     AVG(TotalSinIva - ValorCosto) as profit
                 FROM banco_datos
                 WHERE ArticulosCodigo = %s
-                  AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
-                """,
-                (req.product_id,),
+                  AND DocumentosCodigo NOT IN ({placeholders})
+                """,  # nosec B608 — excluded codes from Config
+                (req.product_id, *excluded),
             )
         if isinstance(rows, list) and rows:
             return rows[0]
         return None
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         row = await loop.run_in_executor(None, _run_what_if)
 
         if not row or row.get("margin_pct") is None:
@@ -179,7 +181,7 @@ async def list_top_products(
             return get_top_products(limit=limit, db=db)
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         rows = await loop.run_in_executor(None, _run)
         return [
             TopProductItem(
@@ -205,7 +207,7 @@ async def get_demand_forecast(
             return forecast_demand(product_id, days=days, db=db)
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         units = await loop.run_in_executor(None, _run)
         return ForecastResponse(
             product_id=product_id,

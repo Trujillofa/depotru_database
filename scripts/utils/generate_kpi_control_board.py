@@ -202,7 +202,15 @@ def generate_narrative(
             f"Categoría top: {top_cat}. "
             f"Incluye una recomendación comercial accionable."
         )
-        summary = _ai.generate_summary(prompt, None)
+        message_log = [
+            _ai.system_message(
+                "Eres un asistente de datos para una ferretería colombiana. "
+                "Escribe en español colombiano usando formato de moneda COP "
+                "con separador de miles con punto."
+            ),
+            _ai.user_message(prompt),
+        ]
+        summary = _ai.submit_prompt(message_log)
         return str(summary)
     except Exception as e:
         return f"AI narrative generation failed: {e}"

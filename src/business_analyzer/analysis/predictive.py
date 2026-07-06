@@ -13,7 +13,14 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 if TYPE_CHECKING:
     from ..core.database import Database
 
-EXCLUDED_DOCS = ("XY", "AS", "TS")
+
+def _excluded_docs_placeholders() -> tuple[str, tuple[str, ...]]:
+    """Build parameterized NOT IN clause from Config.EXCLUDED_DOCUMENT_CODES."""
+    from config import Config
+
+    codes = tuple(Config.EXCLUDED_DOCUMENT_CODES)
+    clause = ", ".join(["%s"] * len(codes))
+    return f"DocumentosCodigo NOT IN ({clause})", codes
 
 
 def _linear_forecast(daily_qty: List[float], days: int) -> int:
@@ -69,21 +76,23 @@ def forecast_demand(
     end_date = date.today()
     start_date = end_date - timedelta(days=history_days)
 
-    sql = """
+    excluded_clause, excluded_codes = _excluded_docs_placeholders()
+    sql = f"""
         SELECT
             Fecha,
             SUM(Cantidad) AS total_qty
         FROM banco_datos
         WHERE ArticulosCodigo = %s
           AND Fecha BETWEEN %s AND %s
-          AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+          AND {excluded_clause}
         GROUP BY Fecha
         ORDER BY Fecha
-    """
+    """  # nosec B608 — excluded codes come from Config
 
     def _run(conn: "Database") -> List[Dict[str, Any]]:
         rows = conn.execute_query(
-            sql, (product_id, start_date.isoformat(), end_date.isoformat())
+            sql,
+            (product_id, start_date.isoformat(), end_date.isoformat(), *excluded_codes),
         )
         return rows if isinstance(rows, list) else []
 
@@ -109,6 +118,7 @@ def get_top_products(
     start_date = end_date - timedelta(days=lookback_days)
     safe_limit = max(1, min(int(limit), 100))
 
+    excluded_clause, excluded_codes = _excluded_docs_placeholders()
     sql = f"""
         SELECT TOP {safe_limit}
             ArticulosCodigo AS product_id,
@@ -116,13 +126,15 @@ def get_top_products(
             SUM(Cantidad) AS total_qty
         FROM banco_datos
         WHERE Fecha BETWEEN %s AND %s
-          AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+          AND {excluded_clause}
         GROUP BY ArticulosCodigo, ArticulosNombre
         ORDER BY total_qty DESC
-    """  # nosec B608 — limit is bounded int
+    """  # nosec B608 — limit is bounded int; excluded codes from Config
 
     def _run(conn: "Database") -> List[Dict[str, Any]]:
-        rows = conn.execute_query(sql, (start_date.isoformat(), end_date.isoformat()))
+        rows = conn.execute_query(
+            sql, (start_date.isoformat(), end_date.isoformat(), *excluded_codes)
+        )
         return rows if isinstance(rows, list) else []
 
     if db is not None:
