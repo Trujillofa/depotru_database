@@ -183,6 +183,17 @@ class TestTrainingExamples:
         assert "Marca_Proveedor" not in target_sql
         assert "productos_adicional" not in target_sql
 
+    def test_euroceramica_inventory_sold_uses_productos_adicional_join(self):
+        """EUROCERAMICA sold products use master-data join and product-level output."""
+        examples = dict(get_default_training_examples())
+        target_sql = examples["Productos EUROCERAMICA en inventario vendido"]
+
+        assert "productos_adicional" in target_sql
+        assert "GROUP BY bd.ArticulosNombre" in target_sql
+        assert "ORDER BY Ventas_Total DESC" in target_sql
+        assert "SELECT TOP 15" in target_sql
+        assert "Marca_Proveedor" not in target_sql
+
     def test_schema_documentation_maps_sika_center_to_branch(self):
         """Schema docs must explicitly disambiguate SIKA products vs SIKA CENTER."""
         from business_analyzer.ai.training import train_on_schema

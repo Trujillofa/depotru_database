@@ -1121,20 +1121,27 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             "Productos EUROCERAMICA en inventario vendido",
             """
             SELECT TOP 15
-                ArticulosNombre AS Producto,
-                SUM(TotalMasIva) AS Ventas_Total,
-                SUM(Cantidad) AS Unidades_Vendidas,
-                AVG((TotalSinIva - ValorCosto) * 100.0 / NULLIF(TotalSinIva, 0)) AS Margen_Promedio
-            FROM banco_datos
-            WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+                bd.ArticulosNombre AS Producto,
+                SUM(bd.TotalMasIva) AS Ventas_Total,
+                SUM(bd.Cantidad) AS Unidades_Vendidas,
+                AVG((bd.TotalSinIva - bd.ValorCosto) * 100.0 / NULLIF(bd.TotalSinIva, 0)) AS Margen_Promedio
+            FROM banco_datos bd
+            LEFT JOIN productos_adicional pa
+                ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
+                 = pa.producto_codigo COLLATE DATABASE_DEFAULT
+            WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
             AND (
-                UPPER(LTRIM(RTRIM(COALESCE(proveedor, '')))) LIKE '%EUROCERAMICA%'
-                OR UPPER(LTRIM(RTRIM(COALESCE(marca, '')))) LIKE '%EUROCERAMICA%'
-                OR UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) LIKE '%EUROCERAMICA%'
-                OR UPPER(LTRIM(RTRIM(COALESCE(subcategoria, '')))) LIKE '%EUROCERAMICA%'
-                OR UPPER(LTRIM(RTRIM(COALESCE(ArticulosNombre, '')))) LIKE '%EUROCERAMICA%'
+                UPPER(LTRIM(RTRIM(COALESCE(
+                    bd.proveedor COLLATE DATABASE_DEFAULT,
+                    pa.proveedor_descripcion COLLATE DATABASE_DEFAULT, ''))))
+                 IN ('EUROCERAMICA')
+                OR UPPER(LTRIM(RTRIM(COALESCE(
+                    bd.marca COLLATE DATABASE_DEFAULT,
+                    pa.producto_marca COLLATE DATABASE_DEFAULT, ''))))
+                 IN ('EUROCERAMICA')
+                OR UPPER(bd.ArticulosNombre COLLATE DATABASE_DEFAULT) LIKE '%EUROCERAMICA%'
             )
-            GROUP BY ArticulosNombre
+            GROUP BY bd.ArticulosNombre
             ORDER BY Ventas_Total DESC
             """,
         ),
