@@ -28,3 +28,7 @@ These files serve as reference material for:
 ## Related Documentation
 
 For general project documentation, see the main `/docs/` directory.
+
+### J3System Reference
+
+- [Sales-to-warehouse query](../reference/j3system-sales-warehouse-query.md) — `InvVentas` ↔ `InvImpresionFactura` JOIN on `VentaID`, `Almancen` column, warehouse codes, and working SQL with caveats.

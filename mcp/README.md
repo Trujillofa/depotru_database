@@ -39,6 +39,8 @@ It reuses the project's existing `Database` class, so you get:
 - **Dual-database awareness** — SmartBusiness for sales, J3System for ERP master data
 - **Auto-exclusion filter** — `query_smartbusiness` injects the `DocumentosCodigo NOT IN ('XY','AS','TS',...)` filter so you never forget it
 
+For J3System schema patterns (e.g. warehouse per sale via `InvVentas` ↔ `InvImpresionFactura`), see [docs/reference/j3system-sales-warehouse-query.md](../docs/reference/j3system-sales-warehouse-query.md).
+
 All of this is exposed as five clean tools your agent can discover and call.
 
 ---
