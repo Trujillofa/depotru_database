@@ -78,6 +78,8 @@ def test_one_warehouse_per_sale_uses_cross_apply():
         ("Ventas del almacén FLO", True),
         ("Ventas del Sika Center este año", False),
         ("Ventas de Calle 5 este año", False),
+        ("ventas de sika por almacen", False),
+        ("Ventas de CEMEX por sede", False),
     ],
 )
 def test_is_j3system_warehouse_question(question, expected):

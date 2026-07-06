@@ -31,6 +31,21 @@ WAREHOUSE_CODES: Tuple[str, ...] = (
 # Codes that collide with common Spanish tokens (e.g. "con" = with).
 _AMBIGUOUS_WAREHOUSE_CODES = frozenset({"CON"})
 
+_VENDOR_BRANDS = frozenset(
+    {
+        "pavco",
+        "euroceramica",
+        "cemex",
+        "sika",
+        "acesco",
+        "hylsa",
+        "corona",
+        "pintuco",
+        "gricol",
+        "holcim",
+    }
+)
+
 WAREHOUSE_CODE_TO_NAME = {
     "ALM": "001",
     "SUR": "SUR",
@@ -38,7 +53,7 @@ WAREHOUSE_CODE_TO_NAME = {
     "DIS": "DISTRIBUCIONES",
     "BOD": "MANGUERAS",
     "BDT": "BODEGA AJUSTES TEMPORALES",
-    "FLO": "ALMACEN FLORENCIA",
+    "FLO": "ALMACEN FLORENCIA (Sika Center)",
     "CEN": "005 GARANTIAS",
     "MDL": "MERCADO LIBRE",
     "EXH": "BOD EXHIBICION ALMACEN",
@@ -237,6 +252,64 @@ def _has_sale_context(question: str) -> bool:
     return bool(re.search(r"\b(ventas?|facturas?|facturaci[oó]n)\b", lower))
 
 
+def _has_vendor_brand_context(question: str) -> bool:
+    """True when question names a product vendor/brand (not Sika Center branch)."""
+    lower = (question or "").lower()
+    if "sika center" in lower:
+        return False
+    return any(brand in lower for brand in _VENDOR_BRANDS)
+
+
+def _is_physical_warehouse_breakdown_question(question: str) -> bool:
+    """Brand/all sales grouped by physical warehouse code (AlmacenCodigo / bodega)."""
+    lower = (question or "").lower()
+    return any(
+        phrase in lower
+        for phrase in (
+            "por almacén",
+            "por almacen",
+            "por bodega",
+        )
+    )
+
+
+def _is_store_branch_breakdown_question(question: str) -> bool:
+    """Aggregate sales by invoice branch/sede (FED/FEF/FET), not physical warehouse."""
+    lower = (question or "").lower()
+    return any(
+        phrase in lower
+        for phrase in (
+            "por sede",
+            "por sucursal",
+            "por tienda",
+            "por documento",
+            "por facturación",
+            "por facturacion",
+        )
+    )
+
+
+def _is_branch_breakdown_question(question: str) -> bool:
+    """Any sede or physical-warehouse breakdown (excludes bare J3System routing)."""
+    return _is_physical_warehouse_breakdown_question(
+        question
+    ) or _is_store_branch_breakdown_question(question)
+
+
+def warehouse_display_name_sql(column: str = "bd.AlmacenCodigo") -> str:
+    """SQL expression for warehouse label with known aliases (e.g. FLO → Sika Center)."""
+    alias_codes = ("FLO", "DIS", "BD6", "ALM")
+    cases = "\n".join(
+        f"            WHEN {column} = '{code}' THEN '{name}'"
+        for code, name in WAREHOUSE_CODE_TO_NAME.items()
+        if code in alias_codes
+    )
+    return (
+        f"CASE\n{cases}\n"
+        f"            ELSE COALESCE(a.AlmacenNombre, {column})\n        END"
+    )
+
+
 def _is_spanish_con_preposition(question: str) -> bool:
     """True when ``con`` is the Spanish preposition, not warehouse code ``CON``."""
     lower = (question or "").lower()
@@ -290,6 +363,10 @@ def is_j3system_warehouse_question(question: str) -> bool:
     has_sale = _has_sale_context(question)
     if has_warehouse and has_sale:
         if "sika center" in lower or "calle 5" in lower:
+            return False
+        if _has_vendor_brand_context(question) and _is_branch_breakdown_question(
+            question
+        ):
             return False
         return True
 

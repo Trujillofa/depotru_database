@@ -350,6 +350,9 @@ def train_on_schema(vn, schema_name: str = "SmartBusiness"):
         - If user asks for "cliente", use TercerosNombres (never vendor fields).
         - If user mentions "SIKA CENTER", treat it as a branch/store: use DocumentosCodigo = 'FEF', never TercerosNombres.
         - If user mentions "CALLE 5" or "DISTRIBUCIONES", treat it as a branch/store: use DocumentosCodigo = 'FET'.
+        - If user asks brand sales "por almacén/bodega" (e.g. "ventas de SIKA por almacén"), group by banco_datos.AlmacenCodigo (FLO=Sika Center warehouse, BD6, SUR, …) with brand filter — NOT DocumentosCodigo branches.
+        - If user asks brand sales "por sede/sucursal/documento" (e.g. "ventas de SIKA por documento"), group by DocumentosCodigo (FED/FEF/FET) with brand filter.
+        - FLO = ALMACEN FLORENCIA, the physical warehouse/storage for Sika Center.
         - If user asks for "producto" or "artículo", use ArticulosNombre / ArticulosCodigo.
 
         NON-EXISTENT COLUMNS TO AVOID:
@@ -863,6 +866,61 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
             WHERE DocumentosCodigo = 'FEF'
             GROUP BY ArticulosNombre
             ORDER BY Ventas ASC
+            """,
+        ),
+        (
+            "ventas de sika por documento",
+            """
+            SELECT
+                bd.DocumentosCodigo AS Codigo_Sede,
+                CASE
+                    WHEN bd.DocumentosCodigo = 'FED' THEN 'Factura Almacén'
+                    WHEN bd.DocumentosCodigo = 'FEF' THEN 'Factura Florencia (Sika Center)'
+                    WHEN bd.DocumentosCodigo = 'FET' THEN 'Factura Calle 5'
+                    ELSE bd.DocumentosCodigo
+                END AS Sede,
+                COUNT(*) AS Numero_Transacciones,
+                SUM(bd.TotalMasIva) AS Ventas_Totales,
+                SUM(bd.TotalSinIva - bd.ValorCosto) AS Ganancia
+            FROM banco_datos bd
+            LEFT JOIN productos_adicional pa
+                ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
+                 = pa.producto_codigo COLLATE DATABASE_DEFAULT
+            WHERE bd.DocumentosCodigo IN ('FED', 'FEF', 'FET')
+              AND (
+                UPPER(LTRIM(RTRIM(COALESCE(bd.proveedor COLLATE DATABASE_DEFAULT, pa.proveedor_descripcion COLLATE DATABASE_DEFAULT, '')))) LIKE '%SIKA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(bd.marca COLLATE DATABASE_DEFAULT, pa.producto_marca COLLATE DATABASE_DEFAULT, '')))) LIKE '%SIKA%'
+                OR UPPER(bd.ArticulosNombre COLLATE DATABASE_DEFAULT) LIKE '%SIKA%'
+              )
+            GROUP BY bd.DocumentosCodigo
+            ORDER BY Ventas_Totales DESC
+            """,
+        ),
+        (
+            "ventas de sika por almacen",
+            """
+            SELECT
+                bd.AlmacenCodigo AS Codigo_Almacen,
+                COALESCE(a.AlmacenNombre, bd.AlmacenCodigo) AS Nombre_Almacen,
+                COUNT(*) AS Numero_Transacciones,
+                SUM(bd.TotalMasIva) AS Ventas_Totales,
+                SUM(bd.TotalSinIva - bd.ValorCosto) AS Ganancia
+            FROM banco_datos bd
+            LEFT JOIN productos_adicional pa
+                ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
+                 = pa.producto_codigo COLLATE DATABASE_DEFAULT
+            LEFT JOIN J3System.dbo.AdmAlmacen a
+                ON a.AlmacenCodigo COLLATE DATABASE_DEFAULT
+                 = bd.AlmacenCodigo COLLATE DATABASE_DEFAULT
+            WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+              AND bd.AlmacenCodigo IS NOT NULL AND LTRIM(RTRIM(bd.AlmacenCodigo)) <> ''
+              AND (
+                UPPER(LTRIM(RTRIM(COALESCE(bd.proveedor COLLATE DATABASE_DEFAULT, pa.proveedor_descripcion COLLATE DATABASE_DEFAULT, '')))) LIKE '%SIKA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(bd.marca COLLATE DATABASE_DEFAULT, pa.producto_marca COLLATE DATABASE_DEFAULT, '')))) LIKE '%SIKA%'
+                OR UPPER(bd.ArticulosNombre COLLATE DATABASE_DEFAULT) LIKE '%SIKA%'
+              )
+            GROUP BY bd.AlmacenCodigo, a.AlmacenNombre
+            ORDER BY Ventas_Totales DESC
             """,
         ),
         (

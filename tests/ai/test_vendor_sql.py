@@ -762,6 +762,91 @@ class TestGricolBrand:
         assert "not like '%agricol%'" in clause
 
 
+class TestBrandByDocument:
+    QUESTION = "ventas de sika por documento"
+
+    def test_detects_brand_by_branch_via_documento(self):
+        assert AIVanna._is_brand_by_branch_question(self.QUESTION)
+        assert not AIVanna._is_brand_by_warehouse_question(self.QUESTION)
+        assert not AIVanna._is_document_type_sales_question(self.QUESTION)
+
+    def test_template_groups_by_document_with_sika_filter(self):
+        sql = AIVanna._brand_sales_by_branch_sql_template(self.QUESTION)
+        lower = sql.lower()
+        assert "documentoscodigo in ('fed', 'fef', 'fet')" in lower
+        assert "group by bd.documentoscodigo" in lower
+        assert "sika" in lower
+
+    def test_generate_sql_routes_to_document_template(self):
+        vn = object.__new__(AIVanna)
+        vn._query_cache = MagicMock()
+        vn._query_cache.get.return_value = None
+        vn.provider = "grok"
+        sql = AIVanna.generate_sql(vn, self.QUESTION)
+        lower = sql.lower()
+        assert "documentoscodigo in ('fed', 'fef', 'fet')" in lower
+        assert "bd.almacencodigo" not in lower
+
+
+class TestBrandByWarehouse:
+    QUESTION = "ventas de sika por almacen"
+
+    def test_detects_brand_by_warehouse_question(self):
+        assert AIVanna._is_brand_by_warehouse_question(self.QUESTION)
+        assert not AIVanna._is_brand_by_branch_question(self.QUESTION)
+        assert not AIVanna._is_j3system_warehouse_question(self.QUESTION)
+
+    def test_not_multi_vendor_when_warehouse_breakdown(self):
+        assert not AIVanna._is_multi_vendor_sales_question(self.QUESTION)
+
+    def test_template_groups_by_physical_warehouse_with_sika_filter(self):
+        sql = AIVanna._brand_sales_by_warehouse_sql_template(self.QUESTION)
+        lower = sql.lower()
+        assert "bd.almacencodigo" in lower
+        assert "group by bd.almacencodigo" in lower
+        assert "admalmacen" in lower
+        assert "sika" in lower
+        assert "flo" in lower or "sika center" in lower
+        assert "invimpresionfactura" not in lower
+
+    def test_generate_sql_routes_to_warehouse_template(self):
+        vn = object.__new__(AIVanna)
+        vn._query_cache = MagicMock()
+        vn._query_cache.get.return_value = None
+        vn.provider = "grok"
+        sql = AIVanna.generate_sql(vn, self.QUESTION)
+        lower = sql.lower()
+        assert "bd.almacencodigo" in lower
+        assert "invimpresionfactura" not in lower
+
+    def test_upgrades_stale_j3system_cache(self):
+        stale = """
+SELECT iif.Almancen, COUNT(DISTINCT v.VentaID)
+FROM J3System.dbo.InvVentas v
+JOIN J3System.dbo.InvImpresionFactura iif ON iif.VentaID = v.VentaID
+GROUP BY iif.Almancen
+        """.strip()
+        cache = MagicMock()
+        cache.get.return_value = stale
+        vn = object.__new__(AIVanna)
+        vn._query_cache = cache
+        vn.provider = "grok"
+        sql = AIVanna.generate_sql(vn, self.QUESTION)
+        assert "invimpresionfactura" not in sql.lower()
+        assert "bd.almacencodigo" in sql.lower()
+
+    def test_repair_impresion_factura_to_detalle(self):
+        bad = """
+SELECT iif.Almancen, COUNT(DISTINCT v.VentaID) AS Numero_Ventas
+FROM J3System.dbo.InvVentas v
+JOIN J3System.dbo.InvImpresionFactura iif ON iif.VentaID = v.VentaID
+GROUP BY iif.Almancen
+        """.strip()
+        fixed = AIVanna._repair_common_sql_hallucinations(bad)
+        assert "invimpresionfactura" not in fixed.lower()
+        assert "invventasdetalle" in fixed.lower()
+
+
 class TestBrandAliasesAndMonthly:
     def test_ska_alias_maps_to_sika(self):
         assert "SIKA" in AIVanna._extract_vendor_brands("ventas de SKA")

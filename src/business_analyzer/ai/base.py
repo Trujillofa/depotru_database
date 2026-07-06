@@ -37,6 +37,8 @@ except ImportError:
 from business_analyzer.core.j3system_sales_warehouse import (
     build_sales_warehouse_sql_for_question,
     is_j3system_warehouse_question,
+    qualified_j3_table,
+    warehouse_display_name_sql,
 )
 from business_analyzer.core.paths import resolve_output_dir
 from business_analyzer.core.query_cache import (
@@ -504,7 +506,9 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
             return "FEF"
         if "calle 5" in lower or "distribuciones" in lower:
             return "FET"
-        if "almacén" in lower or "almacen" in lower:
+        if re.search(r"\b(?:sede|tienda|sucursal)\s+almac[eé]n\b", lower):
+            return "FED"
+        if re.search(r"\balmac[eé]n\s+(?:principal|depotru|trujillo)\b", lower):
             return "FED"
         return None
 
@@ -593,7 +597,110 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         ) and not AIVanna._is_brand_top_products_question(question)
 
     @staticmethod
+    def _has_brand_sales_context(question: str) -> bool:
+        lower = (question or "").lower()
+        brands = AIVanna._extract_vendor_brands(question)
+        if not brands:
+            return False
+        return any(token in lower for token in ("venta", "ventas", "factur", "ingreso"))
+
+    @staticmethod
+    def _is_brand_by_warehouse_question(question: str) -> bool:
+        """Brand sales by physical warehouse (banco_datos.AlmacenCodigo, e.g. FLO)."""
+        if AIVanna._is_j3system_warehouse_question(question):
+            return False
+        lower = (question or "").lower()
+        if not AIVanna._has_brand_sales_context(question):
+            return False
+        return any(
+            phrase in lower for phrase in ("por almacén", "por almacen", "por bodega")
+        )
+
+    @staticmethod
+    def _is_brand_by_branch_question(question: str) -> bool:
+        """Brand sales broken down by invoice branch/sede (FED/FEF/FET)."""
+        if AIVanna._is_j3system_warehouse_question(question):
+            return False
+        lower = (question or "").lower()
+        if not AIVanna._has_brand_sales_context(question):
+            return False
+        return any(
+            phrase in lower
+            for phrase in (
+                "por sede",
+                "por sucursal",
+                "por tienda",
+                "por documento",
+                "por facturación",
+                "por facturacion",
+            )
+        )
+
+    @staticmethod
+    def _brand_sales_by_warehouse_sql_template(question: str = "") -> str:
+        brands = AIVanna._extract_vendor_brands(question)
+        if not brands:
+            return ""
+        brand_filter = AIVanna._multi_vendor_brand_filter_sql(brands)
+        year_filter = AIVanna._year_filter_from_question(question).replace(
+            "YEAR(Fecha)", "YEAR(bd.Fecha)"
+        )
+        adm_almacen = qualified_j3_table("AdmAlmacen")
+        nombre_almacen = warehouse_display_name_sql()
+        return f"""
+SELECT
+    bd.AlmacenCodigo AS Codigo_Almacen,
+    {nombre_almacen} AS Nombre_Almacen,
+    COUNT(*) AS Numero_Transacciones,
+    SUM(bd.TotalMasIva) AS Ventas_Totales,
+    SUM(bd.TotalSinIva - bd.ValorCosto) AS Ganancia
+FROM banco_datos bd
+LEFT JOIN productos_adicional pa
+    ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
+     = pa.producto_codigo COLLATE DATABASE_DEFAULT
+LEFT JOIN {adm_almacen} a
+    ON a.AlmacenCodigo COLLATE DATABASE_DEFAULT
+     = bd.AlmacenCodigo COLLATE DATABASE_DEFAULT
+WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+  AND bd.AlmacenCodigo IS NOT NULL AND LTRIM(RTRIM(bd.AlmacenCodigo)) <> ''
+  AND {brand_filter}{year_filter}
+GROUP BY bd.AlmacenCodigo, a.AlmacenNombre
+ORDER BY Ventas_Totales DESC
+        """.strip()
+
+    @staticmethod
+    def _brand_sales_by_branch_sql_template(question: str = "") -> str:
+        brands = AIVanna._extract_vendor_brands(question)
+        if not brands:
+            return ""
+        brand_filter = AIVanna._multi_vendor_brand_filter_sql(brands)
+        descripcion = AIVanna._document_type_description_sql()
+        year_filter = AIVanna._year_filter_from_question(question).replace(
+            "YEAR(Fecha)", "YEAR(bd.Fecha)"
+        )
+        return f"""
+SELECT
+    bd.DocumentosCodigo AS Codigo_Sede,
+    {descripcion} AS Sede,
+    COUNT(*) AS Numero_Transacciones,
+    SUM(bd.TotalMasIva) AS Ventas_Totales,
+    SUM(bd.TotalSinIva - bd.ValorCosto) AS Ganancia
+FROM banco_datos bd
+LEFT JOIN productos_adicional pa
+    ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
+     = pa.producto_codigo COLLATE DATABASE_DEFAULT
+WHERE bd.DocumentosCodigo IN ('FED', 'FEF', 'FET')
+  AND {brand_filter}{year_filter}
+GROUP BY bd.DocumentosCodigo
+ORDER BY Ventas_Totales DESC
+        """.strip()
+
+    @staticmethod
     def _is_multi_vendor_sales_question(question: str) -> bool:
+        if AIVanna._is_brand_by_warehouse_question(question):
+            return False
+        if AIVanna._is_brand_by_branch_question(question):
+            return False
         if AIVanna._is_branch_store_sales_question(question):
             return False
         if AIVanna._is_product_ranking_question(question):
@@ -902,6 +1009,20 @@ ORDER BY Ventas_Totales DESC
         return AIVanna._insert_before_tail(normalized_sql, f"WHERE {canonical_filter}")
 
     @staticmethod
+    def _repair_j3system_impresion_factura_sql(sql: str) -> str:
+        """Replace incomplete InvImpresionFactura joins with InvVentasDetalle coverage."""
+        if not sql or "invimpresionfactura" not in sql.lower():
+            return sql
+        from business_analyzer.core.j3system_sales_warehouse import (
+            build_sales_by_warehouse_sql,
+        )
+
+        lower = sql.lower()
+        if "group by" in lower and "count(distinct" in lower:
+            return build_sales_by_warehouse_sql()
+        return sql
+
+    @staticmethod
     def _repair_common_sql_hallucinations(sql: str) -> str:
         """Fix frequent LLM column/table typos before execution."""
         if not sql:
@@ -926,6 +1047,7 @@ ORDER BY Ventas_Totales DESC
                 repaired,
                 flags=re.IGNORECASE,
             )
+        repaired = AIVanna._repair_j3system_impresion_factura_sql(repaired)
         return repaired
 
     @staticmethod
@@ -1380,6 +1502,8 @@ ORDER BY Total_Vendido DESC
 
     @staticmethod
     def _is_document_type_sales_question(question: str) -> bool:
+        if AIVanna._is_brand_by_branch_question(question):
+            return False
         lower = (question or "").lower()
         has_document = any(
             token in lower
@@ -1995,6 +2119,16 @@ ORDER BY Dia_Orden
                 if routed is not None:
                     self._manager_report_result = routed
                     return None
+                if self._is_brand_by_warehouse_question(question):
+                    template = self._brand_sales_by_warehouse_sql_template(question)
+                    if template:
+                        self._query_cache.set(question, template)
+                        return template
+                if self._is_brand_by_branch_question(question):
+                    template = self._brand_sales_by_branch_sql_template(question)
+                    if template:
+                        self._query_cache.set(question, template)
+                        return template
                 if self._is_j3system_warehouse_question(question):
                     template = self._j3system_warehouse_sql_template(question)
                     if template:
@@ -2151,6 +2285,46 @@ ORDER BY Dia_Orden
                         if template:
                             self._query_cache.set(question, template)
                             return template
+                if self._is_brand_by_warehouse_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "invimpresionfactura" in cached_lower
+                        or "bd.almacencodigo" not in cached_lower
+                        or "documentoscodigo in ('fed', 'fef', 'fet')" in cached_lower
+                        or (
+                            "from banco_datos" not in cached_lower
+                            and "invventas" in cached_lower
+                        )
+                    )
+                    if needs_upgrade:
+                        template = self._brand_sales_by_warehouse_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
+                if self._is_brand_by_branch_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "invimpresionfactura" in cached_lower
+                        or "documentoscodigo in ('fed', 'fef', 'fet')"
+                        not in cached_lower
+                        or (
+                            "from banco_datos" not in cached_lower
+                            and "invventas" in cached_lower
+                        )
+                    )
+                    if needs_upgrade:
+                        template = self._brand_sales_by_branch_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
+                if self._is_j3system_warehouse_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = "invimpresionfactura" in cached_lower
+                    if needs_upgrade:
+                        template = self._j3system_warehouse_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
                 if self._is_multi_vendor_sales_question(question):
                     cached_lower = cached.lower()
                     brands = self._extract_vendor_brands(question)
@@ -2230,6 +2404,16 @@ ORDER BY Dia_Orden
                     return template
             if self._is_brand_monthly_sales_question(question):
                 template = self._brand_monthly_sales_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
+            if self._is_brand_by_warehouse_question(question):
+                template = self._brand_sales_by_warehouse_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
+            if self._is_brand_by_branch_question(question):
+                template = self._brand_sales_by_branch_sql_template(question)
                 if template:
                     self._query_cache.set(question, template)
                     return template
@@ -2337,6 +2521,30 @@ ORDER BY Dia_Orden
                     generated_lower = generated.lower()
                     if "from banco_datos" in generated_lower:
                         post_candidate = self._brand_monthly_sales_sql_template(
+                            question
+                        )
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
+                if self._is_brand_by_warehouse_question(question):
+                    generated_lower = generated.lower()
+                    if (
+                        "from banco_datos" in generated_lower
+                        or "invimpresionfactura" in generated_lower
+                        or "invventas" in generated_lower
+                    ):
+                        post_candidate = self._brand_sales_by_warehouse_sql_template(
+                            question
+                        )
+                        self._query_cache.set(question, post_candidate)
+                        return post_candidate
+                if self._is_brand_by_branch_question(question):
+                    generated_lower = generated.lower()
+                    if (
+                        "from banco_datos" in generated_lower
+                        or "invimpresionfactura" in generated_lower
+                        or "invventas" in generated_lower
+                    ):
+                        post_candidate = self._brand_sales_by_branch_sql_template(
                             question
                         )
                         self._query_cache.set(question, post_candidate)

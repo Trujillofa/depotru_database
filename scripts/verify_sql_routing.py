@@ -90,6 +90,25 @@ GOLDEN: list[tuple[str, list[str], list[str]]] = [
         ["ventas_anio_actual", "totalmasiva"],
         ["totalactiva"],
     ),
+    (
+        "ventas de sika por documento",
+        [
+            "documentoscodigo in ('fed', 'fef', 'fet')",
+            "group by bd.documentoscodigo",
+            "sika",
+        ],
+        ["bd.almacencodigo", "invimpresionfactura"],
+    ),
+    (
+        "ventas de sika por almacen",
+        [
+            "bd.almacencodigo",
+            "group by bd.almacencodigo",
+            "admalmacen",
+            "sika",
+        ],
+        ["invimpresionfactura", "documentoscodigo in ('fed', 'fef', 'fet')"],
+    ),
 ]
 
 

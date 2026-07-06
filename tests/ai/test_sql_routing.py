@@ -130,6 +130,29 @@ GOLDEN_QUESTIONS = [
         ["banco_datos"],
         id="j3system_one_warehouse_per_sale",
     ),
+    pytest.param(
+        "ventas de sika por documento",
+        [
+            "documentoscodigo in ('fed', 'fef', 'fet')",
+            "group by bd.documentoscodigo",
+            "sika",
+            "sika center",
+        ],
+        ["invimpresionfactura", "bd.almacencodigo"],
+        id="sika_brand_by_document",
+    ),
+    pytest.param(
+        "ventas de sika por almacen",
+        [
+            "bd.almacencodigo",
+            "group by bd.almacencodigo",
+            "admalmacen",
+            "sika",
+            "flo",
+        ],
+        ["invimpresionfactura", "documentoscodigo in ('fed', 'fef', 'fet')"],
+        id="sika_brand_by_warehouse",
+    ),
 ]
 
 
