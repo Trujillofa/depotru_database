@@ -8,7 +8,7 @@ This document provides a fast-track guide to improving the Business Analyzer.
 
 ### Apply P0 Fixes
 
-Copy the fixes from `examples/improvements_p0.py` to your `business_analyzer_combined.py`:
+Use `examples/improvements_p0.py` as reference and apply equivalent fixes in extracted modules (`src/data_access/`, `src/analytics/`, `src/contracts/`) with only orchestration wiring in `src/business_analyzer_combined.py`:
 
 ```bash
 # Review the critical fixes
