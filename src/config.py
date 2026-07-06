@@ -23,6 +23,8 @@ import logging
 import os
 from pathlib import Path
 
+from business_analyzer.core.paths import resolve_output_dir
+
 # Try to load .env file if python-dotenv is available
 try:
     from dotenv import load_dotenv
@@ -65,7 +67,7 @@ class Config:
     EXCLUDED_DOCUMENT_CODES = ["XY", "AS", "TS", "YX", "ISC"]
 
     # Output Configuration
-    OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", os.path.expanduser("~/business_reports")))
+    OUTPUT_DIR = resolve_output_dir()
 
     # Report settings
     REPORT_DPI = int(os.getenv("REPORT_DPI", "300"))
@@ -80,8 +82,10 @@ class Config:
     @classmethod
     def ensure_output_dir(cls):
         """Create output directory if it doesn't exist"""
-        cls.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        return cls.OUTPUT_DIR
+        path = resolve_output_dir()
+        cls.OUTPUT_DIR = path
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     @classmethod
     def has_direct_db_config(cls):

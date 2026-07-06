@@ -34,6 +34,7 @@ try:
 except ImportError:
     OpenAI = None
 
+from business_analyzer.core.paths import resolve_output_dir
 from business_analyzer.core.query_cache import (
     MemoryQueryCache,
     SimpleQueryCache,
@@ -238,12 +239,14 @@ class Config:
     ENABLE_AI_INSIGHTS = os.getenv("ENABLE_AI_INSIGHTS", "true").lower() == "true"
     INSIGHTS_MAX_ROWS = int(os.getenv("INSIGHTS_MAX_ROWS", "15"))
     MAX_DISPLAY_ROWS = int(os.getenv("MAX_DISPLAY_ROWS", "100"))
-    OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", os.path.expanduser("~/business_reports")))
+    OUTPUT_DIR = resolve_output_dir()
 
     @classmethod
     def ensure_output_dir(cls) -> Path:
-        cls.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        return cls.OUTPUT_DIR
+        path = resolve_output_dir()
+        cls.OUTPUT_DIR = path
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
 
 # =============================================================================

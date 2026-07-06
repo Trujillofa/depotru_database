@@ -10,7 +10,6 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
-from business_analyzer.ai.base import Config
 from business_analyzer.ai.flask_app import (
     SmartVannaFlaskApp,
     manager_report_api_payload,
@@ -57,7 +56,7 @@ class _ReportStubVanna:
 
 @pytest.fixture
 def report_client(tmp_path, monkeypatch):
-    monkeypatch.setattr(Config, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
     success = {
         "status": "success",
         "message": "Informe listo",

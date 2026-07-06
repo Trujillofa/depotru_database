@@ -41,6 +41,7 @@ from business_analyzer.analysis.engines.text_similarity import (
     run as run_text_similarity,
 )
 from business_analyzer.core.database import ConnectionType, Database
+from business_analyzer.core.paths import resolve_output_dir
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,11 +51,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────
-OUTPUT_DIR = (
-    Path(os.getenv("OUTPUT_DIR", str(Path.home() / "business_reports")))
-    .expanduser()
-    .resolve()
-)
+OUTPUT_DIR = resolve_output_dir()
 TOP_N = 10
 MATRIX_MIN_SALES = int(os.getenv("MATRIX_MIN_SALES", "10"))
 LONG_TAIL_MODE = os.getenv("LONG_TAIL_MODE", "").lower() in ("1", "true", "yes")
@@ -219,11 +216,7 @@ def main():
     logger.info("HYBRID PRODUCT AFFINITY PIPELINE")
     logger.info("=" * 60)
 
-    output_dir = (
-        Path(os.getenv("OUTPUT_DIR", str(Path.home() / "business_reports")))
-        .expanduser()
-        .resolve()
-    )
+    output_dir = resolve_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Connect
