@@ -414,17 +414,17 @@ def train_on_j3system_schema(vn, schema_name: str = "J3System"):
             DocumentosID INT,
             VendedorID INT
         );
-        CREATE TABLE InvImpresionFactura (
-            VentaID NUMERIC,
-            Almancen NVARCHAR(5),
-            Articulos NVARCHAR(20),
-            Descripcion NVARCHAR(200),
+        CREATE TABLE InvVentasDetalle (
+            VentaDetalleID INT PRIMARY KEY,
+            VentaID INT,
+            AlmacenID INT,
             Cantidad DECIMAL,
-            SinIva MONEY,
-            ConIva MONEY
+            VentaSinIva MONEY,
+            VentaMasIva MONEY
         );
         CREATE TABLE AdmAlmacen (
-            AlmacenCodigo NVARCHAR(5) PRIMARY KEY,
+            AlmacenID INT PRIMARY KEY,
+            AlmacenCodigo NVARCHAR(5),
             AlmacenNombre NVARCHAR(200)
         );
         """
@@ -436,29 +436,28 @@ def train_on_j3system_schema(vn, schema_name: str = "J3System"):
         J3System ERP — Sales to Warehouse (separate from SmartBusiness banco_datos)
 
         CRITICAL RELATIONSHIP:
-        - InvVentas.VentaID (int) ↔ InvImpresionFactura.VentaID (numeric) — 1:N line items.
-        - Always cast: CAST(InvImpresionFactura.VentaID AS int) = InvVentas.VentaID
-        - Warehouse column is Almancen (schema typo — missing second 'a', NOT Almacen).
-        - Decode via AdmAlmacen: AlmacenCodigo → AlmacenNombre.
+        - InvVentas.VentaID (int) ↔ InvVentasDetalle.VentaID (int) — 1:N line items.
+        - Warehouse per line: InvVentasDetalle.AlmacenID → AdmAlmacen.AlmacenID.
+        - Warehouse code: AdmAlmacen.AlmacenCodigo (alias Almancen in SELECT for readability).
+        - InvImpresionFactura has Almancen but only recent e-invoice rows; prefer InvVentasDetalle.
 
         WAREHOUSE CODES ({len(WAREHOUSE_CODES)} active):
         {warehouse_list}
 
         CAVEATS:
-        - One VentaID → multiple InvImpresionFactura rows; use DISTINCT or CROSS APPLY
-          for one warehouse per sale.
-        - Some rows have Almancen = '' — filter with iif.Almancen <> '' when needed.
+        - One VentaID → multiple InvVentasDetalle rows; use CROSS APPLY for one warehouse per sale.
+        - Filter warehouses with a.AlmacenCodigo IS NOT NULL AND a.AlmacenCodigo <> ''.
         - AdmAlmacenUbicacion exists for physical location beyond warehouse code.
 
         AMBIGUITY:
         - SmartBusiness branch "ALMACEN PRINCIPAL" uses DocumentosCodigo = 'FED' in banco_datos.
-        - J3System warehouse questions use InvVentas + InvImpresionFactura + Almancen, NOT banco_datos.
+        - J3System warehouse questions use InvVentas + InvVentasDetalle + AdmAlmacen, NOT banco_datos.
         - If user asks "almacén por venta" or "bodega de la factura" in ERP context, query J3System.
 
         QUERY PATTERNS:
-        - Line detail: JOIN InvVentas v + InvImpresionFactura iif + LEFT JOIN AdmAlmacen a
-        - Per warehouse totals: GROUP BY iif.Almancen, a.AlmacenNombre
-        - One warehouse per sale: CROSS APPLY TOP 1 non-empty Almancen per VentaID
+        - Line detail: JOIN InvVentas v + InvVentasDetalle d + LEFT JOIN AdmAlmacen a ON a.AlmacenID = d.AlmacenID
+        - Per warehouse totals: GROUP BY a.AlmacenCodigo, a.AlmacenNombre
+        - One warehouse per sale: CROSS APPLY TOP 1 d.AlmacenID per VentaID
         """
     )
 

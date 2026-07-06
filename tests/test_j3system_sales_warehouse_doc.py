@@ -27,11 +27,11 @@ EXPECTED_WAREHOUSE_CODES = (
 
 REQUIRED_SECTIONS = (
     "InvVentas",
-    "InvImpresionFactura",
+    "InvVentasDetalle",
     "VentaID",
+    "AlmacenID",
     "Almancen",
     "AdmAlmacen",
-    "CAST(iif.VentaID AS int)",
     "## Caveats",
 )
 
@@ -57,7 +57,7 @@ def test_j3system_doc_required_sections(doc_text: str, section: str) -> None:
 def test_j3system_doc_has_working_sql_block(doc_text: str) -> None:
     assert "```sql" in doc_text
     assert "FROM InvVentas v" in doc_text
-    assert "JOIN InvImpresionFactura iif" in doc_text
+    assert "JOIN InvVentasDetalle d" in doc_text
 
 
 @pytest.mark.unit
@@ -77,7 +77,7 @@ def test_j3system_doc_caveats_mention_multi_row_and_empty_almancen(
 ) -> None:
     caveats = doc_text.split("## Caveats", 1)[1]
     assert "multiple rows" in caveats.lower()
-    assert "Almancen = ''" in caveats
+    assert "AlmacenCodigo <> ''" in caveats
 
 
 @pytest.mark.unit

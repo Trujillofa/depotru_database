@@ -1,26 +1,28 @@
 # J3System — Retrieve `Almacen` per Sale
 
-> Ported from [depositotrujillo.co PR #33](https://github.com/Trujillofa/depositotrujillo.co/pull/33) (branch `docs/j3system-sales-warehouse-query`).
+> Ported from [depositotrujillo.co PR #33](https://github.com/Trujillofa/depositotrujillo.co/pull/33), updated for production schema coverage.
 
 ## Schema Relationship
 
 ```
-InvVentas (sales header)              InvImpresionFactura (invoice line items)
-├── VentaID          int    PK  ◄───  ├── VentaID          numeric    FK
-├── NumeroDocumento  numeric          ├── Almancen         nvarchar(5)   ◄── warehouse code
-├── Fecha            date             ├── Articulos        nvarchar(20)
-├── TercerosID       int              ├── Descripcion      nvarchar(200)
-├── NroFactura       nvarchar(50)     ├── Cantidad         decimal
-├── DocumentosID     int              ├── Iva              decimal
-└── VendedorID       int              ├── SinIva           money
-                                      ├── ConIva           money
-                                      └── ...
+InvVentas (sales header)              InvVentasDetalle (sale line items)
+├── VentaID          int    PK  ◄───  ├── VentaID          int           FK
+├── NumeroDocumento  numeric          ├── AlmacenID        int           ◄── warehouse FK
+├── Fecha            date             ├── Cantidad         decimal
+├── TercerosID       int              ├── VentaSinIva      money
+├── NroFactura       nvarchar(50)     ├── VentaMasIva      money
+├── DocumentosID     int              └── ...
+└── VendedorID       int
+
+AdmAlmacen (warehouse master)
+├── AlmacenID        int    PK
+├── AlmacenCodigo    nvarchar(5)   ◄── warehouse code (ALM, SUR, BD6, …)
+└── AlmacenNombre    nvarchar(200)
 ```
 
-- **`InvVentas.VentaID`** (int) ↔ **`InvImpresionFactura.VentaID`** (numeric) — 1:N (one sale → multiple line items).
-- Cast required: `CAST(InvImpresionFactura.VentaID AS int)` because the types differ.
-- The warehouse column is **`Almancen`** (typo in J3System schema — missing second 'a').
-- Decode codes via `AdmAlmacen.AlmacenCodigo` → `AdmAlmacen.AlmacenNombre`.
+- **`InvVentas.VentaID`** (int) ↔ **`InvVentasDetalle.VentaID`** (int) — 1:N (one sale → multiple line items).
+- Warehouse per line: **`InvVentasDetalle.AlmacenID`** → **`AdmAlmacen.AlmacenID`** → decode **`AlmacenCodigo`** / **`AlmacenNombre`**.
+- **`InvImpresionFactura.Almancen`** exists for e-invoice print rows but only covers a small recent subset (~55k rows); use **`InvVentasDetalle`** for complete historical coverage.
 
 ## Working Query
 
@@ -31,11 +33,12 @@ SELECT
     v.Fecha,
     v.NroFactura,
     v.TercerosID,
-    iif.Almancen,
+    a.AlmacenCodigo AS Almancen,
     a.AlmacenNombre
 FROM InvVentas v
-JOIN InvImpresionFactura iif ON CAST(iif.VentaID AS int) = v.VentaID
-LEFT JOIN AdmAlmacen a ON a.AlmacenCodigo = iif.Almancen
+JOIN InvVentasDetalle d ON d.VentaID = v.VentaID
+LEFT JOIN AdmAlmacen a ON a.AlmacenID = d.AlmacenID
+WHERE a.AlmacenCodigo IS NOT NULL AND a.AlmacenCodigo <> ''
 ORDER BY v.Fecha DESC
 ```
 
@@ -60,7 +63,9 @@ ORDER BY v.Fecha DESC
 
 ## Caveats
 
-- One `VentaID` maps to **multiple rows** in `InvImpresionFactura` (one per line item). If you need one warehouse per sale, use `DISTINCT` or pick the first non-empty `Almancen` — some rows have `Almancen = ''`.
+- One `VentaID` maps to **multiple rows** in `InvVentasDetalle` (one per line item). If you need one warehouse per sale, use `CROSS APPLY TOP 1 d.AlmacenID` per `VentaID`.
+- Filter with `a.AlmacenCodigo IS NOT NULL AND a.AlmacenCodigo <> ''` when excluding unassigned lines.
+- `InvImpresionFactura` may be used for recent e-invoice staging but does not join to most historical `InvVentas` rows.
 - `AdmAlmacenUbicacion` exists if physical location detail is needed beyond the warehouse code.
 
 ## Code & Vanna Integration

@@ -24,27 +24,27 @@ def test_qualified_j3_table_defaults_to_j3system():
 
 
 @pytest.mark.unit
-def test_detail_sql_joins_invventas_and_invimpresionfactura_on_cast():
+def test_detail_sql_joins_invventas_detalle_and_admalmacen():
     sql = build_sales_warehouse_detail_sql()
     lower = sql.lower()
     assert "from j3system.dbo.invventas v" in lower
-    assert "join j3system.dbo.invimpresionfactura iif" in lower
-    assert "cast(iif.ventaid as int) = v.ventaid" in lower
+    assert "join j3system.dbo.invventasdetalle d" in lower
+    assert "d.ventaid = v.ventaid" in lower
     assert "left join j3system.dbo.admalmacen a" in lower
-    assert "iif.almancen" in lower
+    assert "a.almacencodigo as almancen" in lower
 
 
 @pytest.mark.unit
 def test_detail_sql_filters_empty_almancen_and_supports_top_n():
     sql = build_sales_warehouse_detail_sql(top_n=15)
     assert "TOP 15" in sql
-    assert "iif.Almancen <> ''" in sql
+    assert "a.AlmacenCodigo <> ''" in sql
 
 
 @pytest.mark.unit
 def test_detail_sql_filters_by_warehouse_code():
     sql = build_sales_warehouse_detail_sql(warehouse_code="FLO")
-    assert "iif.Almancen = 'FLO'" in sql
+    assert "a.AlmacenCodigo = 'FLO'" in sql
 
 
 @pytest.mark.unit
@@ -57,7 +57,7 @@ def test_detail_sql_rejects_unknown_warehouse_code():
 def test_by_warehouse_sql_aggregates_distinct_ventas():
     sql = build_sales_by_warehouse_sql()
     assert "COUNT(DISTINCT v.VentaID) AS Numero_Ventas" in sql
-    assert "GROUP BY iif.Almancen, a.AlmacenNombre" in sql
+    assert "GROUP BY a.AlmacenCodigo, a.AlmacenNombre" in sql
 
 
 @pytest.mark.unit
@@ -65,8 +65,8 @@ def test_one_warehouse_per_sale_uses_cross_apply():
     sql = build_one_warehouse_per_sale_sql()
     lower = sql.lower()
     assert "cross apply" in lower
-    assert "top 1 iif.almancen" in lower
-    assert "iif.almancen <> ''" in lower
+    assert "top 1 d.almacenid" in lower
+    assert "invventasdetalle d" in lower
 
 
 @pytest.mark.unit
@@ -110,7 +110,7 @@ def test_is_j3system_warehouse_question_false_for_top_clientes():
 @pytest.mark.unit
 def test_sql_for_question_picks_aggregate_template():
     sql = build_sales_warehouse_sql_for_question("Ventas agrupadas por bodega")
-    assert "GROUP BY iif.Almancen" in sql
+    assert "GROUP BY a.AlmacenCodigo" in sql
 
 
 @pytest.mark.unit
@@ -129,7 +129,7 @@ def test_period_breakdown_sql_filters_by_fecha_and_aggregates_revenue():
     sql = build_warehouse_breakdown_for_period_sql("2024-05-01", "2024-05-31")
     lower = sql.lower()
     assert "v.fecha between '2024-05-01' and '2024-05-31'" in lower
-    assert "sum(iif.siniva) as revenue_without_iva" in lower
+    assert "sum(d.ventasiniva) as revenue_without_iva" in lower
     assert "count(distinct v.ventaid) as sale_count" in lower
 
 

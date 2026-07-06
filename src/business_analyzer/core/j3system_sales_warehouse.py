@@ -58,13 +58,14 @@ def qualified_j3_table(table: str, j3_database: Optional[str] = None) -> str:
 
 
 def _sales_warehouse_from_clause(j3_database: Optional[str] = None) -> str:
+    """Line-level sales joined to warehouse via ``InvVentasDetalle.AlmacenID``."""
     inv_ventas = qualified_j3_table("InvVentas", j3_database)
-    inv_impresion = qualified_j3_table("InvImpresionFactura", j3_database)
+    inv_detalle = qualified_j3_table("InvVentasDetalle", j3_database)
     adm_almacen = qualified_j3_table("AdmAlmacen", j3_database)
     return (
         f"FROM {inv_ventas} v "
-        f"JOIN {inv_impresion} iif ON CAST(iif.VentaID AS int) = v.VentaID "
-        f"LEFT JOIN {adm_almacen} a ON a.AlmacenCodigo = iif.Almancen"
+        f"JOIN {inv_detalle} d ON d.VentaID = v.VentaID "
+        f"LEFT JOIN {adm_almacen} a ON a.AlmacenID = d.AlmacenID"
     )
 
 
@@ -76,12 +77,12 @@ def build_sales_warehouse_detail_sql(
 ) -> str:
     """Line-level sales with warehouse code and decoded name."""
     top_clause = f"TOP {int(top_n)} " if top_n else ""
-    where_parts = ["iif.Almancen <> ''"]
+    where_parts = ["a.AlmacenCodigo IS NOT NULL", "a.AlmacenCodigo <> ''"]
     if warehouse_code:
         code = warehouse_code.strip().upper()
         if code not in WAREHOUSE_CODES:
             raise ValueError(f"Unknown warehouse code: {warehouse_code}")
-        where_parts.append(f"iif.Almancen = '{code}'")
+        where_parts.append(f"a.AlmacenCodigo = '{code}'")
     where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
     from_clause = _sales_warehouse_from_clause(j3_database)
     return (
@@ -91,7 +92,7 @@ def build_sales_warehouse_detail_sql(
         "v.Fecha, "
         "v.NroFactura, "
         "v.TercerosID, "
-        "iif.Almancen, "
+        "a.AlmacenCodigo AS Almancen, "
         "a.AlmacenNombre "
         f"{from_clause} "
         f"{where_sql} "
@@ -114,12 +115,12 @@ def build_sales_by_warehouse_sql(
     from_clause = _sales_warehouse_from_clause(j3_database)
     return (
         "SELECT "
-        "iif.Almancen AS Codigo_Almacen, "
+        "a.AlmacenCodigo AS Codigo_Almacen, "
         "a.AlmacenNombre AS Nombre_Almacen, "
         "COUNT(DISTINCT v.VentaID) AS Numero_Ventas "
         f"{from_clause} "
-        "WHERE iif.Almancen <> '' "
-        "GROUP BY iif.Almancen, a.AlmacenNombre "
+        "WHERE a.AlmacenCodigo IS NOT NULL AND a.AlmacenCodigo <> '' "
+        "GROUP BY a.AlmacenCodigo, a.AlmacenNombre "
         "ORDER BY Numero_Ventas DESC"
     )
 
@@ -136,17 +137,17 @@ def build_warehouse_breakdown_for_period_sql(
     from_clause = _sales_warehouse_from_clause(j3_database)
     return (
         "SELECT "
-        "iif.Almancen AS warehouse_code, "
+        "a.AlmacenCodigo AS warehouse_code, "
         "a.AlmacenNombre AS warehouse_name, "
         "COUNT(DISTINCT v.VentaID) AS sale_count, "
-        "SUM(iif.SinIva) AS revenue_without_iva, "
-        "SUM(iif.ConIva) AS revenue_with_iva, "
-        "SUM(iif.Cantidad) AS quantity "
+        "SUM(d.VentaSinIva) AS revenue_without_iva, "
+        "SUM(d.VentaMasIva) AS revenue_with_iva, "
+        "SUM(d.Cantidad) AS quantity "
         f"{from_clause} "
         f"WHERE v.Fecha BETWEEN '{start}' AND '{end}' "
-        "AND iif.Almancen <> '' "
-        "GROUP BY iif.Almancen, a.AlmacenNombre "
-        "ORDER BY SUM(iif.SinIva) DESC"
+        "AND a.AlmacenCodigo IS NOT NULL AND a.AlmacenCodigo <> '' "
+        "GROUP BY a.AlmacenCodigo, a.AlmacenNombre "
+        "ORDER BY SUM(d.VentaSinIva) DESC"
     )
 
 
@@ -162,7 +163,7 @@ def build_one_warehouse_per_sale_for_period_sql(
     end = _validate_period_date(end_date, "end_date")
     top_clause = f"TOP {int(top_n)} " if top_n else ""
     inv_ventas = qualified_j3_table("InvVentas", j3_database)
-    inv_impresion = qualified_j3_table("InvImpresionFactura", j3_database)
+    inv_detalle = qualified_j3_table("InvVentasDetalle", j3_database)
     adm_almacen = qualified_j3_table("AdmAlmacen", j3_database)
     return (
         f"SELECT {top_clause}"
@@ -170,17 +171,16 @@ def build_one_warehouse_per_sale_for_period_sql(
         "v.NumeroDocumento, "
         "v.Fecha, "
         "v.NroFactura, "
-        "wh.Almancen AS warehouse_code, "
+        "a.AlmacenCodigo AS warehouse_code, "
         "a.AlmacenNombre AS warehouse_name "
         f"FROM {inv_ventas} v "
         "CROSS APPLY ("
-        "SELECT TOP 1 iif.Almancen "
-        f"FROM {inv_impresion} iif "
-        "WHERE CAST(iif.VentaID AS int) = v.VentaID "
-        "AND iif.Almancen <> '' "
-        "ORDER BY iif.Almancen"
+        "SELECT TOP 1 d.AlmacenID "
+        f"FROM {inv_detalle} d "
+        "WHERE d.VentaID = v.VentaID "
+        "ORDER BY d.AlmacenID"
         ") wh "
-        f"LEFT JOIN {adm_almacen} a ON a.AlmacenCodigo = wh.Almancen "
+        f"LEFT JOIN {adm_almacen} a ON a.AlmacenID = wh.AlmacenID "
         f"WHERE v.Fecha BETWEEN '{start}' AND '{end}' "
         "ORDER BY v.Fecha DESC"
     )
@@ -192,7 +192,7 @@ def build_one_warehouse_per_sale_sql(
 ) -> str:
     """One row per sale using the first non-empty ``Almancen`` line item."""
     inv_ventas = qualified_j3_table("InvVentas", j3_database)
-    inv_impresion = qualified_j3_table("InvImpresionFactura", j3_database)
+    inv_detalle = qualified_j3_table("InvVentasDetalle", j3_database)
     adm_almacen = qualified_j3_table("AdmAlmacen", j3_database)
     return (
         "SELECT "
@@ -200,17 +200,16 @@ def build_one_warehouse_per_sale_sql(
         "v.NumeroDocumento, "
         "v.Fecha, "
         "v.NroFactura, "
-        "wh.Almancen, "
+        "a.AlmacenCodigo AS Almancen, "
         "a.AlmacenNombre "
         f"FROM {inv_ventas} v "
         "CROSS APPLY ("
-        "SELECT TOP 1 iif.Almancen "
-        f"FROM {inv_impresion} iif "
-        "WHERE CAST(iif.VentaID AS int) = v.VentaID "
-        "AND iif.Almancen <> '' "
-        "ORDER BY iif.Almancen"
+        "SELECT TOP 1 d.AlmacenID "
+        f"FROM {inv_detalle} d "
+        "WHERE d.VentaID = v.VentaID "
+        "ORDER BY d.AlmacenID"
         ") wh "
-        f"LEFT JOIN {adm_almacen} a ON a.AlmacenCodigo = wh.Almancen "
+        f"LEFT JOIN {adm_almacen} a ON a.AlmacenID = wh.AlmacenID "
         "ORDER BY v.Fecha DESC"
     )
 

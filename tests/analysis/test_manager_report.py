@@ -359,7 +359,7 @@ class TestManagerSalesReport:
 
     @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
     def test_warehouse_sales_from_j3system(self, MockRunner, sample_sales_data):
-        """Warehouse breakdown uses J3System InvVentas/InvImpresionFactura data."""
+        """Warehouse breakdown uses J3System InvVentas/InvVentasDetalle data."""
         runner = self._setup_mock_runner(MockRunner, sample_sales_data)
         runner.fetch_j3system_warehouse_sales.return_value = {
             "breakdown": [

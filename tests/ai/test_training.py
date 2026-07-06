@@ -264,22 +264,24 @@ class TestJ3SystemTraining:
         examples = dict(get_j3system_training_examples())
         detail_sql = examples["Listar ventas con su almacén en J3System"]
         assert "InvVentas" in detail_sql
-        assert "InvImpresionFactura" in detail_sql
-        assert "CAST(iif.VentaID AS int)" in detail_sql
+        assert "InvVentasDetalle" in detail_sql
+        assert "AlmacenID" in detail_sql
         assert "Almancen" in detail_sql
         assert "AdmAlmacen" in detail_sql
 
     def test_j3system_examples_cover_aggregate_and_one_per_sale(self):
         examples = dict(get_j3system_training_examples())
         assert (
-            "GROUP BY iif.Almancen"
+            "GROUP BY a.AlmacenCodigo"
             in examples["Ventas agrupadas por bodega en J3System"]
         )
         assert (
             "CROSS APPLY"
             in examples["Un almacén por venta en J3System sin duplicar líneas"]
         )
-        assert "iif.Almancen = 'FLO'" in examples["Ventas del almacén FLO en J3System"]
+        assert (
+            "a.AlmacenCodigo = 'FLO'" in examples["Ventas del almacén FLO en J3System"]
+        )
 
     def test_j3system_schema_docs_warn_about_almancen_typo(self):
         class Recorder:
@@ -294,7 +296,7 @@ class TestJ3SystemTraining:
         train_on_j3system_schema(recorder)
         docs = "\n".join(recorder.documentation)
         assert "Almancen" in docs
-        assert "CAST(InvImpresionFactura.VentaID AS int)" in docs
+        assert "InvVentasDetalle" in docs
         assert "NOT banco_datos" in docs
 
 
