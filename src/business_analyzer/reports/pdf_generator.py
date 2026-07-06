@@ -304,8 +304,8 @@ class PDFReportGenerator:
         table.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, 0)),
-                    ("BACKGROUND", (0, 2), (-1, 2)),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f8fafc")),
+                    ("BACKGROUND", (0, 2), (-1, 2), colors.HexColor("#f8fafc")),
                     ("TEXTCOLOR", (0, 2), (0, 2), margin_color),
                     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
