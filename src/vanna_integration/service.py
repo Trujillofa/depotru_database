@@ -168,7 +168,8 @@ class VannaService:
     def train_on_schema(self) -> Any:
         print("\nTraining Vanna on your database schema...")
         print("  - Loading table information...")
-        self._vn.run_sql("""
+        self._vn.run_sql(
+            """
         SELECT
             TABLE_SCHEMA,
             TABLE_NAME,
@@ -179,7 +180,8 @@ class VannaService:
         FROM INFORMATION_SCHEMA.COLUMNS
         WHERE TABLE_NAME IN ('banco_datos')
         ORDER BY TABLE_NAME, ORDINAL_POSITION
-    """)
+    """
+        )
 
         self._vn.train(ddl=DDL_TRAINING_BLOCK)
         print("  - Adding business context...")

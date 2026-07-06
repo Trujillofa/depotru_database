@@ -95,7 +95,7 @@ def train_vanna(vn: AIVanna):
 
 
 def _port_is_available(host: str, port: int) -> bool:
-    bind_host = "127.0.0.1" if host in ("0.0.0.0", "") else host
+    bind_host = "127.0.0.1" if host in ("0.0.0.0", "") else host  # nosec B104
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:

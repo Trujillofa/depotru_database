@@ -1,0 +1,224 @@
+"""Colombian formatting for manager report display."""
+
+from typing import Any, Dict, List
+
+from business_analyzer.ai.formatting import (
+    format_currency,
+    format_integer,
+    format_percentage,
+)
+
+
+def format_for_display(
+    summary: Dict[str, Any],
+    top_products: List[Dict[str, Any]],
+    top_customers: List[Dict[str, Any]],
+    category_breakdown: List[Dict[str, Any]],
+    daily_trend: List[Dict[str, Any]],
+    vendor_sales: List[Dict[str, Any]],
+    marca_sales: List[Dict[str, Any]],
+    customer_vendor_mix: List[Dict[str, Any]],
+    order_suggestions: List[Dict[str, Any]],
+    recommendations: Dict[str, Any],
+    procurement_plan: List[Dict[str, Any]],
+    abc_analysis: Dict[str, Any],
+    stock_replenish: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Create Colombian-formatted strings for UI/report display."""
+    return {
+        "summary": {
+            "total_revenue_with_iva": format_currency(
+                summary.get("total_revenue_with_iva", 0), 0
+            ),
+            "total_revenue_without_iva": format_currency(
+                summary.get("total_revenue_without_iva", 0), 0
+            ),
+            "total_cost": format_currency(summary.get("total_cost", 0), 0),
+            "gross_profit": format_currency(summary.get("gross_profit", 0), 0),
+            "gross_margin_pct": format_percentage(
+                summary.get("gross_margin_pct", 0), 1
+            ),
+            "total_quantity_sold": format_integer(
+                summary.get("total_quantity_sold", 0)
+            ),
+            "order_count": format_integer(summary.get("order_count", 0)),
+            "average_order_value": format_currency(
+                summary.get("average_order_value", 0), 0
+            ),
+            "average_order_profit": format_currency(
+                summary.get("average_order_profit", 0), 0
+            ),
+        },
+        "top_products": [
+            {
+                "product_name": p["product_name"],
+                "sku": p["sku"],
+                "total_revenue": format_currency(p["total_revenue"], 0),
+                "total_quantity": format_integer(p["total_quantity"]),
+                "profit": format_currency(p["profit"], 0),
+                "profit_margin_pct": format_percentage(p["profit_margin_pct"], 1),
+                "transactions": format_integer(p["transactions"]),
+            }
+            for p in top_products
+        ],
+        "top_customers": [
+            {
+                "customer_name": c["customer_name"],
+                "total_revenue": format_currency(c["total_revenue"], 0),
+                "profit": format_currency(c.get("profit", 0), 0),
+                "profit_margin_pct": format_percentage(
+                    c.get("profit_margin_pct", 0), 1
+                ),
+                "total_orders": format_integer(c["total_orders"]),
+                "average_order_value": format_currency(c["average_order_value"], 0),
+                "total_quantity": format_integer(c["total_quantity"]),
+            }
+            for c in top_customers
+        ],
+        "category_breakdown": [
+            {
+                "category_path": c["category_path"],
+                "total_revenue": format_currency(c["total_revenue"], 0),
+                "profit": format_currency(c["profit"], 0),
+                "profit_margin_pct": format_percentage(c["profit_margin_pct"], 1),
+                "total_quantity": format_integer(c["total_quantity"]),
+                "transactions": format_integer(c["transactions"]),
+            }
+            for c in category_breakdown
+        ],
+        "daily_trend": [
+            {
+                "date": d["date"],
+                "revenue_with_iva": format_currency(d["revenue_with_iva"], 0),
+                "revenue_without_iva": format_currency(d["revenue_without_iva"], 0),
+                "profit": format_currency(d["profit"], 0),
+                "profit_margin_pct": format_percentage(d["profit_margin_pct"], 1),
+                "quantity": format_integer(d["quantity"]),
+                "orders": format_integer(d["orders"]),
+            }
+            for d in daily_trend
+        ],
+        "vendor_sales": [
+            {
+                "vendor_name": v["vendor_name"],
+                "total_revenue": format_currency(v["total_revenue"], 0),
+                "profit": format_currency(v["profit"], 0),
+                "profit_margin_pct": format_percentage(v["profit_margin_pct"], 1),
+                "revenue_pct": f"{v['revenue_pct']:.1f}%",
+                "transactions": format_integer(v["transactions"]),
+            }
+            for v in vendor_sales
+        ],
+        "marca_sales": [
+            {
+                "marca_name": m["marca_name"],
+                "total_revenue": format_currency(m["total_revenue"], 0),
+                "profit": format_currency(m["profit"], 0),
+                "profit_margin_pct": format_percentage(m["profit_margin_pct"], 1),
+                "revenue_pct": f"{m['revenue_pct']:.1f}%",
+                "transactions": format_integer(m["transactions"]),
+            }
+            for m in marca_sales
+        ],
+        "customer_vendor_mix": [
+            {
+                "customer_name": m["customer_name"],
+                "total_revenue": format_currency(m["total_revenue"], 0),
+                "vendor_count": format_integer(m["vendor_count"]),
+                "top_vendors": [
+                    {
+                        "vendor_name": tv["vendor_name"],
+                        "revenue": format_currency(tv["revenue"], 0),
+                        "pct": f"{tv['pct']:.1f}%",
+                    }
+                    for tv in m.get("top_vendors", [])
+                ],
+            }
+            for m in customer_vendor_mix
+        ],
+        "customer_order_suggestions": [
+            {
+                "customer_name": s["customer_name"],
+                "suggested_items": [
+                    {
+                        "product_name": i["product_name"],
+                        "sku": i["sku"],
+                        "avg_monthly": f"{i['avg_monthly']:.1f}",
+                        "suggested_order": format_integer(i["suggested_order"]),
+                        "current_stock": f"{i['current_stock']:.0f}"
+                        if i["current_stock"] is not None
+                        else "N/A",
+                        "primary_vendor": i.get("primary_vendor", ""),
+                        "marca": i.get("marca", ""),
+                    }
+                    for i in s.get("suggested_items", [])
+                ],
+                "total_suggested": format_integer(s["total_suggested"]),
+            }
+            for s in order_suggestions
+        ],
+        "shopping_recommendations": {
+            "cross_sell": [
+                {
+                    "product_name": r["product_name"],
+                    "buyers": format_integer(r["buyers"]),
+                    "revenue": format_currency(r["revenue"], 0),
+                    "recommended_with": [
+                        {
+                            "product_name": cr["product_name"],
+                            "common_customers": cr["common_customers"],
+                        }
+                        for cr in r.get("recommended_with", [])
+                    ],
+                }
+                for r in recommendations.get("cross_sell", [])
+            ],
+            "high_margin_promote": [
+                {
+                    "product_name": p["product_name"],
+                    "margin_pct": format_percentage(p["margin_pct"], 1),
+                    "revenue": format_currency(p["revenue"], 0),
+                    "quantity_sold": format_integer(p["quantity_sold"]),
+                }
+                for p in recommendations.get("high_margin_promote", [])
+            ],
+        },
+        "procurement_plan": [
+            {
+                "vendor_name": p["vendor_name"],
+                "total_suggested_units": format_integer(
+                    p.get("total_suggested_units", 0)
+                ),
+                "affected_customers": format_integer(p.get("affected_customers", 0)),
+                "key_products_count": format_integer(len(p.get("key_products", []))),
+                "key_products": [
+                    {
+                        "product_name": kp["product_name"],
+                        "sku": kp.get("sku", ""),
+                        "suggested_order": format_integer(kp.get("suggested_order", 0)),
+                        "affected_customers": format_integer(
+                            kp.get("affected_customers", 0)
+                        ),
+                    }
+                    for kp in p.get("key_products", [])[:5]
+                ],
+            }
+            for p in procurement_plan
+        ],
+        "abc_analysis": {
+            "products": abc_analysis.get("products", {}),
+            "customers": abc_analysis.get("customers", {}),
+            "vendors": abc_analysis.get("vendors", {}),
+        },
+        "stock_replenishment_suggestions": [
+            {
+                "sku": s.get("sku", ""),
+                "product_name": s.get("product_name", ""),
+                "marca": s.get("marca", ""),
+                "proveedor": s.get("proveedor", ""),
+                "current_stock": s.get("current_stock"),
+                "recent_sold": s.get("recent_sold"),
+            }
+            for s in stock_replenish
+        ],
+    }

@@ -28,7 +28,7 @@ Then open http://localhost:8084 in your browser and start asking questions!
 
 import os
 
-from src.vanna import ProviderSettings, VannaService, create_vanna_provider
+from src.vanna_integration import ProviderSettings, VannaService, create_vanna_provider
 
 # ============================================================================
 # CONFIGURATION - CHOOSE YOUR SETUP
