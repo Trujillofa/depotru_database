@@ -79,7 +79,7 @@ def test_generate_visualization_report_smoke_with_default_output(
     if not visualization.MATPLOTLIB_AVAILABLE:
         pytest.skip("matplotlib is not available in test environment")
 
-    monkeypatch.setattr(Config, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr(Config, "REPORT_DPI", 30)
 
     report_path = analyzer.generate_visualization_report(sample_analysis_payload)
