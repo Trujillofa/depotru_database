@@ -60,13 +60,15 @@ def coerce_row_value(value: object) -> ExtractedRowValue:
 
 
 @overload
-def extract_row_value(row: object, keys: Sequence[str]) -> ExtractedRowValue: ...
+def extract_row_value(row: object, keys: Sequence[str]) -> ExtractedRowValue:
+    ...
 
 
 @overload
 def extract_row_value(
     row: object, keys: Sequence[str], default: TDefault
-) -> ExtractedRowValue | TDefault: ...
+) -> ExtractedRowValue | TDefault:
+    ...
 
 
 def extract_row_value(

@@ -86,7 +86,9 @@ def analyze_categories(
                     else (
                         "HIGH"
                         if profit_margin < 10
-                        else "MEDIUM" if profit_margin < 20 else "LOW"
+                        else "MEDIUM"
+                        if profit_margin < 20
+                        else "LOW"
                     )
                 ),
                 "top_subcategories": subcats[:5],
