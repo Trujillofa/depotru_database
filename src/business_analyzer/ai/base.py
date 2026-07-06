@@ -1143,7 +1143,7 @@ ORDER BY Facturacion_Total DESC
 
     @staticmethod
     def _brand_top_products_sql_template(question: str = "") -> str:
-        n = AIVanna._extract_top_n(question)
+        n = AIVanna._extract_top_n(question, default=15)
         year_filter = AIVanna._year_filter_from_question(question)
         order_clause = AIVanna._product_ranking_order(question)
         brands = AIVanna._extract_vendor_brands(question)

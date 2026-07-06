@@ -663,7 +663,7 @@ class TestBrandTopProductsTemplate:
     def test_sika_template_groups_by_product(self):
         sql = AIVanna._brand_top_products_sql_template(self.SIKA_QUESTION)
         lower = sql.lower()
-        assert "top 10" in lower
+        assert "top 15" in lower
         assert "group by bd.articulosnombre" in lower
         assert "productos_adicional" in lower
         assert "'sika'" in lower
@@ -672,6 +672,7 @@ class TestBrandTopProductsTemplate:
     def test_euroceramica_inventory_sold_template_uses_join(self):
         sql = AIVanna._brand_top_products_sql_template(self.EURO_QUESTION)
         lower = sql.lower()
+        assert "top 15" in lower
         assert "productos_adicional" in lower
         assert "group by bd.articulosnombre" in lower
         assert "euroceramica" in lower

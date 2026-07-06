@@ -66,7 +66,7 @@ GOLDEN_QUESTIONS = [
     ),
     pytest.param(
         "Productos de SIKA más vendidos",
-        ["top 10", "group by articulosnombre", "articulosnombre as producto"],
+        ["top 15", "group by bd.articulosnombre", "articulosnombre as producto"],
         ["marca_proveedor"],
         id="sika_productos",
     ),
