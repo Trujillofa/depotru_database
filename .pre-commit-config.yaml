@@ -54,6 +54,7 @@ repos:
         name: Check for large files
         description: Prevents files larger than 500KB from being committed
         args: ["--maxkb=500"]
+        exclude: ^uv\.lock$
 
       # Check for merge conflict markers
       - id: check-merge-conflict

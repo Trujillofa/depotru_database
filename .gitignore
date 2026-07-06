@@ -145,3 +145,7 @@ reports/KPI_CONTROL_BOARD_*.md
 
 # Training data - handle with DVC or ignore
 data/*.jsonl
+
+# SQL schema/mart scripts (override global *.sql ignore)
+!data/sql/
+!data/sql/**

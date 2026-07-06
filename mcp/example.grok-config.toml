@@ -1,0 +1,14 @@
+# Example project-scoped MCP registration for the database server.
+# Place this as .grok/config.toml in your repo root (or copy relevant parts to ~/.grok/config.toml).
+
+[mcp_servers.depotru-database]
+command = "uv"
+args = [
+    "run", "--extra", "mcp",
+    "depotru-db-mcp",
+]
+# Optional: you can hard-code connection info here instead of relying on .env or NCX
+# env = { DB_HOST = "your-mssql-host", DB_USER = "readonly", DB_PASSWORD = "secret", DB_NAME = "SmartBusiness", DB_NAME_J3SYSTEM = "J3System" }
+enabled = true
+startup_timeout_sec = 15
+tool_timeout_sec = 120   # some reports can be slow
