@@ -55,7 +55,38 @@ def flask_client():
         yield client, app
 
 
+class _ManyRowStubVanna(_StubVanna):
+    def run_sql(self, sql: str):
+        raw = pd.DataFrame(
+            {
+                "Producto": [f"PRODUCTO {i}" for i in range(1, 16)],
+                "Ventas": [float(i * 1_000_000) for i in range(1, 16)],
+            }
+        )
+        self._last_result_df = raw
+        return format_dataframe(raw)
+
+
+@pytest.fixture
+def many_row_flask_client():
+    app = SmartVannaFlaskApp(_ManyRowStubVanna(), chart=True)
+    app.flask_app.config["TESTING"] = True
+    with app.flask_app.test_client() as client:
+        yield client, app
+
+
 class TestSmartVannaFlaskApp:
+    def test_run_sql_returns_up_to_max_display_rows(self, many_row_flask_client):
+        client, app = many_row_flask_client
+        cache_id = app.cache.generate_id(question="productos euroceramica")
+        app.cache.set(id=cache_id, field="sql", value="SELECT TOP 15 1")
+
+        response = client.get(f"/api/v0/run_sql?id={cache_id}")
+        assert response.status_code == 200
+        payload = response.get_json()
+        rows = json.loads(payload["df"])
+        assert len(rows) == 15
+
     def test_run_sql_caches_df_raw(self, flask_client):
         client, app = flask_client
         cache_id = app.cache.generate_id(question="ventas cemex")

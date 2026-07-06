@@ -327,7 +327,7 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                     {
                         "type": "df",
                         "id": id,
-                        "df": df_display.head(10).to_json(
+                        "df": df_display.head(Config.MAX_DISPLAY_ROWS).to_json(
                             orient="records", date_format="iso"
                         ),
                         "should_generate_chart": should_chart,
