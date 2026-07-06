@@ -99,6 +99,13 @@ def build_sales_warehouse_detail_sql(
     ).strip()
 
 
+def _validate_period_date(value: str, label: str = "date") -> str:
+    """Validate YYYY-MM-DD for safe interpolation in J3System period filters."""
+    if not value or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        raise ValueError(f"Invalid {label}: {value!r}")
+    return value
+
+
 def build_sales_by_warehouse_sql(
     *,
     j3_database: Optional[str] = None,
@@ -114,6 +121,68 @@ def build_sales_by_warehouse_sql(
         "WHERE iif.Almancen <> '' "
         "GROUP BY iif.Almancen, a.AlmacenNombre "
         "ORDER BY Numero_Ventas DESC"
+    )
+
+
+def build_warehouse_breakdown_for_period_sql(
+    start_date: str,
+    end_date: str,
+    *,
+    j3_database: Optional[str] = None,
+) -> str:
+    """Monthly manager-report breakdown: sales and revenue per warehouse code."""
+    start = _validate_period_date(start_date, "start_date")
+    end = _validate_period_date(end_date, "end_date")
+    from_clause = _sales_warehouse_from_clause(j3_database)
+    return (
+        "SELECT "
+        "iif.Almancen AS warehouse_code, "
+        "a.AlmacenNombre AS warehouse_name, "
+        "COUNT(DISTINCT v.VentaID) AS sale_count, "
+        "SUM(iif.SinIva) AS revenue_without_iva, "
+        "SUM(iif.ConIva) AS revenue_with_iva, "
+        "SUM(iif.Cantidad) AS quantity "
+        f"{from_clause} "
+        f"WHERE v.Fecha BETWEEN '{start}' AND '{end}' "
+        "AND iif.Almancen <> '' "
+        "GROUP BY iif.Almancen, a.AlmacenNombre "
+        "ORDER BY SUM(iif.SinIva) DESC"
+    )
+
+
+def build_one_warehouse_per_sale_for_period_sql(
+    start_date: str,
+    end_date: str,
+    *,
+    top_n: Optional[int] = None,
+    j3_database: Optional[str] = None,
+) -> str:
+    """One warehouse per sale within a date range (manager report detail)."""
+    start = _validate_period_date(start_date, "start_date")
+    end = _validate_period_date(end_date, "end_date")
+    top_clause = f"TOP {int(top_n)} " if top_n else ""
+    inv_ventas = qualified_j3_table("InvVentas", j3_database)
+    inv_impresion = qualified_j3_table("InvImpresionFactura", j3_database)
+    adm_almacen = qualified_j3_table("AdmAlmacen", j3_database)
+    return (
+        f"SELECT {top_clause}"
+        "v.VentaID, "
+        "v.NumeroDocumento, "
+        "v.Fecha, "
+        "v.NroFactura, "
+        "wh.Almancen AS warehouse_code, "
+        "a.AlmacenNombre AS warehouse_name "
+        f"FROM {inv_ventas} v "
+        "CROSS APPLY ("
+        "SELECT TOP 1 iif.Almancen "
+        f"FROM {inv_impresion} iif "
+        "WHERE CAST(iif.VentaID AS int) = v.VentaID "
+        "AND iif.Almancen <> '' "
+        "ORDER BY iif.Almancen"
+        ") wh "
+        f"LEFT JOIN {adm_almacen} a ON a.AlmacenCodigo = wh.Almancen "
+        f"WHERE v.Fecha BETWEEN '{start}' AND '{end}' "
+        "ORDER BY v.Fecha DESC"
     )
 
 

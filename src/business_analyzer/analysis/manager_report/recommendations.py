@@ -10,6 +10,8 @@ from .aggregations import (
     marca_sales_from_sql,
     sku_monthly_sales_from_sql,
     vendor_sales_from_sql,
+    warehouse_breakdown_from_sql,
+    warehouse_sales_detail_from_sql,
     ytd_customer_products_from_sql,
 )
 from .helpers import (
@@ -41,6 +43,27 @@ class ReportRecommendationsMixin:
                 row.get("ArticulosNombre") or product_sales[sku]["product_name"]
             )
         return dict(product_sales)
+
+    def _calculate_warehouse_sales(self) -> Dict[str, Any]:
+        """Sales breakdown by J3System warehouse (Almancen) for the report period."""
+        if not self.use_j3system or not self._j3system_warehouse:
+            return {
+                "breakdown": [],
+                "sales_detail": [],
+                "note": "J3System warehouse enrichment disabled or unavailable",
+            }
+        breakdown_rows = self._j3system_warehouse.get("breakdown") or []
+        sales_rows = self._j3system_warehouse.get("sales") or []
+        if not breakdown_rows and not sales_rows:
+            return {
+                "breakdown": [],
+                "sales_detail": [],
+                "note": "Sin datos de almacén en J3System para el período",
+            }
+        return {
+            "breakdown": warehouse_breakdown_from_sql(breakdown_rows),
+            "sales_detail": warehouse_sales_detail_from_sql(sales_rows),
+        }
 
     def _calculate_inventory_insights(self) -> Dict[str, Any]:
         if not self.use_j3system or not self._j3system_inventory:

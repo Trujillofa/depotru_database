@@ -66,6 +66,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
         self._ytd_sql_aggregations: Dict[str, Any] = {}
         self._j3system_inventory: Dict[str, Dict[str, Any]] = {}
         self._j3system_products: Dict[str, Dict[str, Any]] = {}
+        self._j3system_warehouse: Dict[str, List[Dict[str, Any]]] = {}
         self._sb_product_map: Dict[str, Dict[str, Any]] = {}
         self._vendor_names: Dict[str, str] = {}
         self._sku_historical_prov: Dict[str, str] = {}
@@ -189,6 +190,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             products, vendor_map = self._queries.fetch_j3system_product_details()
             self._j3system_products = products
             self._vendor_names = vendor_map
+            self._j3system_warehouse = self._queries.fetch_j3system_warehouse_sales()
             self._enrich_sales_proveedor_marca_from_master()
             if self._ytd_sales_data:
                 self._enrich_proveedor_marca_from_master(self._ytd_sales_data)
@@ -257,6 +259,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
                 "customer_order_suggestions": [],
                 "shopping_recommendations": [],
                 "procurement_plan": [],
+                "warehouse_sales": {"breakdown": [], "sales_detail": [], "note": None},
             }
             return {
                 "metadata": {
@@ -294,6 +297,11 @@ class ManagerSalesReport(ReportRecommendationsMixin):
                 "shopping_recommendations": [],
                 "customer_vendor_mix": [],
                 "procurement_plan": [],
+                "warehouse_sales": {
+                    "breakdown": [],
+                    "sales_detail": [],
+                    "note": "Sin datos de ventas",
+                },
                 "abc_analysis": {"products": {}, "customers": {}, "vendors": {}},
                 "stock_replenishment_suggestions": [],
                 "formatted": empty_formatted,
@@ -305,6 +313,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
         category_breakdown = self._calculate_category_breakdown()
         daily_trend = self._calculate_daily_trend()
         inventory_insights = self._calculate_inventory_insights()
+        warehouse_sales = self._calculate_warehouse_sales()
         vendor_sales = self._calculate_vendor_sales()
         marca_sales = self._calculate_marca_sales()
         customer_vendor_mix = self._calculate_customer_vendor_mix()
@@ -328,6 +337,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             procurement_plan,
             abc_analysis,
             stock_replenish,
+            warehouse_sales,
         )
 
         return {
@@ -347,6 +357,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             "category_breakdown": category_breakdown,
             "daily_trend": daily_trend,
             "inventory_insights": inventory_insights,
+            "warehouse_sales": warehouse_sales,
             "vendor_sales": vendor_sales,
             "marca_sales": marca_sales,
             "customer_vendor_mix": customer_vendor_mix,

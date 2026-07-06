@@ -23,6 +23,7 @@ def format_for_display(
     procurement_plan: List[Dict[str, Any]],
     abc_analysis: Dict[str, Any],
     stock_replenish: List[Dict[str, Any]],
+    warehouse_sales: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Create Colombian-formatted strings for UI/report display."""
     return {
@@ -223,4 +224,30 @@ def format_for_display(
             }
             for s in stock_replenish
         ],
+        "warehouse_sales": {
+            "breakdown": [
+                {
+                    "warehouse_code": w["warehouse_code"],
+                    "warehouse_name": w["warehouse_name"],
+                    "sale_count": format_integer(w["sale_count"]),
+                    "revenue_without_iva": format_currency(w["revenue_without_iva"], 0),
+                    "revenue_with_iva": format_currency(w["revenue_with_iva"], 0),
+                    "quantity": format_integer(int(w.get("quantity", 0))),
+                    "revenue_pct": f"{w['revenue_pct']:.1f}%",
+                }
+                for w in warehouse_sales.get("breakdown", [])
+            ],
+            "sales_detail": [
+                {
+                    "venta_id": format_integer(d.get("venta_id", 0)),
+                    "numero_documento": d.get("numero_documento"),
+                    "fecha": d.get("fecha"),
+                    "nro_factura": d.get("nro_factura"),
+                    "warehouse_code": d.get("warehouse_code"),
+                    "warehouse_name": d.get("warehouse_name"),
+                }
+                for d in warehouse_sales.get("sales_detail", [])
+            ],
+            "note": warehouse_sales.get("note"),
+        },
     }

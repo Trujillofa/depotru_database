@@ -327,6 +327,56 @@ def daily_trend_from_rows(sales_data: List[Dict[str, Any]]) -> List[Dict[str, An
     return trend
 
 
+def warehouse_breakdown_from_sql(
+    rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Normalize J3System warehouse breakdown rows for manager reports."""
+    result = []
+    total_rev = sum(to_float(r.get("revenue_without_iva")) or 0.0 for r in rows)
+    for row in rows:
+        code = (row.get("warehouse_code") or "").strip()
+        if not code:
+            continue
+        revenue = to_float(row.get("revenue_without_iva")) or 0.0
+        revenue_iva = to_float(row.get("revenue_with_iva")) or 0.0
+        result.append(
+            {
+                "warehouse_code": code,
+                "warehouse_name": (row.get("warehouse_name") or code).strip(),
+                "sale_count": int(to_float(row.get("sale_count")) or 0),
+                "revenue_without_iva": round(revenue, 2),
+                "revenue_with_iva": round(revenue_iva, 2),
+                "quantity": round(to_float(row.get("quantity")) or 0.0, 2),
+                "revenue_pct": round(safe_divide(revenue, total_rev, 0.0) * 100, 1),
+            }
+        )
+    result.sort(key=lambda x: x["revenue_without_iva"], reverse=True)
+    return result
+
+
+def warehouse_sales_detail_from_sql(
+    rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Normalize one-warehouse-per-sale detail rows."""
+    result = []
+    for row in rows:
+        code = (row.get("warehouse_code") or "").strip()
+        if not code:
+            continue
+        fecha = row.get("Fecha")
+        result.append(
+            {
+                "venta_id": int(to_float(row.get("VentaID")) or 0),
+                "numero_documento": to_float(row.get("NumeroDocumento")),
+                "fecha": str(fecha)[:10] if fecha is not None else None,
+                "nro_factura": (row.get("NroFactura") or "").strip() or None,
+                "warehouse_code": code,
+                "warehouse_name": (row.get("warehouse_name") or code).strip(),
+            }
+        )
+    return result
+
+
 def vendor_sales_from_sql(
     rows: List[Dict[str, Any]],
     normalize_vendor: Optional[Callable[[str], str]] = None,

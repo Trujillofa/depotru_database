@@ -191,6 +191,10 @@ class TestManagerSalesReport:
                 for row in (j3_inventory or [])
             }
             runner.fetch_j3system_product_details.return_value = ({}, {})
+        runner.fetch_j3system_warehouse_sales.return_value = {
+            "breakdown": [],
+            "sales": [],
+        }
         return runner
 
     @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
@@ -354,6 +358,56 @@ class TestManagerSalesReport:
         assert report.end_date == "2024-05-31"
 
     @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
+    def test_warehouse_sales_from_j3system(self, MockRunner, sample_sales_data):
+        """Warehouse breakdown uses J3System InvVentas/InvImpresionFactura data."""
+        runner = self._setup_mock_runner(MockRunner, sample_sales_data)
+        runner.fetch_j3system_warehouse_sales.return_value = {
+            "breakdown": [
+                {
+                    "warehouse_code": "FLO",
+                    "warehouse_name": "ALMACEN FLORENCIA",
+                    "sale_count": 12,
+                    "revenue_without_iva": 5000000.0,
+                    "revenue_with_iva": 5950000.0,
+                    "quantity": 48,
+                },
+                {
+                    "warehouse_code": "DIS",
+                    "warehouse_name": "DISTRIBUCIONES",
+                    "sale_count": 8,
+                    "revenue_without_iva": 2000000.0,
+                    "revenue_with_iva": 2380000.0,
+                    "quantity": 20,
+                },
+            ],
+            "sales": [
+                {
+                    "VentaID": 101,
+                    "NumeroDocumento": 9001,
+                    "Fecha": "2024-05-02",
+                    "NroFactura": "FV-9001",
+                    "warehouse_code": "FLO",
+                    "warehouse_name": "ALMACEN FLORENCIA",
+                }
+            ],
+        }
+
+        report = ManagerSalesReport(2024, 5)
+        result = report.generate()
+        wh = result["warehouse_sales"]
+
+        assert len(wh["breakdown"]) == 2
+        assert wh["breakdown"][0]["warehouse_code"] == "FLO"
+        assert wh["breakdown"][0]["sale_count"] == 12
+        assert wh["breakdown"][0]["revenue_pct"] == 71.4
+        assert len(wh["sales_detail"]) == 1
+        assert wh["sales_detail"][0]["venta_id"] == 101
+        assert wh["sales_detail"][0]["warehouse_code"] == "FLO"
+        formatted = result["formatted"]["warehouse_sales"]
+        assert formatted["breakdown"][0]["warehouse_name"] == "ALMACEN FLORENCIA"
+        runner.fetch_j3system_warehouse_sales.assert_called_once()
+
+    @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
     def test_j3system_failure_graceful(self, MockRunner, sample_sales_data):
         """Test J3System connection failure is handled gracefully."""
         self._setup_mock_runner(MockRunner, sample_sales_data, j3_error=True)
@@ -364,6 +418,8 @@ class TestManagerSalesReport:
         assert result["inventory_insights"]["low_stock_alert"] == []
         assert result["inventory_insights"]["fast_movers_in_month"] == []
         assert "note" in result["inventory_insights"]
+        assert result["warehouse_sales"]["breakdown"] == []
+        assert "note" in result["warehouse_sales"]
 
     @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
     def test_context_manager_used(self, MockRunner, sample_sales_data):
@@ -376,6 +432,7 @@ class TestManagerSalesReport:
         runner.fetch_sales_data.assert_called_once()
         runner.fetch_year_to_date_data.assert_called_once()
         runner.fetch_sb_product_map.assert_called_once()
+        runner.fetch_j3system_warehouse_sales.assert_called_once()
 
     @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
     def test_vendor_sales_uses_sql_aggregations(self, MockRunner, sample_sales_data):

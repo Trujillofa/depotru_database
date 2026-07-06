@@ -14,6 +14,10 @@ except ImportError:
     from config import Config
 
 from business_analyzer.core.database import ConnectionType, Database
+from business_analyzer.core.j3system_sales_warehouse import (
+    build_one_warehouse_per_sale_for_period_sql,
+    build_warehouse_breakdown_for_period_sql,
+)
 
 from .helpers import EXCLUDED_CUSTOMERS
 
@@ -457,6 +461,41 @@ class SalesQueryRunner:
             "customer_products": customer_products,
             "primary_vendors": primary_vendors,
         }
+
+    def fetch_j3system_warehouse_sales(
+        self,
+        *,
+        detail_limit: int = 50,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """J3System sales-to-warehouse aggregates and per-sale detail for the period."""
+        db = self._open_db()
+        j3_conn = None
+        try:
+            j3_conn = db.get_j3system_connection()
+            cursor = j3_conn.cursor(as_dict=True)
+            breakdown_sql = build_warehouse_breakdown_for_period_sql(
+                self.start_date, self.end_date
+            )
+            cursor.execute(breakdown_sql)
+            breakdown = list(cursor)
+
+            detail_sql = build_one_warehouse_per_sale_for_period_sql(
+                self.start_date,
+                self.end_date,
+                top_n=detail_limit,
+            )
+            cursor.execute(detail_sql)
+            sales = list(cursor)
+            cursor.close()
+        except Exception:
+            return {"breakdown": [], "sales": []}
+        finally:
+            if j3_conn:
+                try:
+                    j3_conn.close()
+                except Exception:
+                    pass
+        return {"breakdown": breakdown, "sales": sales}
 
     def fetch_j3system_inventory(self) -> Dict[str, Dict[str, Any]]:
         db = self._open_db()

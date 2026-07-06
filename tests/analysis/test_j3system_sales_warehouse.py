@@ -4,10 +4,12 @@ import pytest
 
 from business_analyzer.core.j3system_sales_warehouse import (
     WAREHOUSE_CODES,
+    build_one_warehouse_per_sale_for_period_sql,
     build_one_warehouse_per_sale_sql,
     build_sales_by_warehouse_sql,
     build_sales_warehouse_detail_sql,
     build_sales_warehouse_sql_for_question,
+    build_warehouse_breakdown_for_period_sql,
     extract_warehouse_code,
     is_aggregated_warehouse_question,
     is_j3system_warehouse_question,
@@ -120,6 +122,25 @@ def test_sql_for_question_picks_one_per_sale_template():
 @pytest.mark.unit
 def test_warehouse_codes_count_is_14():
     assert len(WAREHOUSE_CODES) == 14
+
+
+@pytest.mark.unit
+def test_period_breakdown_sql_filters_by_fecha_and_aggregates_revenue():
+    sql = build_warehouse_breakdown_for_period_sql("2024-05-01", "2024-05-31")
+    lower = sql.lower()
+    assert "v.fecha between '2024-05-01' and '2024-05-31'" in lower
+    assert "sum(iif.siniva) as revenue_without_iva" in lower
+    assert "count(distinct v.ventaid) as sale_count" in lower
+
+
+@pytest.mark.unit
+def test_period_one_per_sale_sql_uses_cross_apply_and_top():
+    sql = build_one_warehouse_per_sale_for_period_sql(
+        "2024-05-01", "2024-05-31", top_n=25
+    )
+    assert "TOP 25" in sql
+    assert "CROSS APPLY" in sql
+    assert "v.Fecha BETWEEN '2024-05-01' AND '2024-05-31'" in sql
 
 
 @pytest.mark.unit
