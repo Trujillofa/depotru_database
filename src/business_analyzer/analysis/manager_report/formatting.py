@@ -145,9 +145,11 @@ def format_for_display(
                         "sku": i["sku"],
                         "avg_monthly": f"{i['avg_monthly']:.1f}",
                         "suggested_order": format_integer(i["suggested_order"]),
-                        "current_stock": f"{i['current_stock']:.0f}"
-                        if i["current_stock"] is not None
-                        else "N/A",
+                        "current_stock": (
+                            f"{i['current_stock']:.0f}"
+                            if i["current_stock"] is not None
+                            else "N/A"
+                        ),
                         "primary_vendor": i.get("primary_vendor", ""),
                         "marca": i.get("marca", ""),
                     }

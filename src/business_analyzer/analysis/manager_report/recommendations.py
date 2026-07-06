@@ -644,9 +644,11 @@ class ReportRecommendationsMixin:
                     "current_stock": item.get("current_stock"),
                     "recent_sold": item.get("quantity_sold"),
                     "reason": reason,
-                    "priority": "alta"
-                    if (item.get("current_stock") or 99) <= 10
-                    else "monitorear",
+                    "priority": (
+                        "alta"
+                        if (item.get("current_stock") or 99) <= 10
+                        else "monitorear"
+                    ),
                 }
             )
         return result

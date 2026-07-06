@@ -4,6 +4,8 @@ Base module for AI package.
 Contains configuration, security utilities, and the AIVanna base class.
 """
 
+from __future__ import annotations
+
 import inspect
 import math
 import os
