@@ -532,6 +532,7 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
                 "menor vendid",
                 "peor vendid",
                 "principales producto",
+                "inventario vendido",
             )
         ) or bool(re.search(r"top\s*\d+\s+productos?", lower))
         return has_product and has_ranking
@@ -1148,20 +1149,38 @@ ORDER BY Facturacion_Total DESC
         brands = AIVanna._extract_vendor_brands(question)
         category = AIVanna._extract_product_category(question)
 
-        scope_filter = ""
+        revenue_col = (
+            "Facturacion_Total" if "factur" in (question or "").lower() else "Ventas"
+        )
+
         if brands:
-            brand_clauses = [AIVanna._brand_match_filter(brand) for brand in brands[:3]]
-            scope_filter = "\n  AND (" + " OR ".join(brand_clauses) + ")"
-        elif category:
+            safe_brands = AIVanna._safe_brand_tokens(brands[:3])
+            brand_filter = AIVanna._multi_vendor_brand_filter_sql(safe_brands)
+            year_on_bd = year_filter.replace("YEAR(Fecha)", "YEAR(bd.Fecha)")
+            return f"""
+SELECT TOP {n}
+    bd.ArticulosNombre AS Producto,
+    SUM(bd.TotalMasIva) AS {revenue_col},
+    SUM(bd.Cantidad) AS Cantidad_Vendida,
+    SUM(bd.TotalSinIva - bd.ValorCosto) AS Ganancia
+FROM banco_datos bd
+LEFT JOIN productos_adicional pa
+    ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
+     = pa.producto_codigo COLLATE DATABASE_DEFAULT
+WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC'){year_on_bd}
+  AND ({brand_filter})
+GROUP BY bd.ArticulosNombre
+ORDER BY {order_clause}
+            """.strip()
+
+        scope_filter = ""
+        if category:
             safe_category = re.sub(r"[^A-Z0-9 ]", "", category.upper()).strip()
             scope_filter = (
                 f"\n  AND UPPER(LTRIM(RTRIM(COALESCE(categoria, '')))) = "
                 f"'{safe_category}'"
             )
 
-        revenue_col = (
-            "Facturacion_Total" if "factur" in (question or "").lower() else "Ventas"
-        )
         return f"""
 SELECT TOP {n}
     ArticulosNombre AS Producto,
@@ -2078,9 +2097,12 @@ ORDER BY Dia_Orden
                             return template
                 if self._is_brand_top_products_question(question):
                     cached_lower = cached.lower()
+                    brands = self._extract_vendor_brands(question)
                     needs_upgrade = (
                         "marca_proveedor" in cached_lower
                         or "group by articulosnombre" not in cached_lower
+                        or "group by bd.articulosnombre" not in cached_lower
+                        or (brands and "productos_adicional" not in cached_lower)
                     )
                     if needs_upgrade:
                         template = self._brand_top_products_sql_template(question)
