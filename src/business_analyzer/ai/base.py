@@ -34,6 +34,10 @@ try:
 except ImportError:
     OpenAI = None
 
+from business_analyzer.analysis.j3system_sales_warehouse import (
+    build_sales_warehouse_sql_for_question,
+    is_j3system_warehouse_question,
+)
 from business_analyzer.core.paths import resolve_output_dir
 from business_analyzer.core.query_cache import (
     MemoryQueryCache,
@@ -505,7 +509,17 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         return None
 
     @staticmethod
+    def _is_j3system_warehouse_question(question: str) -> bool:
+        return is_j3system_warehouse_question(question)
+
+    @staticmethod
+    def _j3system_warehouse_sql_template(question: str = "") -> str:
+        return build_sales_warehouse_sql_for_question(question)
+
+    @staticmethod
     def _is_branch_store_sales_question(question: str) -> bool:
+        if AIVanna._is_j3system_warehouse_question(question):
+            return False
         lower = (question or "").lower()
         if AIVanna._branch_document_code(question):
             has_sales = any(
@@ -1984,6 +1998,19 @@ ORDER BY Dia_Orden
 
             cached = self._query_cache.get(question)
             if cached:
+                if self._is_j3system_warehouse_question(question):
+                    cached_lower = cached.lower()
+                    needs_upgrade = (
+                        "invventas" not in cached_lower
+                        or "invimpresionfactura" not in cached_lower
+                        or "almancen" not in cached_lower
+                        or "cast(iif.ventaid as int)" not in cached_lower
+                    )
+                    if needs_upgrade:
+                        template = self._j3system_warehouse_sql_template(question)
+                        if template:
+                            self._query_cache.set(question, template)
+                            return template
                 if self._is_document_type_sales_question(question):
                     cached_lower = cached.lower()
                     needs_upgrade = (
@@ -2154,6 +2181,11 @@ ORDER BY Dia_Orden
                             return template
                 return cached
 
+            if self._is_j3system_warehouse_question(question):
+                template = self._j3system_warehouse_sql_template(question)
+                if template:
+                    self._query_cache.set(question, template)
+                    return template
             if self._is_document_type_sales_question(question):
                 template = self._document_type_sales_sql_template(question)
                 if template:

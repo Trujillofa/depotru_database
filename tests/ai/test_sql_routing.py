@@ -106,6 +106,30 @@ GOLDEN_QUESTIONS = [
         ["totalactiva", "totalventas", "documentocodigo"],
         id="year_month_compare",
     ),
+    pytest.param(
+        "Listar ventas con su almacén en J3System",
+        [
+            "invventas",
+            "invimpresionfactura",
+            "cast(iif.ventaid as int)",
+            "almancen",
+            "admalmacen",
+        ],
+        ["banco_datos", "documentoscodigo"],
+        id="j3system_warehouse_detail",
+    ),
+    pytest.param(
+        "Ventas agrupadas por bodega en J3System",
+        ["group by iif.almancen", "count(distinct v.ventaid)"],
+        ["banco_datos"],
+        id="j3system_warehouse_aggregate",
+    ),
+    pytest.param(
+        "Un almacén por venta en J3System sin duplicar líneas",
+        ["cross apply", "top 1 iif.almancen"],
+        ["banco_datos"],
+        id="j3system_one_warehouse_per_sale",
+    ),
 ]
 
 

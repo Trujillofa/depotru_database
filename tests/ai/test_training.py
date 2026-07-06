@@ -14,7 +14,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 from business_analyzer.ai.training import (
     generate_training_data,
     get_default_training_examples,
+    get_j3system_training_examples,
     load_autoresearch_training_examples,
+    train_on_j3system_schema,
 )
 
 
@@ -253,6 +255,47 @@ class TestTrainingExamples:
         assert '"tercerosnombres" in lower' in repair_code
         assert '"sika" in lower' in repair_code
         assert "return AIVanna._branch_store_sql_template(sql)" in repair_code
+
+
+class TestJ3SystemTraining:
+    """J3System sales-to-warehouse Vanna training."""
+
+    def test_j3system_examples_include_core_tables(self):
+        examples = dict(get_j3system_training_examples())
+        detail_sql = examples["Listar ventas con su almacén en J3System"]
+        assert "InvVentas" in detail_sql
+        assert "InvImpresionFactura" in detail_sql
+        assert "CAST(iif.VentaID AS int)" in detail_sql
+        assert "Almancen" in detail_sql
+        assert "AdmAlmacen" in detail_sql
+
+    def test_j3system_examples_cover_aggregate_and_one_per_sale(self):
+        examples = dict(get_j3system_training_examples())
+        assert (
+            "GROUP BY iif.Almancen"
+            in examples["Ventas agrupadas por bodega en J3System"]
+        )
+        assert (
+            "CROSS APPLY"
+            in examples["Un almacén por venta en J3System sin duplicar líneas"]
+        )
+        assert "iif.Almancen = 'FLO'" in examples["Ventas del almacén FLO en J3System"]
+
+    def test_j3system_schema_docs_warn_about_almancen_typo(self):
+        class Recorder:
+            def __init__(self):
+                self.documentation = []
+
+            def train(self, ddl=None, documentation=None):
+                if documentation:
+                    self.documentation.append(documentation)
+
+        recorder = Recorder()
+        train_on_j3system_schema(recorder)
+        docs = "\n".join(recorder.documentation)
+        assert "Almancen" in docs
+        assert "CAST(InvImpresionFactura.VentaID AS int)" in docs
+        assert "NOT banco_datos" in docs
 
 
 class TestGenerateTrainingData:

@@ -11,6 +11,13 @@ import os
 import re
 from typing import List, Optional, Tuple
 
+from business_analyzer.analysis.j3system_sales_warehouse import (
+    WAREHOUSE_CODES,
+    build_one_warehouse_per_sale_sql,
+    build_sales_by_warehouse_sql,
+    build_sales_warehouse_detail_sql,
+)
+
 DOC_EXCLUSION_FILTER = "DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')"
 
 
@@ -386,6 +393,106 @@ def train_on_schema(vn, schema_name: str = "SmartBusiness"):
     )
 
     print("✓ Schema training complete!")
+
+
+def train_on_j3system_schema(vn, schema_name: str = "J3System"):
+    """
+    Train Vanna on J3System ERP schema for sales-to-warehouse lookups.
+
+    See docs/reference/j3system-sales-warehouse-query.md for full reference.
+    """
+    print(f"\nTraining on {schema_name} sales-warehouse schema...")
+
+    vn.train(
+        ddl="""
+        CREATE TABLE InvVentas (
+            VentaID INT PRIMARY KEY,
+            NumeroDocumento NUMERIC,
+            Fecha DATE,
+            TercerosID INT,
+            NroFactura NVARCHAR(50),
+            DocumentosID INT,
+            VendedorID INT
+        );
+        CREATE TABLE InvImpresionFactura (
+            VentaID NUMERIC,
+            Almancen NVARCHAR(5),
+            Articulos NVARCHAR(20),
+            Descripcion NVARCHAR(200),
+            Cantidad DECIMAL,
+            SinIva MONEY,
+            ConIva MONEY
+        );
+        CREATE TABLE AdmAlmacen (
+            AlmacenCodigo NVARCHAR(5) PRIMARY KEY,
+            AlmacenNombre NVARCHAR(200)
+        );
+        """
+    )
+
+    warehouse_list = ", ".join(f"`{code}`" for code in WAREHOUSE_CODES)
+    vn.train(
+        documentation=f"""
+        J3System ERP — Sales to Warehouse (separate from SmartBusiness banco_datos)
+
+        CRITICAL RELATIONSHIP:
+        - InvVentas.VentaID (int) ↔ InvImpresionFactura.VentaID (numeric) — 1:N line items.
+        - Always cast: CAST(InvImpresionFactura.VentaID AS int) = InvVentas.VentaID
+        - Warehouse column is Almancen (schema typo — missing second 'a', NOT Almacen).
+        - Decode via AdmAlmacen: AlmacenCodigo → AlmacenNombre.
+
+        WAREHOUSE CODES ({len(WAREHOUSE_CODES)} active):
+        {warehouse_list}
+
+        CAVEATS:
+        - One VentaID → multiple InvImpresionFactura rows; use DISTINCT or CROSS APPLY
+          for one warehouse per sale.
+        - Some rows have Almancen = '' — filter with iif.Almancen <> '' when needed.
+        - AdmAlmacenUbicacion exists for physical location beyond warehouse code.
+
+        AMBIGUITY:
+        - SmartBusiness branch "ALMACEN PRINCIPAL" uses DocumentosCodigo = 'FED' in banco_datos.
+        - J3System warehouse questions use InvVentas + InvImpresionFactura + Almancen, NOT banco_datos.
+        - If user asks "almacén por venta" or "bodega de la factura" in ERP context, query J3System.
+
+        QUERY PATTERNS:
+        - Line detail: JOIN InvVentas v + InvImpresionFactura iif + LEFT JOIN AdmAlmacen a
+        - Per warehouse totals: GROUP BY iif.Almancen, a.AlmacenNombre
+        - One warehouse per sale: CROSS APPLY TOP 1 non-empty Almancen per VentaID
+        """
+    )
+
+    print("✓ J3System schema training complete!")
+
+
+def get_j3system_training_examples() -> List[Tuple[str, str]]:
+    """NL→SQL examples for J3System sales-to-warehouse queries."""
+    return [
+        (
+            "Listar ventas con su almacén en J3System",
+            build_sales_warehouse_detail_sql(top_n=20),
+        ),
+        (
+            "Ventas agrupadas por bodega en J3System",
+            build_sales_by_warehouse_sql(),
+        ),
+        (
+            "Un almacén por venta en J3System sin duplicar líneas",
+            build_one_warehouse_per_sale_sql(),
+        ),
+        (
+            "Ventas del almacén FLO en J3System",
+            build_sales_warehouse_detail_sql(warehouse_code="FLO", top_n=50),
+        ),
+        (
+            "¿De qué bodega salió cada factura en J3System?",
+            build_sales_warehouse_detail_sql(top_n=30),
+        ),
+        (
+            "Códigos de almacén Almancen por venta con nombre",
+            build_sales_warehouse_detail_sql(top_n=25),
+        ),
+    ]
 
 
 def train_with_examples(vn, examples: Optional[List[Tuple[str, str]]] = None):
@@ -1632,8 +1739,10 @@ def full_training(vn, schema_name: str = "SmartBusiness"):
         schema_name: Name of the database schema
     """
     train_on_schema(vn, schema_name)
+    train_on_j3system_schema(vn, schema_name=os.getenv("DB_NAME_J3SYSTEM", "J3System"))
 
     examples = get_phase1_training_examples()
+    examples.extend(get_j3system_training_examples())
     external_path = os.getenv("AUTORESEARCH_TRAINING_FILE", "").strip()
     if external_path:
         external_examples = load_autoresearch_training_examples(external_path)

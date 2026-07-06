@@ -62,3 +62,7 @@ ORDER BY v.Fecha DESC
 
 - One `VentaID` maps to **multiple rows** in `InvImpresionFactura` (one per line item). If you need one warehouse per sale, use `DISTINCT` or pick the first non-empty `Almancen` — some rows have `Almancen = ''`.
 - `AdmAlmacenUbicacion` exists if physical location detail is needed beyond the warehouse code.
+
+## Code & Vanna Integration
+
+Python SQL builders live in `business_analyzer.analysis.j3system_sales_warehouse` (`build_sales_warehouse_detail_sql`, `build_sales_by_warehouse_sql`, `build_one_warehouse_per_sale_sql`). Vanna picks them up via `get_j3system_training_examples()` and runtime routing in `AIVanna.generate_sql` for warehouse-per-sale questions.
