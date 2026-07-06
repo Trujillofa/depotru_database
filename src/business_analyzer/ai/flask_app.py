@@ -10,14 +10,16 @@ builds charts from numeric data instead of stale LLM plotly code.
 from __future__ import annotations
 
 import traceback
-from typing import Optional
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 import flask
 import pandas as pd
-from flask import Response, jsonify
+from flask import Response, jsonify, send_from_directory
 from vanna.legacy.flask import VannaFlaskApp
-from vanna.legacy.flask.assets import html_content
+from vanna.legacy.flask.assets import html_content, js_content
 
+from business_analyzer.ai.base import Config
 from business_analyzer.ai.charts import (
     build_plotly_code,
     build_smart_figure,
@@ -26,6 +28,20 @@ from business_analyzer.ai.charts import (
     set_chart_query_context,
 )
 from business_analyzer.ai.formatting import coerce_chart_dataframe
+
+_MANAGER_REPORT_JS_SNIPPET = (
+    'if(Se(n),n.type==="manager_report"){'
+    'Se({type:"text",id:n.id,text:n.text||""});'
+    'n.download_url&&window.open(n.download_url,"_blank");return;}'
+    'if(Se(n),n.type!=="sql")return;'
+)
+
+_MANAGER_REPORT_JS_SNIPPET_E = (
+    'if(Se(E),E.type==="manager_report"){'
+    'Se({type:"text",id:E.id,text:E.text||""});'
+    'E.download_url&&window.open(E.download_url,"_blank");return;}'
+    'if(Se(E),E.type!=="sql")return;'
+)
 
 
 def _chart_dataframe(vn, df_display: pd.DataFrame) -> pd.DataFrame:
@@ -48,12 +64,62 @@ def _replace_route_view(flask_app, path: str, methods: list[str], view_func) -> 
     raise RuntimeError(f"No Flask route found for {path} {methods}")
 
 
+def manager_report_download_path(file_path: Optional[str]) -> Optional[str]:
+    """Map an absolute report path to the Flask download URL."""
+    if not file_path:
+        return None
+    return f"/reports/{Path(file_path).name}"
+
+
+def manager_report_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
+    """Serialize a manager report routing result for the Vanna web UI."""
+    status = result.get("status")
+    if status == "needs_period":
+        return {
+            "type": "text",
+            "id": cache_id,
+            "text": result.get("message", ""),
+        }
+    if status == "error":
+        return {
+            "type": "error",
+            "id": cache_id,
+            "error": result.get("message", "Error generando informe"),
+        }
+
+    return {
+        "type": "manager_report",
+        "id": cache_id,
+        "text": result.get("message", ""),
+        "download_url": manager_report_download_path(result.get("path")),
+        "format": result.get("format"),
+        "year": result.get("year"),
+        "month": result.get("month"),
+        "summary": result.get("summary", {}),
+        "record_count": result.get("record_count", 0),
+    }
+
+
+def patched_vanna_js_content() -> str:
+    """Inject manager-report handling into the bundled Vanna chat client."""
+    patched: str = js_content.replace(
+        'if(Se(n),n.type!=="sql")return;',
+        _MANAGER_REPORT_JS_SNIPPET,
+    )
+    patched = patched.replace(
+        'if(Se(E),E.type!=="sql")return;',
+        _MANAGER_REPORT_JS_SNIPPET_E,
+    )
+    return patched
+
+
 class SmartVannaFlaskApp(VannaFlaskApp):
     """VannaFlaskApp that caches raw query results for deterministic charts."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._patch_chart_routes()
+        self._patch_manager_report_routes()
         self._patch_plotly_cdn()
 
     def _patch_plotly_cdn(self) -> None:
@@ -81,6 +147,145 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                 _replace_route_view(self.flask_app, route, ["GET"], smart_index)
             except RuntimeError:
                 pass
+
+    def _patch_assets_js(self) -> None:
+        """Serve Vanna JS with manager-report chat handling."""
+
+        @self.flask_app.route("/assets/<path:filename>")
+        def proxy_assets_patched(filename: str):
+            if self.assets_folder:
+                return send_from_directory(self.assets_folder, filename)
+
+            from vanna.legacy.flask.assets import css_content
+
+            if ".css" in filename:
+                return Response(css_content, mimetype="text/css")
+
+            if ".js" in filename:
+                return Response(patched_vanna_js_content(), mimetype="text/javascript")
+
+            return "File not found", 404
+
+        _replace_route_view(
+            self.flask_app, "/assets/<path:filename>", ["GET"], proxy_assets_patched
+        )
+
+    def _patch_manager_report_routes(self) -> None:
+        vn = self.vn
+        cache = self.cache
+        requires_auth = self.requires_auth
+        allow_llm = self.allow_llm_to_see_data
+
+        @requires_auth
+        def generate_sql(user):
+            question = flask.request.args.get("question")
+            if question is None:
+                return jsonify({"type": "error", "error": "No question provided"})
+
+            cache_id = cache.generate_id(question=question)
+            sql = vn.generate_sql(question=question, allow_llm_to_see_data=allow_llm)
+            report_result = (
+                vn.pop_manager_report_result()
+                if hasattr(vn, "pop_manager_report_result")
+                else None
+            )
+            if report_result is not None:
+                cache.set(id=cache_id, field="question", value=question)
+                cache.set(id=cache_id, field="manager_report", value=report_result)
+                return jsonify(manager_report_api_payload(report_result, cache_id))
+
+            cache.set(id=cache_id, field="question", value=question)
+            cache.set(id=cache_id, field="sql", value=sql)
+
+            if vn.is_sql_valid(sql=sql):
+                return jsonify(
+                    {
+                        "type": "sql",
+                        "id": cache_id,
+                        "text": sql,
+                    }
+                )
+            return jsonify(
+                {
+                    "type": "text",
+                    "id": cache_id,
+                    "text": sql,
+                }
+            )
+
+        @requires_auth
+        def generate_report(user):
+            question = flask.request.args.get("question")
+            year = flask.request.args.get("year", type=int)
+            month = flask.request.args.get("month", type=int)
+            fmt = flask.request.args.get("format", "html")
+
+            if flask.request.method == "POST":
+                body = flask.request.get_json(silent=True) or {}
+                question = body.get("question", question)
+                year = body.get("year", year)
+                month = body.get("month", month)
+                fmt = body.get("format", fmt)
+
+            cache_id = cache.generate_id(
+                question=question, year=year, month=month, format=fmt
+            )
+
+            if question and hasattr(vn, "route_manager_report_question"):
+                result = vn.route_manager_report_question(question)
+            elif year and month and hasattr(vn, "_build_manager_report"):
+                try:
+                    result = vn._build_manager_report(year, month, fmt)
+                except Exception as exc:
+                    result = {
+                        "status": "error",
+                        "message": f"Error generando el informe gerencial: {exc}",
+                    }
+            else:
+                return jsonify(
+                    {
+                        "type": "error",
+                        "error": (
+                            "Indica question («informe de mayo 2024») "
+                            "o year y month."
+                        ),
+                    }
+                )
+
+            if result is None:
+                return jsonify(
+                    {
+                        "type": "error",
+                        "error": "La pregunta no corresponde a un informe gerencial.",
+                    }
+                )
+
+            cache.set(id=cache_id, field="manager_report", value=result)
+            if question:
+                cache.set(id=cache_id, field="question", value=question)
+            return jsonify(manager_report_api_payload(result, cache_id))
+
+        @self.flask_app.route("/reports/<path:filename>")
+        def serve_manager_report(filename: str):
+            output_dir = Config.ensure_output_dir().resolve()
+            safe_name = Path(filename).name
+            target = (output_dir / safe_name).resolve()
+            if not str(target).startswith(str(output_dir)):
+                return "Forbidden", 403
+            if not target.is_file():
+                return "Not found", 404
+            return send_from_directory(output_dir, safe_name)
+
+        _replace_route_view(
+            self.flask_app, "/api/v0/generate_sql", ["GET"], generate_sql
+        )
+        self.flask_app.add_url_rule(
+            "/api/v0/generate_report",
+            endpoint="smart_generate_report",
+            view_func=generate_report,
+            methods=["GET", "POST"],
+        )
+        self._patch_assets_js()
 
     def _patch_chart_routes(self) -> None:
         vn = self.vn
