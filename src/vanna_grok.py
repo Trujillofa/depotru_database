@@ -242,8 +242,18 @@ class EnhancedAIVanna(AIVanna):
         - Spanish-optimized output
         """
         try:
-            # Generate SQL
+            # Generate SQL (or route to monthly manager report)
             sql = self.generate_sql(question=question, allow_llm_to_see_data=True)
+            report_result = self.pop_manager_report_result()
+
+            if report_result is not None:
+                status = report_result.get("status")
+                message = report_result.get("message", "")
+                if status == "success":
+                    print(message)
+                    return None, pd.DataFrame(), message
+                print(f"\n{message}\n")
+                return None, pd.DataFrame(), None
 
             if sql is None:
                 print("\n⚠️ No se pudo generar SQL válido para la pregunta.\n")
