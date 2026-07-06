@@ -14,13 +14,15 @@ Run with: python -m pytest tests/mcp/test_mcp_integration.py -q --tb=short -m "n
 Mark: uses pytest.mark.asyncio
 """
 
-import asyncio
+from __future__ import annotations
+
 import json
 import os
+import shutil
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List
+from typing import AsyncIterator, Dict, List
 
 import pytest
 
@@ -45,24 +47,29 @@ pytestmark = pytest.mark.skipif(
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _mcp_server_command() -> List[str]:
+    """Prefer uv when available; fall back to the active interpreter on CI."""
+    if shutil.which("uv"):
+        return [
+            "uv",
+            "run",
+            "--with-editable",
+            str(PROJECT_ROOT),
+            "--with",
+            "mcp",
+            "python",
+            "-m",
+            "business_analyzer.mcp.database_server",
+        ]
+    return [sys.executable, "-m", "business_analyzer.mcp.database_server"]
+
+
 @asynccontextmanager
 async def mcp_server_session(
     env: Dict[str, str] | None = None,
 ) -> AsyncIterator[ClientSession]:
-    """Launch the depotru-database MCP server via uv run (ensures mcp + editable project for child)
-    and yield an initialized ClientSession.
-    """
-    cmd = [
-        "uv",
-        "run",
-        "--with-editable",
-        str(PROJECT_ROOT),
-        "--with",
-        "mcp",
-        "python",
-        "-m",
-        "business_analyzer.mcp.database_server",
-    ]
+    """Launch the depotru-database MCP server and yield an initialized ClientSession."""
+    cmd = _mcp_server_command()
     server_params = StdioServerParameters(
         command=cmd[0],
         args=cmd[1:],
