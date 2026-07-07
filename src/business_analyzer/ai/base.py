@@ -36,6 +36,7 @@ except ImportError:
 
 from business_analyzer.core.j3system_sales_warehouse import (
     build_sales_warehouse_sql_for_question,
+    extract_warehouse_code,
     is_j3system_warehouse_question,
     qualified_j3_table,
     warehouse_display_name_sql,
@@ -617,6 +618,17 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         )
 
     @staticmethod
+    def _is_brand_at_warehouse_question(question: str) -> bool:
+        """Brand sales scoped to one warehouse code (e.g. ventas de sika en flo)."""
+        if AIVanna._is_brand_by_warehouse_question(question):
+            return False
+        if AIVanna._is_brand_by_branch_question(question):
+            return False
+        if not AIVanna._has_brand_sales_context(question):
+            return False
+        return extract_warehouse_code(question) is not None
+
+    @staticmethod
     def _is_brand_by_branch_question(question: str) -> bool:
         """Brand sales broken down by invoice branch/sede (FED/FEF/FET)."""
         if AIVanna._is_j3system_warehouse_question(question):
@@ -669,6 +681,38 @@ ORDER BY Ventas_Totales DESC
         """.strip()
 
     @staticmethod
+    def _brand_sales_at_warehouse_sql_template(question: str = "") -> str:
+        brands = AIVanna._extract_vendor_brands(question)
+        code = extract_warehouse_code(question)
+        if not brands or not code:
+            return ""
+        brand_filter = AIVanna._multi_vendor_brand_filter_sql(brands)
+        year_filter = AIVanna._year_filter_from_question(question).replace(
+            "YEAR(Fecha)", "YEAR(bd.Fecha)"
+        )
+        adm_almacen = qualified_j3_table("AdmAlmacen")
+        nombre_almacen = warehouse_display_name_sql()
+        return f"""
+SELECT
+    bd.AlmacenCodigo AS Codigo_Almacen,
+    {nombre_almacen} AS Nombre_Almacen,
+    COUNT(*) AS Numero_Transacciones,
+    SUM(bd.TotalMasIva) AS Ventas_Totales,
+    SUM(bd.TotalSinIva - bd.ValorCosto) AS Ganancia
+FROM banco_datos bd
+LEFT JOIN productos_adicional pa
+    ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
+     = pa.producto_codigo COLLATE DATABASE_DEFAULT
+LEFT JOIN {adm_almacen} a
+    ON a.AlmacenCodigo COLLATE DATABASE_DEFAULT
+     = bd.AlmacenCodigo COLLATE DATABASE_DEFAULT
+WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+  AND bd.AlmacenCodigo = '{code}'
+  AND {brand_filter}{year_filter}
+GROUP BY bd.AlmacenCodigo, a.AlmacenNombre
+        """.strip()
+
+    @staticmethod
     def _brand_sales_by_branch_sql_template(question: str = "") -> str:
         brands = AIVanna._extract_vendor_brands(question)
         if not brands:
@@ -698,6 +742,8 @@ ORDER BY Ventas_Totales DESC
     @staticmethod
     def _is_multi_vendor_sales_question(question: str) -> bool:
         if AIVanna._is_brand_by_warehouse_question(question):
+            return False
+        if AIVanna._is_brand_at_warehouse_question(question):
             return False
         if AIVanna._is_brand_by_branch_question(question):
             return False
@@ -2121,6 +2167,11 @@ ORDER BY Dia_Orden
                     return None
                 if self._is_brand_by_warehouse_question(question):
                     template = self._brand_sales_by_warehouse_sql_template(question)
+                    if template:
+                        self._query_cache.set(question, template)
+                        return template
+                if self._is_brand_at_warehouse_question(question):
+                    template = self._brand_sales_at_warehouse_sql_template(question)
                     if template:
                         self._query_cache.set(question, template)
                         return template

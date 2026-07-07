@@ -351,6 +351,7 @@ def train_on_schema(vn, schema_name: str = "SmartBusiness"):
         - If user mentions "SIKA CENTER", treat it as a branch/store: use DocumentosCodigo = 'FEF', never TercerosNombres.
         - If user mentions "CALLE 5" or "DISTRIBUCIONES", treat it as a branch/store: use DocumentosCodigo = 'FET'.
         - If user asks brand sales "por almacén/bodega" (e.g. "ventas de SIKA por almacén"), group by banco_datos.AlmacenCodigo (FLO=Sika Center warehouse, BD6, SUR, …) with brand filter — NOT DocumentosCodigo branches.
+        - If user asks brand sales at one warehouse (e.g. "ventas de SIKA en FLO"), filter banco_datos by AlmacenCodigo and brand — NOT J3System InvVentas.
         - If user asks brand sales "por sede/sucursal/documento" (e.g. "ventas de SIKA por documento"), group by DocumentosCodigo (FED/FEF/FET) with brand filter.
         - FLO = ALMACEN FLORENCIA, the physical warehouse/storage for Sika Center.
         - If user asks for "producto" or "artículo", use ArticulosNombre / ArticulosCodigo.
@@ -921,6 +922,35 @@ def get_phase1_training_examples() -> List[Tuple[str, str]]:
               )
             GROUP BY bd.AlmacenCodigo, a.AlmacenNombre
             ORDER BY Ventas_Totales DESC
+            """,
+        ),
+        (
+            "ventas de sika en flo",
+            """
+            SELECT
+                bd.AlmacenCodigo AS Codigo_Almacen,
+                CASE
+                    WHEN bd.AlmacenCodigo = 'FLO' THEN 'ALMACEN FLORENCIA (Sika Center)'
+                    ELSE COALESCE(a.AlmacenNombre, bd.AlmacenCodigo)
+                END AS Nombre_Almacen,
+                COUNT(*) AS Numero_Transacciones,
+                SUM(bd.TotalMasIva) AS Ventas_Totales,
+                SUM(bd.TotalSinIva - bd.ValorCosto) AS Ganancia
+            FROM banco_datos bd
+            LEFT JOIN productos_adicional pa
+                ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
+                 = pa.producto_codigo COLLATE DATABASE_DEFAULT
+            LEFT JOIN J3System.dbo.AdmAlmacen a
+                ON a.AlmacenCodigo COLLATE DATABASE_DEFAULT
+                 = bd.AlmacenCodigo COLLATE DATABASE_DEFAULT
+            WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+              AND bd.AlmacenCodigo = 'FLO'
+              AND (
+                UPPER(LTRIM(RTRIM(COALESCE(bd.proveedor COLLATE DATABASE_DEFAULT, pa.proveedor_descripcion COLLATE DATABASE_DEFAULT, '')))) LIKE '%SIKA%'
+                OR UPPER(LTRIM(RTRIM(COALESCE(bd.marca COLLATE DATABASE_DEFAULT, pa.producto_marca COLLATE DATABASE_DEFAULT, '')))) LIKE '%SIKA%'
+                OR UPPER(bd.ArticulosNombre COLLATE DATABASE_DEFAULT) LIKE '%SIKA%'
+              )
+            GROUP BY bd.AlmacenCodigo, a.AlmacenNombre
             """,
         ),
         (

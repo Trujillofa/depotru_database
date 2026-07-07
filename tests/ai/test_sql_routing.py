@@ -153,6 +153,17 @@ GOLDEN_QUESTIONS = [
         ["invimpresionfactura", "documentoscodigo in ('fed', 'fef', 'fet')"],
         id="sika_brand_by_warehouse",
     ),
+    pytest.param(
+        "ventas de sika en flo",
+        [
+            "banco_datos",
+            "bd.almacencodigo = 'flo'",
+            "sika",
+            "numero_transacciones",
+        ],
+        ["invventas", "invventasdetalle"],
+        id="sika_brand_at_warehouse_flo",
+    ),
 ]
 
 

@@ -79,6 +79,7 @@ def test_one_warehouse_per_sale_uses_cross_apply():
         ("Ventas del Sika Center este año", False),
         ("Ventas de Calle 5 este año", False),
         ("ventas de sika por almacen", False),
+        ("ventas de sika en flo", False),
         ("Ventas de CEMEX por sede", False),
     ],
 )

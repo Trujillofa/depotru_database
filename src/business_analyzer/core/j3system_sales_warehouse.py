@@ -370,7 +370,13 @@ def is_j3system_warehouse_question(question: str) -> bool:
             return False
         return True
 
-    if has_sale and extract_warehouse_code(question):
+    code = extract_warehouse_code(question)
+    if has_sale and code:
+        # Brand scoped to one warehouse (e.g. "ventas de sika en flo") → banco_datos.
+        if _has_vendor_brand_context(question) and not _is_branch_breakdown_question(
+            question
+        ):
+            return False
         return True
 
     return False

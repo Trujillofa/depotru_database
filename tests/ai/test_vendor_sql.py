@@ -788,6 +788,37 @@ class TestBrandByDocument:
         assert "bd.almacencodigo" not in lower
 
 
+class TestBrandAtWarehouse:
+    QUESTION = "ventas de sika en flo"
+
+    def test_detects_brand_at_warehouse_question(self):
+        assert AIVanna._is_brand_at_warehouse_question(self.QUESTION)
+        assert not AIVanna._is_brand_by_warehouse_question(self.QUESTION)
+        assert not AIVanna._is_j3system_warehouse_question(self.QUESTION)
+
+    def test_not_multi_vendor_when_brand_at_warehouse(self):
+        assert not AIVanna._is_multi_vendor_sales_question(self.QUESTION)
+
+    def test_template_filters_flo_with_sika_on_banco_datos(self):
+        sql = AIVanna._brand_sales_at_warehouse_sql_template(self.QUESTION)
+        lower = sql.lower()
+        assert "banco_datos" in lower
+        assert "bd.almacencodigo = 'flo'" in lower
+        assert "sika" in lower
+        assert "invventas" not in lower
+
+    def test_generate_sql_routes_to_banco_datos_template(self):
+        vn = object.__new__(AIVanna)
+        vn._query_cache = MagicMock()
+        vn._query_cache.get.return_value = None
+        vn.provider = "grok"
+        sql = AIVanna.generate_sql(vn, self.QUESTION)
+        lower = sql.lower()
+        assert "banco_datos" in lower
+        assert "bd.almacencodigo = 'flo'" in lower
+        assert "invventas" not in lower
+
+
 class TestBrandByWarehouse:
     QUESTION = "ventas de sika por almacen"
 
