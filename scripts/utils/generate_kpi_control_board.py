@@ -9,7 +9,7 @@ Writes markdown board to:
   reports/KPI_CONTROL_BOARD_<year>_W<week>.md
 
 Environment variables required:
-  DB_SERVER, DB_USER, DB_PASSWORD
+  DB_SERVER (or DB_HOST), DB_USER, DB_PASSWORD
 Optional:
   DB_PORT (default 1433), DB_NAME (default SmartBusiness)
 """
@@ -34,6 +34,13 @@ try:
     _ai = AIVanna()
 except Exception:
     _ai = None
+
+try:
+    from business_analyzer.core.j3system_cotizacion_funnel import (  # noqa: E402
+        funnel_summary_from_vendor_rows,
+    )
+except ImportError:
+    funnel_summary_from_vendor_rows = None
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SQL_PACK_PATH = ROOT_DIR / "scripts" / "analysis" / "kpi_sql_pack.sql.template"
@@ -79,8 +86,15 @@ def require_env(name: str) -> str:
     return value
 
 
+def get_db_server() -> str:
+    server = (os.getenv("DB_SERVER") or os.getenv("DB_HOST") or "").strip()
+    if not server:
+        raise ValueError("Missing required environment variable: DB_SERVER or DB_HOST")
+    return server
+
+
 def get_connection() -> pymssql.Connection:
-    server = require_env("DB_SERVER")
+    server = get_db_server()
     user = require_env("DB_USER")
     password = require_env("DB_PASSWORD")
     database = os.getenv("DB_NAME", "SmartBusiness")
@@ -116,7 +130,7 @@ def load_query_blocks(sql_path: Path) -> Dict[str, str]:
         sql = match.group("sql").strip()
         blocks[f"Q{number}"] = sql
 
-    required = {f"Q{i}" for i in range(1, 9)}
+    required = {f"Q{i}" for i in range(1, 13)}
     missing = sorted(required - set(blocks.keys()))
     if missing:
         raise ValueError(f"Missing query blocks in SQL pack: {', '.join(missing)}")
@@ -178,6 +192,8 @@ def format_pct(value: float, decimals: int = 2) -> str:
 def format_delta(value: float, kind: str) -> str:
     if kind == "pp":
         return f"{value:+.2f} pp".replace(".", ",")
+    if kind == "days":
+        return f"{value:+.0f} días"
     return format_pct(value, 2) if value else "0,00%"
 
 
@@ -192,14 +208,31 @@ def generate_narrative(
         profit = scorecard.get("ganancia", {}).get("current", 0.0)
         ticket = scorecard.get("ticket", {}).get("current", 0.0)
         concentration = scorecard.get("concentracion", {}).get("current", 0.0)
+        dso = scorecard.get("dso", {}).get("current", 0.0)
+        cartera_90 = scorecard.get("cartera_90", {}).get("current", 0.0)
+        presupuesto = scorecard.get("presupuesto", {}).get("current", 0.0)
         q2 = results.get("Q2", [])
         top_cat = q2[0].get("Categoria", "N/A") if q2 else "N/A"
+        q11 = results.get("Q11", [])
+        top_marca = q11[0].get("Marca", "N/A") if q11 else "N/A"
+        q12 = results.get("Q12", [])
+        if funnel_summary_from_vendor_rows and q12:
+            funnel = funnel_summary_from_vendor_rows(q12)
+            conv_rate = funnel.get("Tasa_Conversion_Pct", 0.0)
+            conv_days = funnel.get("Dias_Promedio_Conversion", 0.0)
+        else:
+            conv_rate = 0.0
+            conv_days = 0.0
         prompt = (
             f"Escribe un párrafo ejecutivo en español (máximo 150 palabras) "
             f"analizando el rendimiento semanal de la ferretería: "
             f"Margen Bruto {margin:.2f}%, Ganancia Bruta ${profit:,.0f}, "
             f"Ticket Promedio ${ticket:,.0f}, Concentración Top-10 {concentration:.2f}%, "
-            f"Categoría top: {top_cat}. "
+            f"DSO {dso:.0f} días, Cartera vencida >90d {cartera_90:.2f}%, "
+            f"Cumplimiento presupuesto MTD {presupuesto:.2f}%, "
+            f"Tasa conversión cotizaciones {conv_rate:.2f}% "
+            f"(días prom. {conv_days:.1f}), "
+            f"Categoría top: {top_cat}, Marca real top: {top_marca}. "
             f"Incluye una recomendación comercial accionable."
         )
         message_log = [
@@ -262,6 +295,33 @@ def compute_scorecard(
     )
     concentration_baseline = concentration_current
 
+    q9 = results.get("Q9", [])
+    q9_row = q9[0] if q9 else {}
+    current_dso = as_float(q9_row.get("DSO_Dias"))
+    current_cartera_90 = as_float(q9_row.get("Cartera_Vencida_90_Plus_Pct"))
+    dso_target = 45.0
+    cartera_90_target = 12.0
+
+    q10 = results.get("Q10", [])
+    if q10:
+        total_meta = sum(as_float(r.get("Meta_Prorrateada")) for r in q10)
+        total_mtd = sum(as_float(r.get("Ventas_MTD")) for r in q10)
+        current_presupuesto = (total_mtd / total_meta * 100.0) if total_meta else 0.0
+    else:
+        current_presupuesto = 0.0
+    presupuesto_target = 100.0
+
+    q12 = results.get("Q12", [])
+    if funnel_summary_from_vendor_rows and q12:
+        funnel = funnel_summary_from_vendor_rows(q12)
+        current_conversion = as_float(funnel.get("Tasa_Conversion_Pct"))
+        current_conv_days = as_float(funnel.get("Dias_Promedio_Conversion"))
+    else:
+        current_conversion = 0.0
+        current_conv_days = 0.0
+    conversion_target = 30.0
+    conv_days_target = 7.0
+
     margin_target = baseline_margin + 1.0
     profit_target = baseline_profit * 1.05
     ticket_target = baseline_ticket * 1.05
@@ -310,6 +370,46 @@ def compute_scorecard(
             ),
             "delta_kind": "pp",
         },
+        "dso": {
+            "baseline": current_dso,
+            "target": dso_target,
+            "current": current_dso,
+            "delta": current_dso - dso_target,
+            "status": status_lower_is_better(current_dso, dso_target),
+            "delta_kind": "days",
+        },
+        "cartera_90": {
+            "baseline": current_cartera_90,
+            "target": cartera_90_target,
+            "current": current_cartera_90,
+            "delta": current_cartera_90 - cartera_90_target,
+            "status": status_lower_is_better(current_cartera_90, cartera_90_target),
+            "delta_kind": "pp",
+        },
+        "presupuesto": {
+            "baseline": current_presupuesto,
+            "target": presupuesto_target,
+            "current": current_presupuesto,
+            "delta": current_presupuesto - presupuesto_target,
+            "status": status_higher_is_better(current_presupuesto, presupuesto_target),
+            "delta_kind": "pp",
+        },
+        "conversion_cotiza": {
+            "baseline": current_conversion,
+            "target": conversion_target,
+            "current": current_conversion,
+            "delta": current_conversion - conversion_target,
+            "status": status_higher_is_better(current_conversion, conversion_target),
+            "delta_kind": "pp",
+        },
+        "dias_conversion": {
+            "baseline": current_conv_days,
+            "target": conv_days_target,
+            "current": current_conv_days,
+            "delta": current_conv_days - conv_days_target,
+            "status": status_lower_is_better(current_conv_days, conv_days_target),
+            "delta_kind": "days",
+        },
     }
 
 
@@ -327,8 +427,19 @@ def render_markdown(
     q3 = results["Q3"]
     q5 = results["Q5"]
     q7 = results["Q7"]
+    q9 = results.get("Q9", [])
+    q9_row = q9[0] if q9 else {}
+    q10 = results.get("Q10", [])
+    q11 = results.get("Q11", [])
+    q12 = results.get("Q12", [])
+    funnel_summary = (
+        funnel_summary_from_vendor_rows(q12)
+        if funnel_summary_from_vendor_rows and q12
+        else {}
+    )
 
     top_gain = top_rows(q2, 5)
+    top_marcas = top_rows(q11, 5)
     bottom_margin = sorted(q2, key=lambda r: as_float(r.get("Margen_Bruto_Pct")))[:5]
     critical_skus = [
         r for r in q3 if r.get("Prioridad") in {"ACCION_INMEDIATA", "ACCION_ALTA"}
@@ -390,6 +501,46 @@ def render_markdown(
         f"| {format_delta(scorecard['concentracion']['delta'], 'pp')} "
         f"| {scorecard['concentracion']['status']} |"
     )
+    lines.append(
+        "| DSO (días) | `Cartera Total / (Ventas Netas / días periodo)` "
+        f"| {scorecard['dso']['baseline']:.0f} "
+        f"| {scorecard['dso']['target']:.0f} "
+        f"| {scorecard['dso']['current']:.0f} "
+        f"| {format_delta(scorecard['dso']['delta'], 'days')} "
+        f"| {scorecard['dso']['status']} |"
+    )
+    lines.append(
+        "| Cartera vencida >90d % | `SUM(vencido_90+120+360+superior)/Cartera*100` "
+        f"| {format_pct(scorecard['cartera_90']['baseline'])} "
+        f"| {format_pct(scorecard['cartera_90']['target'])} "
+        f"| {format_pct(scorecard['cartera_90']['current'])} "
+        f"| {format_delta(scorecard['cartera_90']['delta'], 'pp')} "
+        f"| {scorecard['cartera_90']['status']} |"
+    )
+    lines.append(
+        "| Cumplimiento Presupuesto MTD % | `Ventas MTD / Meta prorrateada * 100` "
+        f"| {format_pct(scorecard['presupuesto']['baseline'])} "
+        f"| {format_pct(scorecard['presupuesto']['target'])} "
+        f"| {format_pct(scorecard['presupuesto']['current'])} "
+        f"| {format_delta(scorecard['presupuesto']['delta'], 'pp')} "
+        f"| {scorecard['presupuesto']['status']} |"
+    )
+    lines.append(
+        "| Tasa Conversión Cotizaciones % | `Convertidas / Cotizaciones * 100` (J3System) "
+        f"| {format_pct(scorecard['conversion_cotiza']['baseline'])} "
+        f"| {format_pct(scorecard['conversion_cotiza']['target'])} "
+        f"| {format_pct(scorecard['conversion_cotiza']['current'])} "
+        f"| {format_delta(scorecard['conversion_cotiza']['delta'], 'pp')} "
+        f"| {scorecard['conversion_cotiza']['status']} |"
+    )
+    lines.append(
+        "| Días Cotización → Factura | `AVG(DATEDIFF)` post-cotización (J3System) "
+        f"| {scorecard['dias_conversion']['baseline']:.1f} "
+        f"| {scorecard['dias_conversion']['target']:.1f} "
+        f"| {scorecard['dias_conversion']['current']:.1f} "
+        f"| {format_delta(scorecard['dias_conversion']['delta'], 'days')} "
+        f"| {scorecard['dias_conversion']['status']} |"
+    )
 
     lines.append("")
     lines.append("## 3) Diagnostic Cut (Where we win/lose)")
@@ -445,6 +596,109 @@ def render_markdown(
     lines.append("- **Estimated margin impact:** completar con análisis comercial.")
 
     lines.append("")
+    lines.append("### 3.5 Cartera y Riesgo de Crédito (banco_cartera)")
+    if q9_row:
+        fecha_carga = q9_row.get("Fecha_Carga_Cartera", "N/A")
+        lines.append(f"- **Snapshot cartera:** {fecha_carga}")
+        lines.append(
+            f"- **Cartera total:** {format_currency(as_float(q9_row.get('Cartera_Total')))} | "
+            f"**Vencida:** {format_pct(as_float(q9_row.get('Cartera_Vencida_Pct')))} | "
+            f"**>90d:** {format_pct(as_float(q9_row.get('Cartera_Vencida_90_Plus_Pct')))}"
+        )
+        lines.append(
+            f"- **DSO:** {as_float(q9_row.get('DSO_Dias')):.0f} días | "
+            f"**Ventas netas periodo:** {format_currency(as_float(q9_row.get('Ventas_Netas_Periodo')))} | "
+            f"**Días periodo:** {int(as_float(q9_row.get('Dias_Periodo')))}"
+        )
+        lines.append(
+            f"- **Clientes con saldo:** {int(as_float(q9_row.get('Clientes_Con_Saldo'))):,} | "
+            f"**Sobre cupo:** {int(as_float(q9_row.get('Clientes_Sobre_Cupo'))):,} | "
+            f"**Días vencidos prom. ponderado:** {as_float(q9_row.get('Dias_Vencidos_Promedio_Ponderado')):.1f}"
+        )
+    else:
+        lines.append("- **Sin datos de cartera (Q9 vacío).**")
+
+    lines.append("")
+    lines.append("### 3.6 Presupuesto vs Real (presupuesto_vendedores)")
+    if q10:
+        under = [
+            r
+            for r in q10
+            if as_float(r.get("Meta_Prorrateada")) > 0
+            and as_float(r.get("Cumplimiento_Prorrateado_Pct")) < 90.0
+        ]
+        lines.append(
+            f"- **Periodo:** {q10[0].get('Periodo', 'N/A')} | "
+            f"**Cumplimiento consolidado MTD:** "
+            f"{format_pct(scorecard['presupuesto']['current'])}"
+        )
+        lines.append("- **Top 5 vendedores por meta mensual:**")
+        for row in q10[:5]:
+            lines.append(
+                f"  - {row.get('Vendedor_Nombre')} ({row.get('Vendedor_Codigo')}) | "
+                f"MTD: {format_currency(as_float(row.get('Ventas_MTD')))} | "
+                f"Meta prorr.: {format_currency(as_float(row.get('Meta_Prorrateada')))} | "
+                f"Cumpl.: {format_pct(as_float(row.get('Cumplimiento_Prorrateado_Pct')))}"
+            )
+        if under:
+            lines.append("- **Bajo 90% cumplimiento (acción comercial):**")
+            for row in under[:5]:
+                lines.append(
+                    f"  - {row.get('Vendedor_Nombre')} — "
+                    f"{format_pct(as_float(row.get('Cumplimiento_Prorrateado_Pct')))} "
+                    f"(brecha {format_currency(as_float(row.get('Brecha_MTD')))})"
+                )
+    else:
+        lines.append("- **Sin datos de presupuesto (Q10 vacío).**")
+
+    lines.append("")
+    lines.append("### 3.7 Margen por marca real (productos_adicional)")
+    if top_marcas:
+        lines.append(
+            "- **Top 5 marcas por ganancia bruta** "
+            "(COALESCE producto_marca, banco_datos.marca):"
+        )
+        for row in top_marcas:
+            lines.append(
+                f"  - {row.get('Marca')} | Ganancia: "
+                f"{format_currency(as_float(row.get('Ganancia_Bruta')))} | "
+                f"Margen: {format_pct(as_float(row.get('Margen_Bruto_Pct')))} | "
+                f"Ventas: {format_currency(as_float(row.get('Ventas_Netas')))}"
+            )
+    else:
+        lines.append("- **Sin datos de marca (Q11 vacío).**")
+
+    lines.append("")
+    lines.append("### 3.8 Embudo cotización → factura (J3System InvCotiza*)")
+    if funnel_summary:
+        lines.append(
+            f"- **Cotizaciones:** {int(as_float(funnel_summary.get('Cotizaciones'))):,} | "
+            f"**Convertidas:** {int(as_float(funnel_summary.get('Convertidas'))):,} | "
+            f"**Perdidas:** {int(as_float(funnel_summary.get('Perdidas'))):,} | "
+            f"**Tasa:** {format_pct(as_float(funnel_summary.get('Tasa_Conversion_Pct')))} | "
+            f"**Días prom.:** {as_float(funnel_summary.get('Dias_Promedio_Conversion')):.1f}"
+        )
+        lines.append("- **Top 5 vendedores por cotizaciones:**")
+        for row in q12[:5]:
+            lines.append(
+                f"  - {row.get('Vendedor_Nombre')} ({row.get('Vendedor_Codigo')}) | "
+                f"Cotiz.: {int(as_float(row.get('Cotizaciones')))} | "
+                f"Conv.: {int(as_float(row.get('Convertidas')))} | "
+                f"Tasa: {format_pct(as_float(row.get('Tasa_Conversion_Pct')))}"
+            )
+        lost = sorted(q12, key=lambda r: as_float(r.get("Perdidas")), reverse=True)[:5]
+        if lost:
+            lines.append("- **Mayor volumen perdido (sin factura):**")
+            for row in lost:
+                lines.append(
+                    f"  - {row.get('Vendedor_Nombre')} — "
+                    f"{int(as_float(row.get('Perdidas')))} perdidas "
+                    f"({format_pct(as_float(row.get('Tasa_Conversion_Pct')))})"
+                )
+    else:
+        lines.append("- **Sin datos de embudo cotización (Q12 vacío).**")
+
+    lines.append("")
     lines.append("## 4) Weekly Action Plan (Execution)")
     lines.append("")
     lines.append(
@@ -453,6 +707,9 @@ def render_markdown(
     lines.append("|---|---|---|---|---|---|")
     lines.append("| High | Pricing |  |  |  | +pp margen |")
     lines.append("| High | Mix/Bundles |  |  |  | +ticket / +margen |")
+    lines.append(
+        "| High | Customer Terms / Cobranza | Revisar clientes sobre cupo y >90d vencidos | Finanzas |  | -DSO / -cartera 90+ |"
+    )
     lines.append("| Medium | Customer Terms |  |  |  | +margen cliente |")
     lines.append("| Medium | Inventory |  |  |  | +capital / +margen |")
 
@@ -465,7 +722,7 @@ def render_markdown(
 
     lines.append("## 5) SQL Blocks Used (Traceability)")
     lines.append("")
-    for q in range(1, 9):
+    for q in range(1, 13):
         lines.append(f"- [x] Q{q}")
 
     return "\n".join(lines) + "\n"
@@ -490,7 +747,7 @@ def generate_kpi_control_board(
     results: Dict[str, List[Dict[str, Any]]] = {}
     conn = get_connection()
     try:
-        for key in [f"Q{i}" for i in range(1, 9)]:
+        for key in [f"Q{i}" for i in range(1, 13)]:
             query = render_query(blocks[key], start_date, end_date)
             results[key] = execute_query(conn, query)
     finally:

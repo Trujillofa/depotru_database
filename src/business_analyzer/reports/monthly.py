@@ -46,9 +46,15 @@ def _print_summary(report: Dict[str, Any]) -> None:
     formatted = report.get("formatted", {}).get("summary", {})
 
     print("=" * 60)
+    scope = (
+        f"Sede {meta.get('branch_name')}"
+        if meta.get("branch_name")
+        else "Depósito Trujillo (Consolidado)"
+    )
     print(
         f"  INFORME DE VENTAS — MES: {meta.get('month_name', '')} {meta.get('year', '')}"
     )
+    print(f"  Alcance:      {scope}")
     print("=" * 60)
     print(f"  Período:      {meta.get('start_date', '')} a {meta.get('end_date', '')}")
     print(f"  Registros:    {meta.get('record_count', 0):,}")
@@ -422,6 +428,12 @@ def main() -> None:
         default="reports/charts",
         help="Directorio para guardar gráficos temporales",
     )
+    parser.add_argument(
+        "--branch",
+        type=str,
+        default=None,
+        help="Sede del informe: sika_center (FEF), calle_5 (FET), almacen_principal (FED)",
+    )
 
     args = parser.parse_args()
 
@@ -433,13 +445,32 @@ def main() -> None:
         )
         sys.exit(1)
 
+    branch_code = None
+    if args.branch:
+        from business_analyzer.analysis.manager_report.helpers import BRANCH_SLUGS
+
+        branch_key = args.branch.strip().lower().replace("-", "_")
+        slug_to_code = {slug: code for code, slug in BRANCH_SLUGS.items()}
+        branch_code = slug_to_code.get(branch_key)
+        if branch_code is None and branch_key.upper() in BRANCH_SLUGS:
+            branch_code = branch_key.upper()
+        if branch_code is None:
+            print(
+                f"❌ Error: sede desconocida '{args.branch}'. "
+                f"Opciones: {', '.join(sorted(slug_to_code))}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
     try:
-        print(f"📊 Generando informe para {args.month:02d}/{args.year}...")
+        scope_label = f" ({args.branch})" if args.branch else ""
+        print(f"📊 Generando informe para {args.month:02d}/{args.year}{scope_label}...")
         report = ManagerSalesReport(
             year=args.year,
             month=args.month,
             use_j3system=not args.no_j3system,
             db_connection_type=ConnectionType(args.connection_type),
+            branch_document_code=branch_code,
         )
         data = report.generate()
         print(f"✓ Datos cargados: {data['metadata']['record_count']:,} registros")

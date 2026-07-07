@@ -10,8 +10,13 @@ from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional
 
 from business_analyzer.core.database import ConnectionType
+from business_analyzer.core.product_attrs import (
+    is_bad_attr_value,
+    resolve_effective_marca,
+)
 
 from .aggregations import (
+    budget_vs_actual_from_sql,
     category_breakdown_from_rows,
     category_breakdown_from_sql,
     daily_trend_from_rows,
@@ -24,7 +29,7 @@ from .aggregations import (
     top_products_from_sql,
 )
 from .formatting import format_for_display
-from .helpers import MONTH_NAMES_ES, month_date_range
+from .helpers import MONTH_NAMES_ES, branch_display_name, month_date_range
 from .queries import SalesQueryRunner
 from .recommendations import ReportRecommendationsMixin
 
@@ -39,6 +44,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
         use_j3system: bool = True,
         db_connection_type: ConnectionType = ConnectionType.DIRECT,
         conn_details: Optional[Dict[str, Any]] = None,
+        branch_document_code: Optional[str] = None,
     ):
         if not (1 <= month <= 12):
             raise ValueError(f"Month must be between 1 and 12, got {month}")
@@ -50,6 +56,10 @@ class ManagerSalesReport(ReportRecommendationsMixin):
         self.use_j3system = use_j3system
         self.db_connection_type = db_connection_type
         self.conn_details = conn_details or {}
+        self.branch_document_code = (
+            branch_document_code.upper() if branch_document_code else None
+        )
+        self.branch_name = branch_display_name(self.branch_document_code)
 
         self.start_date, self.end_date = month_date_range(year, month)
         self._queries = SalesQueryRunner(
@@ -58,6 +68,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             year,
             db_connection_type,
             conn_details,
+            branch_document_code=self.branch_document_code,
         )
 
         self._sales_data: List[Dict[str, Any]] = []
@@ -115,10 +126,13 @@ class ManagerSalesReport(ReportRecommendationsMixin):
                     p = master.get("proveedor")
                     if p and p not in ("NA", ""):
                         row["proveedor"] = p
-                m = row.get("marca")
-                if not m or str(m).strip() == "":
-                    if master.get("marca"):
-                        row["marca"] = master["marca"]
+                master_marca = master.get("marca")
+                if master_marca and not is_bad_attr_value(master_marca):
+                    row["marca"] = master_marca
+                else:
+                    resolved = resolve_effective_marca(row.get("marca"), master_marca)
+                    if resolved:
+                        row["marca"] = resolved
                 continue
 
             if self._j3system_products:
@@ -164,6 +178,22 @@ class ManagerSalesReport(ReportRecommendationsMixin):
 
     def _enrich_sales_proveedor_marca_from_master(self) -> None:
         self._enrich_proveedor_marca_from_master(self._sales_data)
+
+    def _report_metadata(self, *, record_count: int) -> Dict[str, Any]:
+        metadata: Dict[str, Any] = {
+            "year": self.year,
+            "month": self.month,
+            "month_name": MONTH_NAMES_ES.get(
+                self.month, calendar.month_name[self.month]
+            ),
+            "start_date": self.start_date,
+            "end_date": self.end_date,
+            "record_count": record_count,
+        }
+        if self.branch_document_code:
+            metadata["branch_document_code"] = self.branch_document_code
+            metadata["branch_name"] = self.branch_name
+        return metadata
 
     def _process_data(self) -> None:
         if self._processed:
@@ -226,6 +256,20 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             return daily_trend_from_sql(sql_rows)
         return daily_trend_from_rows(self._sales_data)
 
+    def _calculate_budget_vs_actual(self) -> Dict[str, Any]:
+        try:
+            payload = self._queries.fetch_budget_vs_actual()
+        except Exception:
+            return {
+                "available": False,
+                "note": "No fue posible consultar presupuesto vs real.",
+                "periodo": None,
+                "summary": {},
+                "sellers": [],
+                "underperformers": [],
+            }
+        return budget_vs_actual_from_sql(payload)
+
     def generate(self) -> Dict[str, Any]:
         """Generate the complete manager sales report with all sections."""
         self._process_data()
@@ -257,21 +301,21 @@ class ManagerSalesReport(ReportRecommendationsMixin):
                 "marca_sales": [],
                 "customer_vendor_mix": [],
                 "customer_order_suggestions": [],
-                "shopping_recommendations": [],
+                "shopping_recommendations": {
+                    "cross_sell": [],
+                    "high_margin_promote": [],
+                },
                 "procurement_plan": [],
                 "warehouse_sales": {"breakdown": [], "sales_detail": [], "note": None},
+                "budget_vs_actual": {
+                    "available": False,
+                    "summary": {},
+                    "sellers": [],
+                    "underperformers": [],
+                },
             }
             return {
-                "metadata": {
-                    "year": self.year,
-                    "month": self.month,
-                    "month_name": MONTH_NAMES_ES.get(
-                        self.month, calendar.month_name[self.month]
-                    ),
-                    "start_date": self.start_date,
-                    "end_date": self.end_date,
-                    "record_count": 0,
-                },
+                "metadata": self._report_metadata(record_count=0),
                 "summary": {
                     "total_revenue_with_iva": 0.0,
                     "total_revenue_without_iva": 0.0,
@@ -302,6 +346,13 @@ class ManagerSalesReport(ReportRecommendationsMixin):
                     "sales_detail": [],
                     "note": "Sin datos de ventas",
                 },
+                "budget_vs_actual": {
+                    "available": False,
+                    "note": "Sin datos de ventas",
+                    "summary": {},
+                    "sellers": [],
+                    "underperformers": [],
+                },
                 "abc_analysis": {"products": {}, "customers": {}, "vendors": {}},
                 "stock_replenishment_suggestions": [],
                 "formatted": empty_formatted,
@@ -322,6 +373,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
         procurement_plan = self._calculate_procurement_plan(order_suggestions)
         abc_analysis = self._calculate_abc_analysis()
         stock_replenish = self._calculate_stock_replenishment_suggestions()
+        budget_vs_actual = self._calculate_budget_vs_actual()
 
         formatted = format_for_display(
             summary,
@@ -338,19 +390,11 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             abc_analysis,
             stock_replenish,
             warehouse_sales,
+            budget_vs_actual,
         )
 
         return {
-            "metadata": {
-                "year": self.year,
-                "month": self.month,
-                "month_name": MONTH_NAMES_ES.get(
-                    self.month, calendar.month_name[self.month]
-                ),
-                "start_date": self.start_date,
-                "end_date": self.end_date,
-                "record_count": len(self._sales_data),
-            },
+            "metadata": self._report_metadata(record_count=len(self._sales_data)),
             "summary": summary,
             "top_products": top_products,
             "top_customers": top_customers,
@@ -366,6 +410,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             "procurement_plan": procurement_plan,
             "abc_analysis": abc_analysis,
             "stock_replenishment_suggestions": stock_replenish,
+            "budget_vs_actual": budget_vs_actual,
             "formatted": formatted,
         }
 
@@ -376,6 +421,7 @@ def generate_monthly_report(
     use_j3system: bool = True,
     db_connection_type: str = "direct",
     conn_details: Optional[Dict[str, Any]] = None,
+    branch_document_code: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Convenience function to generate a monthly manager sales report."""
     report = ManagerSalesReport(
@@ -384,5 +430,6 @@ def generate_monthly_report(
         use_j3system=use_j3system,
         db_connection_type=ConnectionType(db_connection_type),
         conn_details=conn_details,
+        branch_document_code=branch_document_code,
     )
     return report.generate()

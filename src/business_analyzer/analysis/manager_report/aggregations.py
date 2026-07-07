@@ -3,7 +3,13 @@
 from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional
 
-from .helpers import EXCLUDED_CUSTOMERS, extract_row_value, safe_divide, to_float
+from .helpers import (
+    EXCLUDED_CUSTOMERS,
+    extract_row_value,
+    is_excluded_product,
+    safe_divide,
+    to_float,
+)
 
 
 def summary_from_sql(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -64,12 +70,15 @@ def summary_from_rows(sales_data: List[Dict[str, Any]]) -> Dict[str, Any]:
 def top_products_from_sql(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     result = []
     for row in rows:
+        pname = row.get("product_name") or "Unknown"
+        if is_excluded_product(pname):
+            continue
         revenue = to_float(row.get("total_revenue")) or 0.0
         cost = to_float(row.get("total_cost")) or 0.0
         profit = revenue - cost
         result.append(
             {
-                "product_name": row.get("product_name") or "Unknown",
+                "product_name": pname,
                 "sku": row.get("sku") or "",
                 "total_revenue": round(revenue, 2),
                 "total_quantity": int(to_float(row.get("total_quantity")) or 0),
@@ -93,6 +102,8 @@ def top_products_from_rows(sales_data: List[Dict[str, Any]]) -> List[Dict[str, A
     )
     for row in sales_data:
         name = row.get("ArticulosNombre") or "Unknown"
+        if is_excluded_product(name):
+            continue
         sku = row.get("ArticulosCodigo") or ""
         revenue = extract_row_value(row, ["TotalSinIva", "TotalMasIva"]) or 0.0
         cost = extract_row_value(row, ["ValorCosto"]) or 0.0
@@ -572,3 +583,67 @@ def ytd_customer_products_from_sql(
             "primary_vendor": vendor_lookup.get((customer, sku), ""),
         }
     return ytd
+
+
+def budget_vs_actual_from_sql(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Shape presupuesto vs real SQL payload for report consumption."""
+    if not payload.get("available"):
+        return {
+            "available": False,
+            "note": payload.get("note"),
+            "periodo": payload.get("periodo"),
+            "summary": {},
+            "sellers": [],
+            "underperformers": [],
+        }
+
+    summary_row = payload.get("summary") or {}
+    presupuesto_total = to_float(summary_row.get("presupuesto_total")) or 0.0
+    ventas_total = to_float(summary_row.get("ventas_reales_total")) or 0.0
+    cumplimiento = to_float(summary_row.get("cumplimiento_pct")) or 0.0
+    brecha = to_float(summary_row.get("brecha_total")) or 0.0
+
+    sellers: List[Dict[str, Any]] = []
+    for row in payload.get("sellers") or []:
+        presupuesto = to_float(row.get("presupuesto")) or 0.0
+        ventas = to_float(row.get("ventas_reales")) or 0.0
+        sellers.append(
+            {
+                "vendedor_codigo": row.get("vendedor_codigo") or "",
+                "vendedor_nombre": row.get("vendedor_nombre") or "",
+                "presupuesto": round(presupuesto, 2),
+                "ventas_reales": round(ventas, 2),
+                "facturacion_con_iva": round(
+                    to_float(row.get("facturacion_con_iva")) or 0.0, 2
+                ),
+                "transacciones": int(to_float(row.get("transacciones")) or 0),
+                "cumplimiento_pct": round(
+                    to_float(row.get("cumplimiento_pct")) or 0.0, 2
+                ),
+                "brecha": round(to_float(row.get("brecha")) or 0.0, 2),
+                "presupuesto_share_pct": round(
+                    safe_divide(presupuesto, presupuesto_total, 0.0) * 100, 2
+                ),
+            }
+        )
+
+    underperformers = [
+        s for s in sellers if s["presupuesto"] > 0 and s["cumplimiento_pct"] < 90.0
+    ]
+    underperformers.sort(key=lambda s: s["cumplimiento_pct"])
+
+    return {
+        "available": True,
+        "note": None,
+        "periodo": payload.get("periodo"),
+        "summary": {
+            "presupuesto_total": round(presupuesto_total, 2),
+            "ventas_reales_total": round(ventas_total, 2),
+            "cumplimiento_pct": round(cumplimiento, 2),
+            "brecha_total": round(brecha, 2),
+            "vendedores_con_meta": sum(1 for s in sellers if s["presupuesto"] > 0),
+            "vendedores_bajo_90pct": len(underperformers),
+        },
+        "sellers": sellers,
+        "underperformers": underperformers[:10],
+    }

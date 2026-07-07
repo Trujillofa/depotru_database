@@ -195,6 +195,13 @@ class TestManagerSalesReport:
             "breakdown": [],
             "sales": [],
         }
+        runner.fetch_budget_vs_actual.return_value = {
+            "available": False,
+            "note": "disabled in tests",
+            "periodo": None,
+            "sellers": [],
+            "summary": {},
+        }
         return runner
 
     @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
@@ -408,6 +415,44 @@ class TestManagerSalesReport:
         runner.fetch_j3system_warehouse_sales.assert_called_once()
 
     @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
+    def test_budget_vs_actual_in_report(self, MockRunner, sample_sales_data):
+        """Report includes presupuesto vs real when query returns data."""
+        runner = self._setup_mock_runner(MockRunner, sample_sales_data)
+        runner.fetch_budget_vs_actual.return_value = {
+            "available": True,
+            "note": None,
+            "periodo": 20245,
+            "summary": {
+                "presupuesto_total": 1_000_000.0,
+                "ventas_reales_total": 850_000.0,
+                "cumplimiento_pct": 85.0,
+                "brecha_total": 150_000.0,
+            },
+            "sellers": [
+                {
+                    "vendedor_codigo": "095",
+                    "vendedor_nombre": "Vendedor Test",
+                    "presupuesto": 1_000_000.0,
+                    "ventas_reales": 850_000.0,
+                    "facturacion_con_iva": 900_000.0,
+                    "transacciones": 12,
+                    "cumplimiento_pct": 85.0,
+                    "brecha": 150_000.0,
+                }
+            ],
+        }
+
+        report = ManagerSalesReport(2024, 5)
+        result = report.generate()
+        budget = result["budget_vs_actual"]
+
+        assert budget["available"] is True
+        assert budget["summary"]["cumplimiento_pct"] == 85.0
+        assert len(budget["sellers"]) == 1
+        assert result["formatted"]["budget_vs_actual"]["summary"]["cumplimiento_pct"]
+        runner.fetch_budget_vs_actual.assert_called_once()
+
+    @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
     def test_j3system_failure_graceful(self, MockRunner, sample_sales_data):
         """Test J3System connection failure is handled gracefully."""
         self._setup_mock_runner(MockRunner, sample_sales_data, j3_error=True)
@@ -554,6 +599,31 @@ class TestManagerReportHeuristics:
         assert _is_recommendable_product("Bolsa plastica grande") is False
         assert _is_recommendable_product("Transporte urbano") is False
         assert _is_recommendable_product("Cemento gris 50kg") is False
+        assert _is_recommendable_product("SERVICIO DE CORTE") is False
+        assert _is_recommendable_product("BOLSA BIODEGRADABLE PARA ENTREGA") is False
+
+    def test_balanced_promotion_score_prefers_sweet_spot(self):
+        from business_analyzer.analysis.manager_report.helpers import (
+            balanced_promotion_score,
+        )
+
+        high_margin_low_sales = balanced_promotion_score(
+            100_000,
+            80_000,
+            80.0,
+            revenue_norm=0.1,
+            margin_norm=1.0,
+            profit_norm=0.1,
+        )
+        balanced = balanced_promotion_score(
+            1_000_000,
+            250_000,
+            25.0,
+            revenue_norm=1.0,
+            margin_norm=0.31,
+            profit_norm=1.0,
+        )
+        assert balanced > high_margin_low_sales
 
     def test_is_likely_supplier_name_filters_product_like_strings(self):
         from business_analyzer.analysis.manager_report import _is_likely_supplier_name

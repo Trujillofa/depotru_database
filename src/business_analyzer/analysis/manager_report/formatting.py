@@ -1,6 +1,6 @@
 """Colombian formatting for manager report display."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from business_analyzer.ai.formatting import (
     format_currency,
@@ -24,6 +24,7 @@ def format_for_display(
     abc_analysis: Dict[str, Any],
     stock_replenish: List[Dict[str, Any]],
     warehouse_sales: Dict[str, Any],
+    budget_vs_actual: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Create Colombian-formatted strings for UI/report display."""
     return {
@@ -181,6 +182,7 @@ def format_for_display(
                     "product_name": p["product_name"],
                     "margin_pct": format_percentage(p["margin_pct"], 1),
                     "revenue": format_currency(p["revenue"], 0),
+                    "gross_profit": format_currency(p.get("gross_profit", 0), 0),
                     "quantity_sold": format_integer(p["quantity_sold"]),
                 }
                 for p in recommendations.get("high_margin_promote", [])
@@ -250,4 +252,67 @@ def format_for_display(
             ],
             "note": warehouse_sales.get("note"),
         },
+        "budget_vs_actual": _format_budget_vs_actual(budget_vs_actual or {}),
+    }
+
+
+def _format_budget_vs_actual(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not data.get("available"):
+        return {
+            "available": False,
+            "note": data.get("note"),
+            "periodo": data.get("periodo"),
+            "summary": {},
+            "sellers": [],
+            "underperformers": [],
+        }
+
+    summary = data.get("summary") or {}
+    return {
+        "available": True,
+        "note": data.get("note"),
+        "periodo": data.get("periodo"),
+        "summary": {
+            "presupuesto_total": format_currency(
+                summary.get("presupuesto_total", 0), 0
+            ),
+            "ventas_reales_total": format_currency(
+                summary.get("ventas_reales_total", 0), 0
+            ),
+            "cumplimiento_pct": format_percentage(
+                summary.get("cumplimiento_pct", 0), 1
+            ),
+            "brecha_total": format_currency(summary.get("brecha_total", 0), 0),
+            "vendedores_con_meta": format_integer(
+                summary.get("vendedores_con_meta", 0)
+            ),
+            "vendedores_bajo_90pct": format_integer(
+                summary.get("vendedores_bajo_90pct", 0)
+            ),
+        },
+        "sellers": [
+            {
+                "vendedor_codigo": s.get("vendedor_codigo", ""),
+                "vendedor_nombre": s.get("vendedor_nombre", ""),
+                "presupuesto": format_currency(s.get("presupuesto", 0), 0),
+                "ventas_reales": format_currency(s.get("ventas_reales", 0), 0),
+                "cumplimiento_pct": format_percentage(s.get("cumplimiento_pct", 0), 1),
+                "brecha": format_currency(s.get("brecha", 0), 0),
+                "presupuesto_share_pct": format_percentage(
+                    s.get("presupuesto_share_pct", 0), 1
+                ),
+            }
+            for s in data.get("sellers", [])
+        ],
+        "underperformers": [
+            {
+                "vendedor_codigo": s.get("vendedor_codigo", ""),
+                "vendedor_nombre": s.get("vendedor_nombre", ""),
+                "presupuesto": format_currency(s.get("presupuesto", 0), 0),
+                "ventas_reales": format_currency(s.get("ventas_reales", 0), 0),
+                "cumplimiento_pct": format_percentage(s.get("cumplimiento_pct", 0), 1),
+                "brecha": format_currency(s.get("brecha", 0), 0),
+            }
+            for s in data.get("underperformers", [])
+        ],
     }

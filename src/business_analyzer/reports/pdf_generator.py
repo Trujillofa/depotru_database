@@ -243,12 +243,17 @@ class PDFReportGenerator:
         month_name = meta.get("month_name", "")
         year = meta.get("year", "")
 
+        branch_name = meta.get("branch_name")
+        report_scope = (
+            f"Sede {branch_name}" if branch_name else "Depósito Trujillo (Consolidado)"
+        )
+
         title = Paragraph(
             f'<font size="22" color="#1e3a5f"><b>Informe de Ventas Mensual</b></font>',
             self.styles["Title"],
         )
         subtitle = Paragraph(
-            f'<font size="11" color="#6b7280">{month_name} {year} — Depósito Trujillo — '
+            f'<font size="11" color="#6b7280">{month_name} {year} — {report_scope} — '
             f'Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}</font>',
             self.styles["Normal"],
         )

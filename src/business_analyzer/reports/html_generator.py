@@ -20,12 +20,20 @@ from typing import Any, Dict, List, Optional
 
 from jinja2 import Template
 
+
+def _shopping_section(recommendations: Any, key: str) -> List[Any]:
+    if isinstance(recommendations, dict):
+        value = recommendations.get(key, [])
+        return value if isinstance(value, list) else []
+    return []
+
+
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Informe de Ventas — {{ month_name }} {{ year }}</title>
+    <title>Informe de Ventas — {{ report_scope }} — {{ month_name }} {{ year }}</title>
     <style>
         :root {
             --primary: #1e3a5f;
@@ -136,7 +144,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <body>
     <header>
         <h1>📊 Informe de Ventas Mensual</h1>
-        <p>{{ month_name }} {{ year }} &nbsp;|&nbsp; Depósito Trujillo &nbsp;|&nbsp; Generado: {{ generated_at }}</p>
+        <p>{{ month_name }} {{ year }} &nbsp;|&nbsp; {{ report_scope }} &nbsp;|&nbsp; Generado: {{ generated_at }}</p>
     </header>
 
     <div class="container">
@@ -265,6 +273,64 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             </div>
         </div>
 
+        <!-- Budget vs Actual -->
+        {% if budget_vs_actual.available %}
+        <div class="section" style="border-left: 4px solid #2563eb;">
+            <h2>🎯 Presupuesto vs Real (Vendedores)</h2>
+            <p style="color:var(--text-muted); font-size:0.85rem;">
+                Periodo {{ budget_vs_actual.periodo }} — metas de <code>presupuesto_vendedores</code> vs ventas netas en <code>banco_datos</code>.
+            </p>
+            <div class="kpi-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:0.75rem; margin-bottom:1rem;">
+                <div class="kpi-card" style="background:#eff6ff; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.8rem; color:var(--text-muted);">Meta total</div>
+                    <div style="font-size:1.1rem; font-weight:700;">{{ budget_vs_actual.summary.presupuesto_total }}</div>
+                </div>
+                <div class="kpi-card" style="background:#f0fdf4; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.8rem; color:var(--text-muted);">Ventas reales</div>
+                    <div style="font-size:1.1rem; font-weight:700;">{{ budget_vs_actual.summary.ventas_reales_total }}</div>
+                </div>
+                <div class="kpi-card" style="background:#fff7ed; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.8rem; color:var(--text-muted);">Cumplimiento</div>
+                    <div style="font-size:1.1rem; font-weight:700;">{{ budget_vs_actual.summary.cumplimiento_pct }}</div>
+                </div>
+                <div class="kpi-card" style="background:#fef2f2; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.8rem; color:var(--text-muted);">Brecha</div>
+                    <div style="font-size:1.1rem; font-weight:700;">{{ budget_vs_actual.summary.brecha_total }}</div>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr><th>#</th><th>Vendedor</th><th class="num">Meta</th><th class="num">Real</th><th class="num">Cumplimiento</th><th class="num">Brecha</th></tr>
+                </thead>
+                <tbody>
+                {% for s in budget_vs_actual.sellers[:15] %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ s.vendedor_nombre }} <span style="color:var(--text-muted); font-size:0.8rem;">({{ s.vendedor_codigo }})</span></td>
+                        <td class="num">{{ s.presupuesto }}</td>
+                        <td class="num">{{ s.ventas_reales }}</td>
+                        <td class="num">{{ s.cumplimiento_pct }}</td>
+                        <td class="num">{{ s.brecha }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% if budget_vs_actual.underperformers %}
+            <h3>Vendedores bajo 90% de cumplimiento</h3>
+            <ul style="margin:0; padding-left:1.2rem; color:var(--text-muted);">
+                {% for s in budget_vs_actual.underperformers[:8] %}
+                <li>{{ s.vendedor_nombre }} — {{ s.cumplimiento_pct }} (brecha {{ s.brecha }})</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+        {% elif budget_vs_actual.note %}
+        <div class="section">
+            <h2>🎯 Presupuesto vs Real</h2>
+            <p style="color:var(--text-muted);">{{ budget_vs_actual.note }}</p>
+        </div>
+        {% endif %}
+
         <!-- Margin Comparison -->
         <div class="section">
             <h2>🔍 Facturación vs Margen por Producto</h2>
@@ -302,8 +368,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
         <!-- Marca / Brand Sales (focus on MARCAS from SmartBusiness classification + masters) -->
         <div class="section">
-            <h2>🏷️ Ventas por Marca / Línea</h2>
-            <p style="color:var(--text-muted); font-size:0.85rem;">Desglose por marca/línea (del campo marca en transacciones; para marcas reales de producto ver masters adicionales como productos_adicional).</p>
+            <h2>🏷️ Ventas por Marca Real</h2>
+            <p style="color:var(--text-muted); font-size:0.85rem;">Marca autoritativa desde <code>productos_adicional.producto_marca</code>, con respaldo en <code>banco_datos.marca</code> cuando el maestro no tiene valor.</p>
             <table>
                 <thead>
                     <tr><th>#</th><th>Marca/Línea</th><th class="num">Facturación</th><th class="num">% Part.</th><th class="num">Margen</th><th class="num">Pedidos</th></tr>
@@ -443,13 +509,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         {% endif %}
 
-        <!-- High Margin Promote -->
+        <!-- Balanced margin × sales promote -->
         {% if high_margin_promote %}
         <div class="section">
-            <h2>⭐ Productos de Alto Margen (Promocionar)</h2>
+            <h2>⭐ Productos Recomendados (Margen × Ventas)</h2>
+            <p style="color:var(--text-muted); margin-bottom:1rem; font-size:0.9rem;">
+                Productos con buen margen y ventas significativas — no solo margen alto en bajo volumen.
+            </p>
             <table>
                 <thead>
-                    <tr><th>Producto</th><th class="num">Margen</th><th class="num">Vendidos</th><th class="num">Facturación</th></tr>
+                    <tr><th>Producto</th><th class="num">Margen</th><th class="num">Vendidos</th><th class="num">Facturación</th><th class="num">Ganancia</th></tr>
                 </thead>
                 <tbody>
                 {% for p in high_margin_promote %}
@@ -458,6 +527,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                         <td class="num" style="color:var(--accent);">{{ p.margin_pct }}</td>
                         <td class="num">{{ p.quantity_sold }}</td>
                         <td class="num">{{ p.revenue }}</td>
+                        <td class="num" style="color:var(--accent);">{{ p.gross_profit }}</td>
                     </tr>
                 {% endfor %}
                 </tbody>
@@ -593,9 +663,16 @@ class HTMLReportGenerator:
         meta = self.data.get("metadata", {})
         formatted = self.data.get("formatted", {})
 
+        branch_name = meta.get("branch_name")
+        report_scope = (
+            f"Sede {branch_name}" if branch_name else "Depósito Trujillo (Consolidado)"
+        )
+
         return {
             "year": meta.get("year", ""),
             "month_name": meta.get("month_name", ""),
+            "report_scope": report_scope,
+            "branch_name": branch_name,
             "generated_at": datetime.now().strftime("%d/%m/%Y %H:%M"),
             "summary": self.data.get("summary", {}),
             "formatted_summary": formatted.get("summary", {}),
@@ -615,15 +692,19 @@ class HTMLReportGenerator:
             "marca_sales": formatted.get("marca_sales", []),
             "customer_vendor_mix": formatted.get("customer_vendor_mix", []),
             "order_suggestions": formatted.get("customer_order_suggestions", []),
-            "cross_sell": formatted.get("shopping_recommendations", {}).get(
-                "cross_sell", []
+            "cross_sell": _shopping_section(
+                formatted.get("shopping_recommendations"), "cross_sell"
             ),
-            "high_margin_promote": formatted.get("shopping_recommendations", {}).get(
-                "high_margin_promote", []
+            "high_margin_promote": _shopping_section(
+                formatted.get("shopping_recommendations"), "high_margin_promote"
             ),
             "procurement_plan": formatted.get("procurement_plan", []),
             "abc_analysis": formatted.get("abc_analysis", {}),
             "stock_replenishment_suggestions": formatted.get(
                 "stock_replenishment_suggestions", []
+            ),
+            "budget_vs_actual": formatted.get(
+                "budget_vs_actual",
+                {"available": False, "note": None, "summary": {}, "sellers": []},
             ),
         }

@@ -2022,8 +2022,11 @@ ORDER BY Dia_Orden
 
         year, month = period
         fmt = self._parse_report_format(question)
+        branch = self._branch_document_code(question)
         try:
-            result = self._build_manager_report(year, month, fmt)
+            result = self._build_manager_report(
+                year, month, fmt, branch_document_code=branch
+            )
             self._manager_report_result = result
             return result
         except Exception as exc:
@@ -2040,8 +2043,19 @@ ORDER BY Dia_Orden
         self._manager_report_result = None
         return result
 
-    def _build_manager_report(self, year: int, month: int, fmt: str) -> Dict[str, Any]:
+    def _build_manager_report(
+        self,
+        year: int,
+        month: int,
+        fmt: str,
+        *,
+        branch_document_code: Optional[str] = None,
+    ) -> Dict[str, Any]:
         from business_analyzer.analysis.manager_report import ManagerSalesReport
+        from business_analyzer.analysis.manager_report.helpers import (
+            branch_slug,
+            report_output_basename,
+        )
         from business_analyzer.core.database import ConnectionType
         from business_analyzer.reports.ai_insights import ReportAIInsights
         from business_analyzer.reports.html_generator import HTMLReportGenerator
@@ -2052,6 +2066,7 @@ ORDER BY Dia_Orden
             year=year,
             month=month,
             db_connection_type=ConnectionType.DIRECT,
+            branch_document_code=branch_document_code,
         )
         data = report.generate()
         metadata = data.get("metadata", {})
@@ -2073,12 +2088,18 @@ ORDER BY Dia_Orden
 
         if fmt in ("html", "pdf"):
             output_dir = Config.ensure_output_dir()
-            chart_dir = output_dir / "charts" / f"{year}_{month:02d}"
+            slug = branch_slug(branch_document_code)
+            chart_subdir = (
+                f"{slug}_{year}_{month:02d}" if slug else f"{year}_{month:02d}"
+            )
+            chart_dir = output_dir / "charts" / chart_subdir
             chart_dir.mkdir(parents=True, exist_ok=True)
             chart_paths = ReportChartGenerator(
                 data, output_dir=str(chart_dir)
             ).generate_all()
-            filename = f"report_{year}_{month:02d}.{fmt}"
+            filename = report_output_basename(
+                year, month, fmt, branch_document_code=branch_document_code
+            )
             target = output_dir / filename
             if fmt == "html":
                 output_path = HTMLReportGenerator(data, chart_paths, ai_data).generate(
@@ -2092,7 +2113,9 @@ ORDER BY Dia_Orden
             import json
 
             output_dir = Config.ensure_output_dir()
-            target = output_dir / f"report_{year}_{month:02d}.json"
+            target = output_dir / report_output_basename(
+                year, month, "json", branch_document_code=branch_document_code
+            )
             payload = {"report": data, "ai_insights": ai_data}
             with open(target, "w", encoding="utf-8") as handle:
                 json.dump(payload, handle, indent=2, ensure_ascii=False, default=str)
@@ -2104,7 +2127,7 @@ ORDER BY Dia_Orden
         if ai_data.get("ai_analysis_text"):
             message = f"{message}\n🤖 Análisis IA:\n{ai_data['ai_analysis_text']}\n"
 
-        return {
+        result: Dict[str, Any] = {
             "status": "success",
             "year": year,
             "month": month,
@@ -2114,6 +2137,10 @@ ORDER BY Dia_Orden
             "summary": summary,
             "message": message,
         }
+        if branch_document_code:
+            result["branch_document_code"] = branch_document_code
+            result["branch_name"] = metadata.get("branch_name")
+        return result
 
     def _is_sqlalchemy_run_sql(self) -> bool:
         func = getattr(self.run_sql, "__func__", self.run_sql)

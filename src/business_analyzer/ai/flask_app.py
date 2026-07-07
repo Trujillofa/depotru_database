@@ -219,6 +219,7 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             year = flask.request.args.get("year", type=int)
             month = flask.request.args.get("month", type=int)
             fmt = flask.request.args.get("format", "html")
+            branch = flask.request.args.get("branch")
 
             if flask.request.method == "POST":
                 body = flask.request.get_json(silent=True) or {}
@@ -226,6 +227,7 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                 year = body.get("year", year)
                 month = body.get("month", month)
                 fmt = body.get("format", fmt)
+                branch = body.get("branch", branch)
 
             cache_id = cache.generate_id(
                 question=question, year=year, month=month, format=fmt
@@ -235,7 +237,24 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                 result = vn.route_manager_report_question(question)
             elif year and month and hasattr(vn, "_build_manager_report"):
                 try:
-                    result = vn._build_manager_report(year, month, fmt)
+                    from business_analyzer.analysis.manager_report.helpers import (
+                        BRANCH_SLUGS,
+                    )
+
+                    branch_code = None
+                    if branch:
+                        branch_key = str(branch).strip().lower().replace("-", "_")
+                        branch_code = {
+                            slug: code for code, slug in BRANCH_SLUGS.items()
+                        }.get(branch_key)
+                        if branch_code is None and branch_key.upper() in BRANCH_SLUGS:
+                            branch_code = branch_key.upper()
+                    result = vn._build_manager_report(
+                        year,
+                        month,
+                        fmt,
+                        branch_document_code=branch_code,
+                    )
                 except Exception as exc:
                     result = {
                         "status": "error",

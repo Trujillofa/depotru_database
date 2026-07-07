@@ -18,8 +18,9 @@ from business_analyzer.core.j3system_sales_warehouse import (
     build_one_warehouse_per_sale_for_period_sql,
     build_warehouse_breakdown_for_period_sql,
 )
+from business_analyzer.core.product_attrs import effective_marca_sql
 
-from .helpers import EXCLUDED_CUSTOMERS
+from .helpers import EXCLUDED_CUSTOMERS, EXCLUDED_PRODUCT_NAMES, year_month_to_periodo
 
 
 class SalesQueryRunner:
@@ -32,12 +33,20 @@ class SalesQueryRunner:
         year: int,
         db_connection_type: ConnectionType = ConnectionType.DIRECT,
         conn_details: Optional[Dict[str, Any]] = None,
+        branch_document_code: Optional[str] = None,
     ):
         self.start_date = start_date
         self.end_date = end_date
         self.year = year
         self.db_connection_type = db_connection_type
         self.conn_details = conn_details or {}
+        self.branch_document_code = (
+            branch_document_code.upper() if branch_document_code else None
+        )
+        if self.branch_document_code:
+            Database.validate_sql_identifier(
+                self.branch_document_code, "branch document code"
+            )
 
     def _open_db(self) -> Database:
         return Database(
@@ -49,7 +58,26 @@ class SalesQueryRunner:
         excluded = Config.EXCLUDED_DOCUMENT_CODES
         for code in excluded:
             Database.validate_sql_identifier(code, "excluded code")
-        return (self.start_date, self.end_date, *excluded)
+        params: Tuple[str, ...] = (self.start_date, self.end_date, *excluded)
+        if self.branch_document_code:
+            params = params + (self.branch_document_code,)
+        params = params + tuple(name.upper() for name in EXCLUDED_PRODUCT_NAMES)
+        return params
+
+    def _product_exclusion_sql(self, alias: str = "") -> str:
+        col = (
+            f"UPPER(LTRIM(RTRIM({alias}ArticulosNombre)))"
+            if alias
+            else "UPPER(LTRIM(RTRIM(ArticulosNombre)))"
+        )
+        clauses = [f"{col} <> %s" for _ in EXCLUDED_PRODUCT_NAMES]
+        return f" AND {' AND '.join(clauses)}"
+
+    def _branch_filter_sql(self, alias: str = "") -> str:
+        if not self.branch_document_code:
+            return ""
+        col = f"{alias}DocumentosCodigo" if alias else "DocumentosCodigo"
+        return f" AND {col} = %s"
 
     def _sales_from_clause(self) -> str:
         db_name = Database.validate_sql_identifier(Config.DB_NAME, "database")
@@ -60,6 +88,8 @@ class SalesQueryRunner:
             f"FROM [{db_name}].[dbo].[{table_name}] "
             f"WHERE Fecha BETWEEN %s AND %s "
             f"AND DocumentosCodigo NOT IN ({placeholders})"
+            f"{self._branch_filter_sql()}"
+            f"{self._product_exclusion_sql()}"
         )
 
     def _sales_enriched_from_clause(self, alias: str = "bd") -> str:
@@ -74,6 +104,8 @@ class SalesQueryRunner:
             f"ON {alias}.ArticulosCodigo = pa.producto_codigo "
             f"WHERE {alias}.Fecha BETWEEN %s AND %s "
             f"AND {alias}.DocumentosCodigo NOT IN ({placeholders})"
+            f"{self._branch_filter_sql(alias)}"
+            f"{self._product_exclusion_sql(alias)}"
         )
 
     @staticmethod
@@ -97,22 +129,7 @@ class SalesQueryRunner:
 
     @staticmethod
     def _effective_marca_sql(alias: str = "bd") -> str:
-        raw = (
-            f"COALESCE({alias}.marca COLLATE DATABASE_DEFAULT, "
-            f"pa.producto_marca COLLATE DATABASE_DEFAULT, '')"
-        )
-        return f"""
-        CASE
-          WHEN UPPER(LTRIM(RTRIM({raw}))) IN (
-              '', 'S/I', 'S.I', 'SIN PROVEEDOR', 'N/A', '.', 'SIN IVA', 'NA'
-          ) OR LEN(LTRIM(RTRIM({raw}))) <= 2
-          THEN NULL
-          ELSE LTRIM(RTRIM(COALESCE(
-              NULLIF(LTRIM(RTRIM({alias}.marca COLLATE DATABASE_DEFAULT)), ''),
-              NULLIF(LTRIM(RTRIM(pa.producto_marca COLLATE DATABASE_DEFAULT)), '')
-          )))
-        END
-        """  # nosec B608
+        return effective_marca_sql(alias=alias, pa_alias="pa")
 
     def fetch_sales_data(self) -> List[Dict[str, Any]]:
         db = self._open_db()
@@ -145,9 +162,14 @@ class SalesQueryRunner:
                 FROM [{db_name}].[dbo].[{table_name}]
                 WHERE Fecha BETWEEN %s AND %s
                   AND DocumentosCodigo NOT IN ({placeholders})
+                  {self._branch_filter_sql()}
+                  {self._product_exclusion_sql()}
                 ORDER BY TercerosNombres, Fecha
             """  # nosec B608
             params = (ytd_start, ytd_end, *excluded)
+            if self.branch_document_code:
+                params = params + (self.branch_document_code,)
+            params = params + tuple(name.upper() for name in EXCLUDED_PRODUCT_NAMES)
             return db.execute_query(query, params)
 
     def fetch_sql_aggregations(self) -> Dict[str, Any]:
@@ -397,6 +419,9 @@ class SalesQueryRunner:
             excluded = Config.EXCLUDED_DOCUMENT_CODES
             placeholders = ", ".join(["%s"] * len(excluded))
             params = (ytd_start, ytd_end, *excluded)
+            if self.branch_document_code:
+                params = params + (self.branch_document_code,)
+            params = params + tuple(name.upper() for name in EXCLUDED_PRODUCT_NAMES)
             prov_expr = self._effective_proveedor_sql()
             marca_expr = self._effective_marca_sql()
 
@@ -415,6 +440,8 @@ class SalesQueryRunner:
                     ON bd.ArticulosCodigo = pa.producto_codigo
                 WHERE bd.Fecha BETWEEN %s AND %s
                   AND bd.DocumentosCodigo NOT IN ({placeholders})
+                  {self._branch_filter_sql("bd.")}
+                  {self._product_exclusion_sql("bd.")}
                   AND bd.ArticulosCodigo IS NOT NULL
                   AND bd.ArticulosCodigo <> ''
                 GROUP BY bd.TercerosNombres, bd.ArticulosCodigo
@@ -435,6 +462,8 @@ class SalesQueryRunner:
                         ON bd.ArticulosCodigo = pa.producto_codigo
                     WHERE bd.Fecha BETWEEN %s AND %s
                       AND bd.DocumentosCodigo NOT IN ({placeholders})
+                      {self._branch_filter_sql("bd.")}
+                      {self._product_exclusion_sql("bd.")}
                       AND {prov_expr} IS NOT NULL
                     GROUP BY bd.TercerosNombres, bd.ArticulosCodigo, {prov_expr}
                 ),
@@ -616,3 +645,130 @@ class SalesQueryRunner:
                     "subrubro": (row.get("producto_subrubro") or "").strip() or None,
                 }
         return pmap
+
+    def fetch_budget_vs_actual(self) -> Dict[str, Any]:
+        """Compare presupuesto_vendedores targets to banco_datos sales for the month."""
+        if self.branch_document_code:
+            return {
+                "available": False,
+                "note": (
+                    "Presupuesto es consolidado por vendedor; no aplica a reportes por sede."
+                ),
+                "periodo": year_month_to_periodo(self.year, self.month),
+                "sellers": [],
+                "summary": {},
+            }
+
+        periodo = year_month_to_periodo(self.year, self.month)
+        db = self._open_db()
+        db_name = Database.validate_sql_identifier(Config.DB_NAME, "database")
+        table_name = Database.validate_sql_identifier(Config.DB_TABLE, "table")
+        excluded = Config.EXCLUDED_DOCUMENT_CODES
+        placeholders = ", ".join(["%s"] * len(excluded))
+        params: Tuple[Any, ...] = (
+            periodo,
+            self.start_date,
+            self.end_date,
+            *excluded,
+            periodo,
+        )
+        params = params + tuple(name.upper() for name in EXCLUDED_PRODUCT_NAMES)
+
+        with db:
+            sellers = db.execute_query(
+                f"""
+                WITH actual_sales AS (
+                    SELECT
+                        LTRIM(RTRIM(bd.vendedor_codigo)) AS vendedor_codigo,
+                        MAX(bd.VendedorFactura) AS vendedor_nombre,
+                        SUM(bd.TotalSinIva) AS ventas_reales,
+                        SUM(bd.TotalMasIva) AS facturacion_con_iva,
+                        COUNT(*) AS transacciones
+                    FROM [{db_name}].[dbo].[{table_name}] bd
+                    WHERE bd.periodo = %s
+                      AND bd.Fecha BETWEEN %s AND %s
+                      AND bd.DocumentosCodigo NOT IN ({placeholders})
+                      {self._product_exclusion_sql("bd.")}
+                      AND bd.vendedor_codigo IS NOT NULL
+                      AND LTRIM(RTRIM(bd.vendedor_codigo)) <> ''
+                    GROUP BY LTRIM(RTRIM(bd.vendedor_codigo))
+                ),
+                budget AS (
+                    SELECT
+                        LTRIM(RTRIM(pv.vendedor_codigo)) AS vendedor_codigo,
+                        MAX(pv.vendedor_nombre) AS vendedor_nombre_presupuesto,
+                        SUM(pv.valor) AS meta_presupuesto
+                    FROM [{db_name}].[dbo].[presupuesto_vendedores] pv
+                    WHERE pv.periodo = %s
+                    GROUP BY LTRIM(RTRIM(pv.vendedor_codigo))
+                )
+                SELECT
+                    COALESCE(b.vendedor_codigo, a.vendedor_codigo) AS vendedor_codigo,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(b.vendedor_nombre_presupuesto)), ''),
+                        NULLIF(LTRIM(RTRIM(a.vendedor_nombre)), ''),
+                        COALESCE(b.vendedor_codigo, a.vendedor_codigo)
+                    ) AS vendedor_nombre,
+                    ISNULL(b.meta_presupuesto, 0) AS presupuesto,
+                    ISNULL(a.ventas_reales, 0) AS ventas_reales,
+                    ISNULL(a.facturacion_con_iva, 0) AS facturacion_con_iva,
+                    ISNULL(a.transacciones, 0) AS transacciones,
+                    CASE
+                        WHEN ISNULL(b.meta_presupuesto, 0) = 0 THEN 0
+                        ELSE ISNULL(a.ventas_reales, 0) * 100.0 / b.meta_presupuesto
+                    END AS cumplimiento_pct,
+                    ISNULL(b.meta_presupuesto, 0) - ISNULL(a.ventas_reales, 0) AS brecha
+                FROM budget b
+                FULL OUTER JOIN actual_sales a
+                    ON a.vendedor_codigo = b.vendedor_codigo
+                ORDER BY ISNULL(b.meta_presupuesto, 0) DESC
+                """,  # nosec B608
+                params,
+            )
+
+            summary_rows = db.execute_query(
+                f"""
+                WITH actual_sales AS (
+                    SELECT SUM(bd.TotalSinIva) AS ventas_reales
+                    FROM [{db_name}].[dbo].[{table_name}] bd
+                    WHERE bd.periodo = %s
+                      AND bd.Fecha BETWEEN %s AND %s
+                      AND bd.DocumentosCodigo NOT IN ({placeholders})
+                      {self._product_exclusion_sql("bd.")}
+                ),
+                budget AS (
+                    SELECT SUM(pv.valor) AS meta_presupuesto
+                    FROM [{db_name}].[dbo].[presupuesto_vendedores] pv
+                    WHERE pv.periodo = %s
+                )
+                SELECT
+                    b.meta_presupuesto AS presupuesto_total,
+                    a.ventas_reales AS ventas_reales_total,
+                    CASE
+                        WHEN ISNULL(b.meta_presupuesto, 0) = 0 THEN 0
+                        ELSE ISNULL(a.ventas_reales, 0) * 100.0 / b.meta_presupuesto
+                    END AS cumplimiento_pct,
+                    ISNULL(b.meta_presupuesto, 0) - ISNULL(a.ventas_reales, 0) AS brecha_total
+                FROM budget b
+                CROSS JOIN actual_sales a
+                """,  # nosec B608
+                params,
+            )
+
+        summary = summary_rows[0] if summary_rows else {}
+        if not sellers and not summary.get("presupuesto_total"):
+            return {
+                "available": False,
+                "note": f"Sin metas en presupuesto_vendedores para periodo {periodo}.",
+                "periodo": periodo,
+                "sellers": [],
+                "summary": {},
+            }
+
+        return {
+            "available": True,
+            "note": None,
+            "periodo": periodo,
+            "sellers": sellers,
+            "summary": summary,
+        }

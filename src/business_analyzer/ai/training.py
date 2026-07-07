@@ -11,6 +11,9 @@ import os
 import re
 from typing import List, Optional, Tuple
 
+from business_analyzer.core.j3system_cotizacion_funnel import (
+    build_cotizacion_funnel_by_vendor_sql,
+)
 from business_analyzer.core.j3system_sales_warehouse import (
     WAREHOUSE_CODES,
     build_one_warehouse_per_sale_sql,
@@ -494,6 +497,10 @@ def get_j3system_training_examples() -> List[Tuple[str, str]]:
         (
             "Códigos de almacén Almancen por venta con nombre",
             build_sales_warehouse_detail_sql(top_n=25),
+        ),
+        (
+            "Tasa de conversión de cotizaciones a factura por vendedor en J3System",
+            build_cotizacion_funnel_by_vendor_sql("2024-12-01", "2024-12-31"),
         ),
     ]
 

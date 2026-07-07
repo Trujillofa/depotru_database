@@ -4,6 +4,8 @@ import statistics
 from collections import Counter, defaultdict
 from typing import Any, Dict, List
 
+from business_analyzer.core.product_attrs import resolve_effective_marca
+
 from .aggregations import (
     abc_buckets_from_sql,
     customer_vendor_mix_from_sql,
@@ -15,7 +17,10 @@ from .aggregations import (
     ytd_customer_products_from_sql,
 )
 from .helpers import (
+    balanced_promotion_score,
+    branch_warehouse_code,
     extract_row_value,
+    is_excluded_product,
     is_likely_supplier_name,
     is_recommendable_product,
     safe_divide,
@@ -54,6 +59,27 @@ class ReportRecommendationsMixin:
             }
         breakdown_rows = self._j3system_warehouse.get("breakdown") or []
         sales_rows = self._j3system_warehouse.get("sales") or []
+        warehouse_code = branch_warehouse_code(
+            getattr(self, "branch_document_code", None)
+        )
+        if warehouse_code:
+            wh_upper = warehouse_code.upper()
+            breakdown_rows = [
+                row
+                for row in breakdown_rows
+                if str(row.get("Almancen") or row.get("warehouse_code") or "")
+                .strip()
+                .upper()
+                == wh_upper
+            ]
+            sales_rows = [
+                row
+                for row in sales_rows
+                if str(row.get("Almancen") or row.get("warehouse_code") or "")
+                .strip()
+                .upper()
+                == wh_upper
+            ]
         if not breakdown_rows and not sales_rows:
             return {
                 "breakdown": [],
@@ -162,7 +188,7 @@ class ReportRecommendationsMixin:
         return result[:20]
 
     def _calculate_marca_sales(self) -> List[Dict[str, Any]]:
-        """Revenue breakdown by marca (brand / product line / group) from banco_datos."""
+        """Revenue breakdown by authoritative marca (productos_adicional first)."""
         sql_rows = self._sql_aggregations.get("marca_sales") or []
         if sql_rows and "marca_name" in sql_rows[0]:
             return marca_sales_from_sql(sql_rows)
@@ -171,10 +197,11 @@ class ReportRecommendationsMixin:
             lambda: {"revenue": 0.0, "cost": 0.0, "quantity": 0, "transactions": 0}
         )
         for row in self._sales_data:
-            m = row.get("marca")
-            if not m:
-                continue
-            mname = m.strip()
+            sku = row.get("ArticulosCodigo")
+            master_marca = None
+            if sku and self._sb_product_map:
+                master_marca = self._sb_product_map.get(sku, {}).get("marca")
+            mname = resolve_effective_marca(row.get("marca"), master_marca)
             if not mname:
                 continue
             rev = extract_row_value(row, ["TotalSinIva"]) or 0.0
@@ -736,14 +763,18 @@ class ReportRecommendationsMixin:
         product_list = sorted(product_revenue.items(), key=lambda x: x[1], reverse=True)
 
         for pname, rev in product_list[:20]:
-            if pname in viewed_products:
+            if pname in viewed_products or is_excluded_product(pname):
                 continue
             buyers = product_customers.get(pname, set())
             if len(buyers) < 2:
                 continue
             co_products = []
             for other_p, other_customers in product_customers.items():
-                if other_p == pname or other_p in viewed_products:
+                if (
+                    other_p == pname
+                    or other_p in viewed_products
+                    or is_excluded_product(other_p)
+                ):
                     continue
                 overlap = len(buyers & other_customers)
                 if overlap >= 2:
@@ -762,13 +793,15 @@ class ReportRecommendationsMixin:
                 )
                 viewed_products.add(pname)
 
-        margin_promote = []
+        candidates: List[Dict[str, Any]] = []
         products_with_margin: Dict[str, Dict[str, float]] = defaultdict(
             lambda: {"revenue": 0.0, "cost": 0.0, "quantity": 0}
         )
         if margin_rows and "product_name" in margin_rows[0]:
             for row in margin_rows:
                 pname = row.get("product_name") or "Unknown"
+                if is_excluded_product(pname):
+                    continue
                 products_with_margin[pname]["revenue"] = (
                     to_float(row.get("revenue")) or 0.0
                 )
@@ -779,6 +812,8 @@ class ReportRecommendationsMixin:
         else:
             for row in self._sales_data:
                 pname = row.get("ArticulosNombre") or "Unknown"
+                if is_excluded_product(pname):
+                    continue
                 rev = extract_row_value(row, ["TotalSinIva"]) or 0.0
                 cost = extract_row_value(row, ["ValorCosto"]) or 0.0
                 qty = extract_row_value(row, ["Cantidad"]) or 0
@@ -786,17 +821,41 @@ class ReportRecommendationsMixin:
                 products_with_margin[pname]["cost"] += cost
                 products_with_margin[pname]["quantity"] += int(qty)
         for pname, d in products_with_margin.items():
-            margin = safe_divide(d["revenue"] - d["cost"], d["revenue"], 0.0) * 100
-            if margin >= 20 and d["quantity"] >= 5 and is_recommendable_product(pname):
-                margin_promote.append(
-                    {
-                        "product_name": pname,
-                        "margin_pct": round(margin, 1),
-                        "revenue": round(d["revenue"], 2),
-                        "quantity_sold": d["quantity"],
-                    }
+            if not is_recommendable_product(pname) or d["quantity"] < 5:
+                continue
+            revenue = d["revenue"]
+            gross_profit = revenue - d["cost"]
+            margin = safe_divide(gross_profit, revenue, 0.0) * 100
+            if margin < 15 or gross_profit <= 0:
+                continue
+            candidates.append(
+                {
+                    "product_name": pname,
+                    "margin_pct": round(margin, 1),
+                    "revenue": round(revenue, 2),
+                    "gross_profit": round(gross_profit, 2),
+                    "quantity_sold": int(d["quantity"]),
+                }
+            )
+
+        margin_promote: List[Dict[str, Any]] = []
+        if candidates:
+            max_revenue = max(c["revenue"] for c in candidates)
+            max_margin = max(c["margin_pct"] for c in candidates)
+            max_profit = max(c["gross_profit"] for c in candidates)
+            for c in candidates:
+                score = balanced_promotion_score(
+                    c["revenue"],
+                    c["gross_profit"],
+                    c["margin_pct"],
+                    revenue_norm=c["revenue"] / max_revenue,
+                    margin_norm=c["margin_pct"] / max_margin,
+                    profit_norm=c["gross_profit"] / max_profit,
                 )
-        margin_promote.sort(key=lambda x: x["margin_pct"], reverse=True)
+                if score > 0:
+                    c["promotion_score"] = round(score, 4)
+                    margin_promote.append(c)
+            margin_promote.sort(key=lambda x: x.get("promotion_score", 0), reverse=True)
 
         return {
             "cross_sell": cross_sell[:10],

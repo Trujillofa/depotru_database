@@ -13,6 +13,7 @@ from business_analyzer.ai.base import AIVanna
         ("Genera el informe mensual de mayo 2024", True),
         ("Quiero el reporte gerencial de ventas de 05/2024 en PDF", True),
         ("depotru-report mayo 2024", True),
+        ("Genera el informe gerencial de Sika Center para mayo 2024", True),
         ("Top 10 clientes con mayor facturación", False),
         ("Ventas mensuales por categoría", False),
         ("Cuáles son las ventas de SIKA al mes?", False),

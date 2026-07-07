@@ -269,6 +269,16 @@ class TestJ3SystemTraining:
         assert "Almancen" in detail_sql
         assert "AdmAlmacen" in detail_sql
 
+    def test_j3system_examples_include_cotizacion_funnel(self):
+        examples = dict(get_j3system_training_examples())
+        funnel_sql = examples[
+            "Tasa de conversión de cotizaciones a factura por vendedor en J3System"
+        ]
+        assert "InvCotizaCab" in funnel_sql
+        assert "InvVentasTotales" in funnel_sql
+        assert "NumeroCotiza" in funnel_sql
+        assert "Tasa_Conversion_Pct" in funnel_sql
+
     def test_j3system_examples_cover_aggregate_and_one_per_sale(self):
         examples = dict(get_j3system_training_examples())
         assert (

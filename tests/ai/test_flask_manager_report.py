@@ -50,7 +50,7 @@ class _ReportStubVanna:
     def route_manager_report_question(self, question: str):
         return self._report_result
 
-    def _build_manager_report(self, year, month, fmt):
+    def _build_manager_report(self, year, month, fmt, *, branch_document_code=None):
         return self._report_result
 
 
