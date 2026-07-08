@@ -9,7 +9,8 @@ import calendar
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional
 
-from business_analyzer.core.database import ConnectionType
+from business_analyzer.core.database import ConnectionType, Database
+from business_analyzer.core.j3system_contabilidad import ContabilidadRunner
 from business_analyzer.core.product_attrs import (
     is_bad_attr_value,
     resolve_effective_marca,
@@ -19,6 +20,7 @@ from .aggregations import (
     budget_vs_actual_from_sql,
     category_breakdown_from_rows,
     category_breakdown_from_sql,
+    contabilidad_from_runner_report,
     daily_trend_from_rows,
     daily_trend_from_sql,
     summary_from_rows,
@@ -270,6 +272,36 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             }
         return budget_vs_actual_from_sql(payload)
 
+    def _calculate_contabilidad(self) -> Dict[str, Any]:
+        if not self.use_j3system:
+            return {
+                "available": False,
+                "note": "J3System deshabilitado; contabilidad ERP no consultada.",
+                "period": {"start": self.start_date, "end": self.end_date},
+                "summary": {},
+                "pyg_summary": {},
+                "conciliacion_ingresos": {},
+                "pyg_clase": [],
+                "gastos_centro": [],
+                "top_gastos": [],
+            }
+        try:
+            runner = ContabilidadRunner(Database())
+            raw = runner.build_report(self.start_date, self.end_date)
+            return contabilidad_from_runner_report(raw)
+        except Exception:
+            return {
+                "available": False,
+                "note": "No fue posible consultar contabilidad ERP (ConMovimiento*).",
+                "period": {"start": self.start_date, "end": self.end_date},
+                "summary": {},
+                "pyg_summary": {},
+                "conciliacion_ingresos": {},
+                "pyg_clase": [],
+                "gastos_centro": [],
+                "top_gastos": [],
+            }
+
     def generate(self) -> Dict[str, Any]:
         """Generate the complete manager sales report with all sections."""
         self._process_data()
@@ -313,6 +345,16 @@ class ManagerSalesReport(ReportRecommendationsMixin):
                     "sellers": [],
                     "underperformers": [],
                 },
+                "contabilidad": {
+                    "available": False,
+                    "note": None,
+                    "summary": {},
+                    "pyg_summary": {},
+                    "conciliacion_ingresos": {},
+                    "pyg_clase": [],
+                    "gastos_centro": [],
+                    "top_gastos": [],
+                },
             }
             return {
                 "metadata": self._report_metadata(record_count=0),
@@ -353,6 +395,17 @@ class ManagerSalesReport(ReportRecommendationsMixin):
                     "sellers": [],
                     "underperformers": [],
                 },
+                "contabilidad": {
+                    "available": False,
+                    "note": "Sin datos de ventas",
+                    "period": {"start": self.start_date, "end": self.end_date},
+                    "summary": {},
+                    "pyg_summary": {},
+                    "conciliacion_ingresos": {},
+                    "pyg_clase": [],
+                    "gastos_centro": [],
+                    "top_gastos": [],
+                },
                 "abc_analysis": {"products": {}, "customers": {}, "vendors": {}},
                 "stock_replenishment_suggestions": [],
                 "formatted": empty_formatted,
@@ -374,6 +427,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
         abc_analysis = self._calculate_abc_analysis()
         stock_replenish = self._calculate_stock_replenishment_suggestions()
         budget_vs_actual = self._calculate_budget_vs_actual()
+        contabilidad = self._calculate_contabilidad()
 
         formatted = format_for_display(
             summary,
@@ -391,6 +445,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             stock_replenish,
             warehouse_sales,
             budget_vs_actual,
+            contabilidad,
         )
 
         return {
@@ -411,6 +466,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             "abc_analysis": abc_analysis,
             "stock_replenishment_suggestions": stock_replenish,
             "budget_vs_actual": budget_vs_actual,
+            "contabilidad": contabilidad,
             "formatted": formatted,
         }
 

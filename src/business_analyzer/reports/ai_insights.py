@@ -200,6 +200,17 @@ class ReportAIInsights:
                 f"🛒 {format_number(orders, 'order_count')} transacciones con ticket promedio de ${format_currency(aov, 0)}."
             )
 
+        cont = self.data.get("contabilidad") or {}
+        if cont.get("available"):
+            conc_pct = (cont.get("conciliacion_ingresos") or {}).get(
+                "conciliacion_pct", 0
+            )
+            margen_cont = (cont.get("pyg_summary") or {}).get("margen_contable_pct", 0)
+            insights.append(
+                f"📒 Contabilidad ERP: conciliación ingresos {format_percentage(conc_pct, 1)} "
+                f"(grupo 41 vs BI); margen bruto contable {format_percentage(margen_cont, 1)}."
+            )
+
         return insights
 
     def _compute_recommendations(self) -> List[Dict[str, str]]:
@@ -459,6 +470,7 @@ class ReportAIInsights:
         recommendations = self.data.get("shopping_recommendations", {})
         plan = self.data.get("procurement_plan", [])[:3]
         mix = self.data.get("customer_vendor_mix", [])[:3]
+        contabilidad = self.data.get("contabilidad")
         prompt = self._build_prompt(
             summary,
             top_products,
@@ -470,6 +482,7 @@ class ReportAIInsights:
             recommendations,
             plan,
             mix,
+            contabilidad,
         )
 
         if self.provider in ("grok", "openai"):
@@ -490,6 +503,7 @@ class ReportAIInsights:
         recommendations: Optional[Dict] = None,
         plan: Optional[List[Dict]] = None,
         mix: Optional[List[Dict]] = None,
+        contabilidad: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Build the AI prompt from report data."""
         month_name = meta.get("month_name", "")
@@ -563,6 +577,18 @@ class ReportAIInsights:
                 )
             mix_text = "\n" + "\n".join(mlines)
 
+        contabilidad_text = ""
+        if contabilidad and contabilidad.get("available"):
+            pyg = contabilidad.get("pyg_summary") or {}
+            conc = contabilidad.get("conciliacion_ingresos") or {}
+            contabilidad_text = (
+                f"\nCONTABILIDAD ERP (ConMovimiento / PUC):\n"
+                f"  • Ingresos clase 4: ${format_currency(pyg.get('ingresos_creditos', 0), 0)}\n"
+                f"  • Margen bruto contable: ${format_currency(pyg.get('margen_bruto_contable', 0), 0)} "
+                f"({format_percentage(pyg.get('margen_contable_pct', 0), 1)})\n"
+                f"  • Conciliación ingresos 41 vs BI: {format_percentage(conc.get('conciliacion_pct', 0), 1)}"
+            )
+
         return f"""Eres el Director de Análisis de una ferretería colombiana grande. Escribe un informe ejecutivo en español para la gerencia.
 
 PERÍODO: {month_name} {year}
@@ -589,6 +615,7 @@ PEDIDOS SUGERIDOS (basado en consumo YTD completo del año):{suggestions_text}
 PLAN DE COMPRAS CONSOLIDADO (agregado por proveedor para abastecimiento):{plan_text}
 
 MIX TOP CLIENTES-PROVEEDORES:{mix_text}
+{contabilidad_text}
 
 INSTRUCCIONES:
 1. Escribe un ANÁLISIS EJECUTIVO de 4-5 párrafos que interprete estos números, incluyendo concentración por proveedor y patrones de compra por cliente.

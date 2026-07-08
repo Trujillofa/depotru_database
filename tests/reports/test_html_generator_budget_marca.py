@@ -47,6 +47,51 @@ def test_html_includes_budget_and_marca_real_sections(tmp_path):
                 ],
                 "underperformers": [],
             },
+            "contabilidad": {
+                "available": True,
+                "note": None,
+                "period": {"start": "2024-05-01", "end": "2024-05-31"},
+                "summary": {
+                    "movimientos": "100",
+                    "lineas": "500",
+                    "total_debitos": "$1.000.000",
+                    "total_creditos": "$1.000.000",
+                    "cuadre_ok": True,
+                },
+                "pyg_summary": {
+                    "ingresos_creditos": "$500.000",
+                    "costos_debitos": "$300.000",
+                    "gastos_debitos": "$50.000",
+                    "margen_bruto_contable": "$200.000",
+                    "margen_contable_pct": "40,0%",
+                },
+                "conciliacion_ingresos": {
+                    "ingresos_contables_41": "$480.000",
+                    "ventas_bi_con_iva": "$450.000",
+                    "ventas_bi_sin_iva": "$380.000",
+                    "diferencia_con_iva": "$30.000",
+                    "conciliacion_pct": "93,8%",
+                },
+                "pyg_clase": [
+                    {
+                        "clase_puc": "4",
+                        "tipo_cuenta": "Ingresos",
+                        "total_creditos": "$500.000",
+                        "total_debitos": "$0",
+                        "saldo_neto": "$500.000",
+                    }
+                ],
+                "gastos_centro": [
+                    {
+                        "centro_codigo": "01",
+                        "centro_nombre": "SALA PRINCIPAL",
+                        "gastos_neto": "$10.000",
+                        "costos_neto": "$200.000",
+                        "total_neto": "$210.000",
+                    }
+                ],
+                "top_gastos": [],
+            },
         },
     }
     gen = HTMLReportGenerator(data, chart_paths={})
@@ -56,5 +101,7 @@ def test_html_includes_budget_and_marca_real_sections(tmp_path):
     html = out.read_text(encoding="utf-8")
     assert "Presupuesto vs Real" in html
     assert "Ventas por Marca Real" in html
+    assert "Contabilidad ERP" in html
+    assert "SALA PRINCIPAL" in html
     assert "SIKA" in html
     assert "Vendedor A" in html

@@ -452,6 +452,75 @@ class TestManagerSalesReport:
         assert result["formatted"]["budget_vs_actual"]["summary"]["cumplimiento_pct"]
         runner.fetch_budget_vs_actual.assert_called_once()
 
+    @staticmethod
+    def _sample_contabilidad_runner_report():
+        return {
+            "period": {"start": "2024-05-01", "end": "2024-05-31"},
+            "summary": {
+                "Movimientos": 100,
+                "Lineas": 500,
+                "Total_Debitos": 1_000_000.0,
+                "Total_Creditos": 1_000_000.0,
+                "Cuadre_OK": 1,
+            },
+            "pyg_clase": [
+                {
+                    "Clase_Puc": "4",
+                    "Tipo_Cuenta": "Ingresos",
+                    "Total_Creditos": 500_000.0,
+                    "Total_Debitos": 0.0,
+                    "Saldo_Neto": 500_000.0,
+                }
+            ],
+            "pyg_summary": {
+                "Ingresos_Creditos": 500_000.0,
+                "Costos_Debitos": 300_000.0,
+                "Gastos_Debitos": 50_000.0,
+                "Margen_Bruto_Contable": 200_000.0,
+                "Margen_Contable_Pct": 40.0,
+            },
+            "conciliacion_ingresos": {
+                "Ingresos_Contables_41": 480_000.0,
+                "Ventas_BI_Con_Iva": 450_000.0,
+                "Ventas_BI_Sin_Iva": 380_000.0,
+                "Diferencia_Con_Iva": 30_000.0,
+                "Conciliacion_Ingresos_Pct": 93.75,
+            },
+            "gastos_centro": [
+                {
+                    "SubCentroCostoCodigo": "01",
+                    "SubCentroCostoNombre": "SALA PRINCIPAL",
+                    "Gastos_Neto": 10_000.0,
+                    "Costos_Neto": 200_000.0,
+                    "Total_Gasto_Costo_Neto": 210_000.0,
+                }
+            ],
+            "top_gastos": [],
+        }
+
+    @patch("business_analyzer.analysis.manager_report.report.ContabilidadRunner")
+    @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
+    def test_contabilidad_in_report(
+        self, MockRunner, MockContabilidad, sample_sales_data
+    ):
+        """Report includes Q17 contabilidad when J3 runner returns data."""
+        runner = self._setup_mock_runner(MockRunner, sample_sales_data)
+        cont_runner = MockContabilidad.return_value
+        cont_runner.build_report.return_value = (
+            self._sample_contabilidad_runner_report()
+        )
+
+        report = ManagerSalesReport(2024, 5)
+        result = report.generate()
+        cont = result["contabilidad"]
+
+        assert cont["available"] is True
+        assert cont["summary"]["cuadre_ok"] is True
+        assert cont["pyg_summary"]["margen_contable_pct"] == 40.0
+        assert cont["conciliacion_ingresos"]["conciliacion_pct"] == 93.75
+        assert result["formatted"]["contabilidad"]["pyg_summary"]["ingresos_creditos"]
+        cont_runner.build_report.assert_called_once_with("2024-05-01", "2024-05-31")
+
     @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
     def test_j3system_failure_graceful(self, MockRunner, sample_sales_data):
         """Test J3System connection failure is handled gracefully."""

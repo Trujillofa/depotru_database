@@ -331,6 +331,79 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         {% endif %}
 
+        <!-- Contabilidad ERP (Q17) -->
+        {% if contabilidad.available %}
+        <div class="section" style="border-left: 4px solid #7c3aed;">
+            <h2>📒 Contabilidad ERP — PyG PUC</h2>
+            <p style="color:var(--text-muted); font-size:0.85rem;">
+                Periodo {{ contabilidad.period.start }} a {{ contabilidad.period.end }} —
+                fuente <code>ConMovimiento</code> + <code>ConMovimientoDetalle</code> + PUC (consolidado).
+            </p>
+            <div class="kpi-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:0.75rem; margin-bottom:1rem;">
+                <div class="kpi-card" style="background:#f5f3ff; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.8rem; color:var(--text-muted);">Cuadre</div>
+                    <div style="font-size:1.1rem; font-weight:700;">{% if contabilidad.summary.cuadre_ok %}OK{% else %}Revisar{% endif %}</div>
+                </div>
+                <div class="kpi-card" style="background:#eff6ff; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.8rem; color:var(--text-muted);">Ingresos (clase 4)</div>
+                    <div style="font-size:1.1rem; font-weight:700;">{{ contabilidad.pyg_summary.ingresos_creditos }}</div>
+                </div>
+                <div class="kpi-card" style="background:#fff7ed; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.8rem; color:var(--text-muted);">Margen bruto contable</div>
+                    <div style="font-size:1.1rem; font-weight:700;">{{ contabilidad.pyg_summary.margen_bruto_contable }} ({{ contabilidad.pyg_summary.margen_contable_pct }})</div>
+                </div>
+                <div class="kpi-card" style="background:#ecfdf5; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.8rem; color:var(--text-muted);">Conciliación ingresos</div>
+                    <div style="font-size:1.1rem; font-weight:700;">{{ contabilidad.conciliacion_ingresos.conciliacion_pct }}</div>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr><th>Clase PUC</th><th>Tipo</th><th class="num">Créditos</th><th class="num">Débitos</th><th class="num">Saldo neto</th></tr>
+                </thead>
+                <tbody>
+                {% for row in contabilidad.pyg_clase %}
+                    <tr>
+                        <td>{{ row.clase_puc }}</td>
+                        <td>{{ row.tipo_cuenta }}</td>
+                        <td class="num">{{ row.total_creditos }}</td>
+                        <td class="num">{{ row.total_debitos }}</td>
+                        <td class="num">{{ row.saldo_neto }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <p style="margin-top:0.75rem; color:var(--text-muted); font-size:0.85rem;">
+                Conciliación grupo 41: contable {{ contabilidad.conciliacion_ingresos.ingresos_contables_41 }}
+                vs BI con IVA {{ contabilidad.conciliacion_ingresos.ventas_bi_con_iva }}
+                (diferencia {{ contabilidad.conciliacion_ingresos.diferencia_con_iva }}).
+            </p>
+            {% if contabilidad.gastos_centro %}
+            <h3>Gastos por centro de costo (top)</h3>
+            <table>
+                <thead>
+                    <tr><th>Centro</th><th class="num">Gastos</th><th class="num">Costos</th><th class="num">Total</th></tr>
+                </thead>
+                <tbody>
+                {% for row in contabilidad.gastos_centro[:10] %}
+                    <tr>
+                        <td>{{ row.centro_nombre }}</td>
+                        <td class="num">{{ row.gastos_neto }}</td>
+                        <td class="num">{{ row.costos_neto }}</td>
+                        <td class="num">{{ row.total_neto }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+        {% elif contabilidad.note %}
+        <div class="section">
+            <h2>📒 Contabilidad ERP</h2>
+            <p style="color:var(--text-muted);">{{ contabilidad.note }}</p>
+        </div>
+        {% endif %}
+
         <!-- Margin Comparison -->
         <div class="section">
             <h2>🔍 Facturación vs Margen por Producto</h2>
@@ -706,5 +779,19 @@ class HTMLReportGenerator:
             "budget_vs_actual": formatted.get(
                 "budget_vs_actual",
                 {"available": False, "note": None, "summary": {}, "sellers": []},
+            ),
+            "contabilidad": formatted.get(
+                "contabilidad",
+                {
+                    "available": False,
+                    "note": None,
+                    "period": {},
+                    "summary": {},
+                    "pyg_summary": {},
+                    "conciliacion_ingresos": {},
+                    "pyg_clase": [],
+                    "gastos_centro": [],
+                    "top_gastos": [],
+                },
             ),
         }

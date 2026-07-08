@@ -348,6 +348,52 @@ def _print_abc_analysis(report: Dict[str, Any]) -> None:
     print("-" * 80)
 
 
+def _print_contabilidad(report: Dict[str, Any]) -> None:
+    cont = report.get("formatted", {}).get("contabilidad", {})
+    if not cont.get("available"):
+        if cont.get("note"):
+            print("\n  📒 CONTABILIDAD ERP")
+            print("-" * 80)
+            print(f"  {cont['note']}")
+            print("-" * 80)
+        return
+
+    summary = cont.get("summary", {})
+    pyg = cont.get("pyg_summary", {})
+    conc = cont.get("conciliacion_ingresos", {})
+    period = cont.get("period", {})
+
+    print("\n  📒 CONTABILIDAD ERP — PyG PUC (Q17)")
+    print("-" * 80)
+    print(f"  Periodo: {period.get('start', '')} a {period.get('end', '')}")
+    print(
+        f"  Movimientos: {summary.get('movimientos', '0')} | "
+        f"Líneas: {summary.get('lineas', '0')} | "
+        f"Cuadre: {'OK' if summary.get('cuadre_ok') else 'Revisar'}"
+    )
+    print(f"  Ingresos (clase 4):     {pyg.get('ingresos_creditos', '$0')}")
+    print(f"  Costos (clase 6):       {pyg.get('costos_debitos', '$0')}")
+    print(f"  Gastos (clase 5):       {pyg.get('gastos_debitos', '$0')}")
+    print(
+        f"  Margen bruto contable:  {pyg.get('margen_bruto_contable', '$0')} "
+        f"({pyg.get('margen_contable_pct', '0%')})"
+    )
+    print(
+        f"  Conciliación ingresos:  {conc.get('conciliacion_pct', '0%')} "
+        f"(contable {conc.get('ingresos_contables_41', '$0')} vs "
+        f"BI {conc.get('ventas_bi_con_iva', '$0')})"
+    )
+    gastos_centro = cont.get("gastos_centro", [])
+    if gastos_centro:
+        print("\n  Centros de costo (top):")
+        for row in gastos_centro[:5]:
+            print(
+                f"    • {row.get('centro_nombre', '')[:28]:<28} "
+                f"Total: {row.get('total_neto', '$0')}"
+            )
+    print("-" * 80)
+
+
 def _print_stock_replenishment(report: Dict[str, Any]) -> None:
     repl = report.get("stock_replenishment_suggestions", []) or report.get(
         "formatted", {}
@@ -371,6 +417,7 @@ def _print_text_report(report: Dict[str, Any], ai_data: Dict[str, Any]) -> None:
     _print_top_products(report)
     _print_top_customers(report)
     _print_category_breakdown(report)
+    _print_contabilidad(report)
     _print_inventory_insights(report)
     _print_suggested_orders(report)
     _print_cross_sell(report)

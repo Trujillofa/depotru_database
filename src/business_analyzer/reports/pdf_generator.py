@@ -229,6 +229,7 @@ class PDFReportGenerator:
         if self.ai_insights.get("opportunities"):
             self._add_opportunities(story)
 
+        self._add_contabilidad_section(story)
         self._add_inventory_table(story)
         self._add_procurement_plan(story)
         self._add_customer_vendor_mix(story)
@@ -413,6 +414,30 @@ class PDFReportGenerator:
             )
 
         table = Table(data, colWidths=[1 * cm, 7 * cm, 3 * cm, 2.5 * cm, 3 * cm])
+        table.setStyle(self._table_style())
+        story.extend([table, Spacer(1, 6 * mm)])
+
+    def _add_contabilidad_section(self, story: List[Any]) -> None:
+        """Add ERP accounting PyG summary when available."""
+        cont = self.data.get("formatted", {}).get("contabilidad", {})
+        if not cont.get("available"):
+            return
+
+        pyg = cont.get("pyg_summary", {})
+        conc = cont.get("conciliacion_ingresos", {})
+        story.append(
+            Paragraph("📒 Contabilidad ERP — PyG PUC", self.styles["SectionTitle"])
+        )
+        data = [
+            ["Métrica", "Valor"],
+            ["Ingresos (clase 4)", pyg.get("ingresos_creditos", "$0")],
+            ["Margen bruto contable", pyg.get("margen_bruto_contable", "$0")],
+            ["Margen contable %", pyg.get("margen_contable_pct", "0%")],
+            ["Conciliación ingresos", conc.get("conciliacion_pct", "0%")],
+            ["Ingresos contables 41", conc.get("ingresos_contables_41", "$0")],
+            ["Ventas BI con IVA", conc.get("ventas_bi_con_iva", "$0")],
+        ]
+        table = Table(data, colWidths=[7 * cm, 9 * cm])
         table.setStyle(self._table_style())
         story.extend([table, Spacer(1, 6 * mm)])
 

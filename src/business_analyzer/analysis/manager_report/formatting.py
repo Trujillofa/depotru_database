@@ -25,6 +25,7 @@ def format_for_display(
     stock_replenish: List[Dict[str, Any]],
     warehouse_sales: Dict[str, Any],
     budget_vs_actual: Optional[Dict[str, Any]] = None,
+    contabilidad: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Create Colombian-formatted strings for UI/report display."""
     return {
@@ -253,6 +254,86 @@ def format_for_display(
             "note": warehouse_sales.get("note"),
         },
         "budget_vs_actual": _format_budget_vs_actual(budget_vs_actual or {}),
+        "contabilidad": _format_contabilidad(contabilidad or {}),
+    }
+
+
+def _format_contabilidad(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not data.get("available"):
+        return {
+            "available": False,
+            "note": data.get("note"),
+            "period": data.get("period") or {},
+            "summary": {},
+            "pyg_summary": {},
+            "conciliacion_ingresos": {},
+            "pyg_clase": [],
+            "gastos_centro": [],
+            "top_gastos": [],
+        }
+
+    summary = data.get("summary") or {}
+    pyg = data.get("pyg_summary") or {}
+    conc = data.get("conciliacion_ingresos") or {}
+    return {
+        "available": True,
+        "note": data.get("note"),
+        "period": data.get("period") or {},
+        "summary": {
+            "movimientos": format_integer(summary.get("movimientos", 0)),
+            "lineas": format_integer(summary.get("lineas", 0)),
+            "total_debitos": format_currency(summary.get("total_debitos", 0), 0),
+            "total_creditos": format_currency(summary.get("total_creditos", 0), 0),
+            "cuadre_ok": summary.get("cuadre_ok", False),
+        },
+        "pyg_summary": {
+            "ingresos_creditos": format_currency(pyg.get("ingresos_creditos", 0), 0),
+            "costos_debitos": format_currency(pyg.get("costos_debitos", 0), 0),
+            "gastos_debitos": format_currency(pyg.get("gastos_debitos", 0), 0),
+            "margen_bruto_contable": format_currency(
+                pyg.get("margen_bruto_contable", 0), 0
+            ),
+            "margen_contable_pct": format_percentage(
+                pyg.get("margen_contable_pct", 0), 1
+            ),
+        },
+        "conciliacion_ingresos": {
+            "ingresos_contables_41": format_currency(
+                conc.get("ingresos_contables_41", 0), 0
+            ),
+            "ventas_bi_con_iva": format_currency(conc.get("ventas_bi_con_iva", 0), 0),
+            "ventas_bi_sin_iva": format_currency(conc.get("ventas_bi_sin_iva", 0), 0),
+            "diferencia_con_iva": format_currency(conc.get("diferencia_con_iva", 0), 0),
+            "conciliacion_pct": format_percentage(conc.get("conciliacion_pct", 0), 1),
+        },
+        "pyg_clase": [
+            {
+                "clase_puc": row.get("clase_puc", ""),
+                "tipo_cuenta": row.get("tipo_cuenta", ""),
+                "total_creditos": format_currency(row.get("total_creditos", 0), 0),
+                "total_debitos": format_currency(row.get("total_debitos", 0), 0),
+                "saldo_neto": format_currency(row.get("saldo_neto", 0), 0),
+            }
+            for row in data.get("pyg_clase", [])
+        ],
+        "gastos_centro": [
+            {
+                "centro_codigo": row.get("centro_codigo", ""),
+                "centro_nombre": row.get("centro_nombre", ""),
+                "gastos_neto": format_currency(row.get("gastos_neto", 0), 0),
+                "costos_neto": format_currency(row.get("costos_neto", 0), 0),
+                "total_neto": format_currency(row.get("total_neto", 0), 0),
+            }
+            for row in data.get("gastos_centro", [])
+        ],
+        "top_gastos": [
+            {
+                "cuenta_codigo": row.get("cuenta_codigo", ""),
+                "cuenta_nombre": row.get("cuenta_nombre", ""),
+                "saldo_neto": format_currency(row.get("saldo_neto", 0), 0),
+            }
+            for row in data.get("top_gastos", [])
+        ],
     }
 
 

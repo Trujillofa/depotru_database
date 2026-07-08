@@ -647,3 +647,114 @@ def budget_vs_actual_from_sql(payload: Dict[str, Any]) -> Dict[str, Any]:
         "sellers": sellers,
         "underperformers": underperformers[:10],
     }
+
+
+def contabilidad_from_runner_report(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """Shape ContabilidadRunner.build_report() payload for manager report."""
+    empty = {
+        "available": False,
+        "note": raw.get("note"),
+        "period": raw.get("period") or {},
+        "summary": {},
+        "pyg_summary": {},
+        "conciliacion_ingresos": {},
+        "pyg_clase": [],
+        "gastos_centro": [],
+        "top_gastos": [],
+    }
+    summary = raw.get("summary") or {}
+    movimientos = int(to_float(summary.get("Movimientos")) or 0)
+    if movimientos <= 0:
+        return {
+            **empty,
+            "note": raw.get("note") or "Sin movimientos contables en el periodo.",
+        }
+
+    pyg_summary = raw.get("pyg_summary") or {}
+    conc = raw.get("conciliacion_ingresos") or {}
+
+    gastos_centro: List[Dict[str, Any]] = []
+    for row in raw.get("gastos_centro") or []:
+        gastos_centro.append(
+            {
+                "centro_codigo": row.get("SubCentroCostoCodigo") or "",
+                "centro_nombre": (row.get("SubCentroCostoNombre") or "").strip(),
+                "gastos_neto": round(abs(to_float(row.get("Gastos_Neto")) or 0.0), 2),
+                "costos_neto": round(abs(to_float(row.get("Costos_Neto")) or 0.0), 2),
+                "total_neto": round(
+                    abs(to_float(row.get("Total_Gasto_Costo_Neto")) or 0.0), 2
+                ),
+            }
+        )
+
+    top_gastos: List[Dict[str, Any]] = []
+    for row in raw.get("top_gastos") or []:
+        top_gastos.append(
+            {
+                "cuenta_codigo": row.get("CuentasPucCodigo") or "",
+                "cuenta_nombre": row.get("CuentasPucNombre") or "",
+                "saldo_neto": round(abs(to_float(row.get("Saldo_Neto")) or 0.0), 2),
+            }
+        )
+
+    pyg_clase: List[Dict[str, Any]] = []
+    for row in raw.get("pyg_clase") or []:
+        pyg_clase.append(
+            {
+                "clase_puc": row.get("Clase_Puc") or "",
+                "tipo_cuenta": row.get("Tipo_Cuenta") or "",
+                "total_creditos": round(to_float(row.get("Total_Creditos")) or 0.0, 2),
+                "total_debitos": round(to_float(row.get("Total_Debitos")) or 0.0, 2),
+                "saldo_neto": round(to_float(row.get("Saldo_Neto")) or 0.0, 2),
+            }
+        )
+
+    return {
+        "available": True,
+        "note": None,
+        "period": raw.get("period") or {},
+        "summary": {
+            "movimientos": movimientos,
+            "lineas": int(to_float(summary.get("Lineas")) or 0),
+            "total_debitos": round(to_float(summary.get("Total_Debitos")) or 0.0, 2),
+            "total_creditos": round(to_float(summary.get("Total_Creditos")) or 0.0, 2),
+            "cuadre_ok": bool(int(to_float(summary.get("Cuadre_OK")) or 0)),
+        },
+        "pyg_summary": {
+            "ingresos_creditos": round(
+                to_float(pyg_summary.get("Ingresos_Creditos")) or 0.0, 2
+            ),
+            "costos_debitos": round(
+                to_float(pyg_summary.get("Costos_Debitos")) or 0.0, 2
+            ),
+            "gastos_debitos": round(
+                to_float(pyg_summary.get("Gastos_Debitos")) or 0.0, 2
+            ),
+            "margen_bruto_contable": round(
+                to_float(pyg_summary.get("Margen_Bruto_Contable")) or 0.0, 2
+            ),
+            "margen_contable_pct": round(
+                to_float(pyg_summary.get("Margen_Contable_Pct")) or 0.0, 2
+            ),
+        },
+        "conciliacion_ingresos": {
+            "ingresos_contables_41": round(
+                to_float(conc.get("Ingresos_Contables_41")) or 0.0, 2
+            ),
+            "ventas_bi_con_iva": round(
+                to_float(conc.get("Ventas_BI_Con_Iva")) or 0.0, 2
+            ),
+            "ventas_bi_sin_iva": round(
+                to_float(conc.get("Ventas_BI_Sin_Iva")) or 0.0, 2
+            ),
+            "diferencia_con_iva": round(
+                to_float(conc.get("Diferencia_Con_Iva")) or 0.0, 2
+            ),
+            "conciliacion_pct": round(
+                to_float(conc.get("Conciliacion_Ingresos_Pct")) or 0.0, 2
+            ),
+        },
+        "pyg_clase": pyg_clase,
+        "gastos_centro": gastos_centro,
+        "top_gastos": top_gastos,
+    }
