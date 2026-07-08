@@ -39,6 +39,10 @@ def _manager_action(
 ) -> Dict[str, Any]:
     month_name = MONTH_NAMES_ES[month]
     question = f"Genera el informe gerencial de {month_name.lower()} {year}"
+    if fmt == "pdf":
+        question += " en PDF"
+    elif fmt == "json":
+        question += " en JSON"
     if with_ai:
         question += " con análisis de IA"
     if branch:

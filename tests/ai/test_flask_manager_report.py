@@ -26,6 +26,7 @@ class _ReportStubVanna:
     def __init__(self, report_result=None):
         self._report_result = report_result
         self._last_result_df = None
+        self.last_build = None
 
     def generate_sql(self, question, allow_llm_to_see_data=True, **kwargs):
         self._manager_report_result = self._report_result
@@ -51,7 +52,10 @@ class _ReportStubVanna:
         return self._report_result
 
     def _build_manager_report(self, year, month, fmt, *, branch_document_code=None):
-        return self._report_result
+        self.last_build = {"year": year, "month": month, "format": fmt}
+        result = dict(self._report_result or {})
+        result["format"] = fmt
+        return result
 
 
 @pytest.fixture
@@ -143,6 +147,24 @@ class TestManagerReportFlaskRoutes:
         )
         assert response.status_code == 200
         assert response.get_json()["type"] == "manager_report"
+
+    def test_generate_report_explicit_format_overrides_question(self, report_client):
+        client, app, tmp_path, success = report_client
+        vn = app.vn
+        response = client.post(
+            "/api/v0/generate_report",
+            json={
+                "year": 2024,
+                "month": 5,
+                "format": "pdf",
+                "question": "Genera el informe gerencial de mayo 2024",
+            },
+        )
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["type"] == "manager_report"
+        assert vn.last_build["format"] == "pdf"
+        assert payload["format"] == "pdf"
 
     def test_serve_manager_report_file(self, report_client):
         client, app, tmp_path, success = report_client

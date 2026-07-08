@@ -239,9 +239,9 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                 question=question, year=year, month=month, format=fmt
             )
 
-            if question and hasattr(vn, "route_manager_report_question"):
-                result = vn.route_manager_report_question(question)
-            elif year and month and hasattr(vn, "_build_manager_report"):
+            # Explicit year/month/format (catalog clicks) take precedence over NL
+            # question parsing so format=pdf is not lost to _parse_report_format.
+            if year and month and hasattr(vn, "_build_manager_report"):
                 try:
                     from business_analyzer.analysis.manager_report.helpers import (
                         BRANCH_SLUGS,
@@ -266,6 +266,8 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                         "status": "error",
                         "message": f"Error generando el informe gerencial: {exc}",
                     }
+            elif question and hasattr(vn, "route_manager_report_question"):
+                result = vn.route_manager_report_question(question)
             else:
                 return jsonify(
                     {

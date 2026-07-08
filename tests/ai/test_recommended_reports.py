@@ -30,6 +30,7 @@ class _ReportStubVanna:
     def __init__(self, report_result=None):
         self._report_result = report_result
         self._last_result_df = None
+        self.last_build = None
 
     def generate_sql(self, question, allow_llm_to_see_data=True, **kwargs):
         self._manager_report_result = self._report_result
@@ -44,7 +45,15 @@ class _ReportStubVanna:
         return self._report_result
 
     def _build_manager_report(self, year, month, fmt, *, branch_document_code=None):
-        return self._report_result
+        self.last_build = {
+            "year": year,
+            "month": month,
+            "format": fmt,
+            "branch": branch_document_code,
+        }
+        result = dict(self._report_result or {})
+        result["format"] = fmt
+        return result
 
 
 class TestRecommendedReportsCatalog:
@@ -71,6 +80,12 @@ class TestRecommendedReportsCatalog:
         assert "reports" in payload
         assert len(payload["reports"]) >= 3
 
+    def test_pdf_catalog_action_includes_pdf_in_question(self):
+        reports = get_recommended_reports(today=date(2026, 7, 8))
+        pdf_entry = next(r for r in reports if r["id"] == "manager-prev-month-pdf")
+        assert pdf_entry["action"]["format"] == "pdf"
+        assert "en PDF" in pdf_entry["action"]["question"]
+
     def test_inject_recommended_reports_ui_adds_panel(self):
         html = '<html><head></head><body class="bg-white dark:bg-slate-900"><div id="app"></div></body></html>'
         patched = inject_recommended_reports_ui(html)
@@ -92,15 +107,16 @@ def report_client(tmp_path, monkeypatch):
         "summary": {"total_revenue_with_iva": "$1"},
         "record_count": 100,
     }
-    app = SmartVannaFlaskApp(_ReportStubVanna(success), chart=False)
+    stub = _ReportStubVanna(success)
+    app = SmartVannaFlaskApp(stub, chart=False)
     app.flask_app.config["TESTING"] = True
     with app.flask_app.test_client() as client:
-        yield client, success
+        yield client, stub, success
 
 
 class TestRecommendedReportsFlaskRoutes:
     def test_recommended_reports_api(self, report_client, tmp_path):
-        client, _ = report_client
+        client, _, _ = report_client
         response = client.get("/api/v0/recommended_reports")
         assert response.status_code == 200
         payload = response.get_json()
@@ -112,7 +128,7 @@ class TestRecommendedReportsFlaskRoutes:
         evidence.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
 
     def test_index_includes_recommended_panel(self, report_client, tmp_path):
-        client, _ = report_client
+        client, _, _ = report_client
         response = client.get("/")
         assert response.status_code == 200
         body = response.get_data(as_text=True)
@@ -120,16 +136,40 @@ class TestRecommendedReportsFlaskRoutes:
         assert "Informes recomendados" in body
         (tmp_path / "vanna-index.html").write_text(body, encoding="utf-8")
 
-    def test_catalog_entry_triggers_manager_report(self, report_client, tmp_path):
-        client, success = report_client
+    def test_catalog_html_entry_triggers_manager_report(self, report_client, tmp_path):
+        client, stub, success = report_client
         catalog = client.get("/api/v0/recommended_reports").get_json()
-        action = catalog["reports"][0]["action"]
-        response = client.post("/api/v0/generate_report", json=action)
+        html_entry = next(
+            r for r in catalog["reports"] if r["id"] == "manager-prev-month-html"
+        )
+        response = client.post("/api/v0/generate_report", json=html_entry["action"])
         assert response.status_code == 200
         payload = response.get_json()
         assert payload["type"] == "manager_report"
         assert payload["text"]
+        assert payload["format"] == "html"
+        assert stub.last_build["format"] == "html"
         assert payload["download_url"] == "/reports/report_2024_05.html"
-        (tmp_path / "report-trigger.json").write_text(
+        (tmp_path / "report-trigger-html.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2)
+        )
+
+    def test_catalog_pdf_entry_uses_explicit_format(self, report_client, tmp_path):
+        client, stub, success = report_client
+        catalog = client.get("/api/v0/recommended_reports").get_json()
+        pdf_entry = next(
+            r for r in catalog["reports"] if r["id"] == "manager-prev-month-pdf"
+        )
+        assert pdf_entry["action"]["format"] == "pdf"
+        assert "en PDF" in pdf_entry["action"]["question"]
+
+        response = client.post("/api/v0/generate_report", json=pdf_entry["action"])
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["type"] == "manager_report"
+        assert stub.last_build is not None
+        assert stub.last_build["format"] == "pdf"
+        assert payload["format"] == "pdf"
+        (tmp_path / "report-trigger-pdf.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2)
         )
