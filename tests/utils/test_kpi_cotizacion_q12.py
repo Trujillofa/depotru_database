@@ -30,11 +30,11 @@ def test_sql_pack_includes_q12_cotizacion_funnel():
     assert "PERDIDAS" in sql
 
 
-def test_load_query_blocks_requires_q1_through_q12():
+def test_load_query_blocks_requires_q1_through_q15():
     blocks = load_query_blocks(
         ROOT / "scripts" / "analysis" / "kpi_sql_pack.sql.template"
     )
-    assert set(blocks.keys()) >= {f"Q{i}" for i in range(1, 13)}
+    assert set(blocks.keys()) >= {f"Q{i}" for i in range(1, 17)}
 
 
 def test_compute_scorecard_includes_conversion_from_q12():

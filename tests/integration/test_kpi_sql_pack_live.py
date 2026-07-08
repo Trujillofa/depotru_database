@@ -1,4 +1,4 @@
-"""Live execution of KPI pack queries Q9–Q12 (requires MSSQL)."""
+"""Live execution of KPI pack queries Q9–Q16 (requires MSSQL)."""
 
 from __future__ import annotations
 
@@ -79,3 +79,61 @@ def test_q12_cotizacion_funnel_vendor_metrics(db_conn, query_blocks):
     assert "Tasa_Conversion_Pct" in row
     rate = float(row["Tasa_Conversion_Pct"])
     assert 0 <= rate <= 100
+
+
+@pytest.mark.requires_db
+@pytest.mark.integration
+def test_q13_critical_inventory_columns(db_conn, query_blocks):
+    sql = render_query(query_blocks["Q13"], START_DATE, END_DATE)
+    rows = execute_query(db_conn, sql)
+    assert rows
+    row = rows[0]
+    assert "SKU" in row
+    assert "Dias_Cobertura" in row
+    assert "Prioridad" in row
+    assert float(row["Cantidad_90d"]) >= 50
+
+
+@pytest.mark.requires_db
+@pytest.mark.integration
+def test_q14_otif_by_warehouse(db_conn, query_blocks):
+    sql = render_query(query_blocks["Q14"], START_DATE, END_DATE)
+    rows = execute_query(db_conn, sql)
+    assert rows
+    row = rows[0]
+    assert "Almacen_Codigo" in row
+    assert "OTIF_Pct" in row
+    assert "Lead_Time_Promedio_Dias" in row
+    rate = float(row["OTIF_Pct"])
+    assert 0 <= rate <= 100
+
+
+@pytest.mark.requires_db
+@pytest.mark.integration
+def test_q15_devoluciones_reconciliation_columns(db_conn, query_blocks):
+    sql = render_query(query_blocks["Q15"], START_DATE, END_DATE)
+    rows = execute_query(db_conn, sql)
+    assert rows
+    row = rows[0]
+    assert "Categoria" in row
+    assert "Unidades_ERP" in row
+    assert "Unidades_BI" in row
+    assert "Diferencia_Unidades" in row
+    erp_total = sum(float(r["Unidades_ERP"]) for r in rows)
+    bi_total = sum(float(r["Unidades_BI"]) for r in rows)
+    assert erp_total == bi_total == 9978.0
+
+
+@pytest.mark.requires_db
+@pytest.mark.integration
+def test_q16_factura_electronica_columns(db_conn, query_blocks):
+    sql = render_query(query_blocks["Q16"], START_DATE, END_DATE)
+    rows = execute_query(db_conn, sql)
+    assert rows
+    row = rows[0]
+    assert "DocumentosCodigo" in row
+    assert "Emitidas" in row
+    assert "Tasa_Aceptacion_Pct" in row
+    assert "Tasa_Rechazo_Pct" in row
+    emitidas_total = sum(float(r["Emitidas"]) for r in rows)
+    assert emitidas_total == 9961.0

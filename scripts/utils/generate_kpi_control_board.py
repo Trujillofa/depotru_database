@@ -42,6 +42,34 @@ try:
 except ImportError:
     funnel_summary_from_vendor_rows = None
 
+try:
+    from business_analyzer.core.j3system_critical_inventory import (  # noqa: E402
+        critical_inventory_summary_from_rows,
+    )
+except ImportError:
+    critical_inventory_summary_from_rows = None
+
+try:
+    from business_analyzer.core.j3system_otif import (  # noqa: E402
+        otif_summary_from_warehouse_rows,
+    )
+except ImportError:
+    otif_summary_from_warehouse_rows = None
+
+try:
+    from business_analyzer.core.j3system_devoluciones_conciliacion import (  # noqa: E402
+        conciliacion_summary_from_category_rows,
+    )
+except ImportError:
+    conciliacion_summary_from_category_rows = None
+
+try:
+    from business_analyzer.core.j3system_factura_electronica import (  # noqa: E402
+        factura_electronica_summary_from_documento_rows,
+    )
+except ImportError:
+    factura_electronica_summary_from_documento_rows = None
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SQL_PACK_PATH = ROOT_DIR / "scripts" / "analysis" / "kpi_sql_pack.sql.template"
 OUTPUT_DIR = ROOT_DIR / "reports"
@@ -130,7 +158,7 @@ def load_query_blocks(sql_path: Path) -> Dict[str, str]:
         sql = match.group("sql").strip()
         blocks[f"Q{number}"] = sql
 
-    required = {f"Q{i}" for i in range(1, 13)}
+    required = {f"Q{i}" for i in range(1, 17)}
     missing = sorted(required - set(blocks.keys()))
     if missing:
         raise ValueError(f"Missing query blocks in SQL pack: {', '.join(missing)}")
@@ -194,6 +222,8 @@ def format_delta(value: float, kind: str) -> str:
         return f"{value:+.2f} pp".replace(".", ",")
     if kind == "days":
         return f"{value:+.0f} días"
+    if kind == "count":
+        return f"{value:+.0f}"
     return format_pct(value, 2) if value else "0,00%"
 
 
@@ -223,6 +253,38 @@ def generate_narrative(
         else:
             conv_rate = 0.0
             conv_days = 0.0
+        q13 = results.get("Q13", [])
+        if critical_inventory_summary_from_rows and q13:
+            inv = critical_inventory_summary_from_rows(q13)
+            skus_criticos = inv.get("SKUs_Criticos", 0)
+            dias_cobertura = inv.get("Promedio_Dias_Cobertura", 0.0)
+        else:
+            skus_criticos = 0
+            dias_cobertura = 0.0
+        q14 = results.get("Q14", [])
+        if otif_summary_from_warehouse_rows and q14:
+            otif = otif_summary_from_warehouse_rows(q14)
+            otif_pct = otif.get("OTIF_Pct", 0.0)
+            lead_time = otif.get("Lead_Time_Promedio_Dias", 0.0)
+        else:
+            otif_pct = 0.0
+            lead_time = 0.0
+        q15 = results.get("Q15", [])
+        if conciliacion_summary_from_category_rows and q15:
+            dev = conciliacion_summary_from_category_rows(q15)
+            conc_pct = dev.get("Conciliacion_Pct", 0.0)
+            tasa_dev = dev.get("Tasa_Devolucion_Validada_Pct", 0.0)
+        else:
+            conc_pct = 0.0
+            tasa_dev = 0.0
+        q16 = results.get("Q16", [])
+        if factura_electronica_summary_from_documento_rows and q16:
+            fe = factura_electronica_summary_from_documento_rows(q16)
+            fe_aceptacion = fe.get("Tasa_Aceptacion_Pct", 0.0)
+            fe_rechazo = fe.get("Tasa_Rechazo_Pct", 0.0)
+        else:
+            fe_aceptacion = 0.0
+            fe_rechazo = 0.0
         prompt = (
             f"Escribe un párrafo ejecutivo en español (máximo 150 palabras) "
             f"analizando el rendimiento semanal de la ferretería: "
@@ -232,6 +294,14 @@ def generate_narrative(
             f"Cumplimiento presupuesto MTD {presupuesto:.2f}%, "
             f"Tasa conversión cotizaciones {conv_rate:.2f}% "
             f"(días prom. {conv_days:.1f}), "
+            f"SKUs inventario crítico {skus_criticos} "
+            f"(cobertura prom. {dias_cobertura:.1f} días), "
+            f"OTIF entregas {otif_pct:.2f}% "
+            f"(lead time {lead_time:.1f} días), "
+            f"Conciliación devoluciones {conc_pct:.2f}% "
+            f"(tasa validada {tasa_dev:.2f}%), "
+            f"Aceptación factura electrónica {fe_aceptacion:.2f}% "
+            f"(rechazo {fe_rechazo:.2f}%), "
             f"Categoría top: {top_cat}, Marca real top: {top_marca}. "
             f"Incluye una recomendación comercial accionable."
         )
@@ -322,6 +392,58 @@ def compute_scorecard(
     conversion_target = 30.0
     conv_days_target = 7.0
 
+    q13 = results.get("Q13", [])
+    if critical_inventory_summary_from_rows and q13:
+        inv = critical_inventory_summary_from_rows(q13)
+        current_skus_criticos = as_float(inv.get("SKUs_Criticos"))
+        current_cobertura = as_float(inv.get("Promedio_Dias_Cobertura"))
+        current_quiebre_7d = as_float(inv.get("SKUs_Quiebre_7d"))
+    else:
+        current_skus_criticos = 0.0
+        current_cobertura = 0.0
+        current_quiebre_7d = 0.0
+    skus_criticos_target = 25.0
+    cobertura_target = 7.0
+
+    q14 = results.get("Q14", [])
+    if otif_summary_from_warehouse_rows and q14:
+        otif = otif_summary_from_warehouse_rows(q14)
+        current_otif = as_float(otif.get("OTIF_Pct"))
+        current_lead_time = as_float(otif.get("Lead_Time_Promedio_Dias"))
+        current_fill_rate = as_float(otif.get("Fill_Rate_Pct"))
+    else:
+        current_otif = 0.0
+        current_lead_time = 0.0
+        current_fill_rate = 0.0
+    otif_target = 85.0
+    lead_time_target = 3.0
+    fill_rate_target = 95.0
+
+    q15 = results.get("Q15", [])
+    if conciliacion_summary_from_category_rows and q15:
+        dev = conciliacion_summary_from_category_rows(q15)
+        current_conciliacion = as_float(dev.get("Conciliacion_Pct"))
+        current_tasa_dev = as_float(dev.get("Tasa_Devolucion_Validada_Pct"))
+        current_gap_cats = as_float(dev.get("Categorias_Con_Diferencia"))
+    else:
+        current_conciliacion = 0.0
+        current_tasa_dev = 0.0
+        current_gap_cats = 0.0
+    conciliacion_target = 99.0
+
+    q16 = results.get("Q16", [])
+    if factura_electronica_summary_from_documento_rows and q16:
+        fe = factura_electronica_summary_from_documento_rows(q16)
+        current_fe_aceptacion = as_float(fe.get("Tasa_Aceptacion_Pct"))
+        current_fe_rechazo = as_float(fe.get("Tasa_Rechazo_Pct"))
+        current_fe_emitidas = as_float(fe.get("Emitidas"))
+    else:
+        current_fe_aceptacion = 0.0
+        current_fe_rechazo = 0.0
+        current_fe_emitidas = 0.0
+    fe_aceptacion_target = 99.5
+    fe_rechazo_target = 0.5
+
     margin_target = baseline_margin + 1.0
     profit_target = baseline_profit * 1.05
     ticket_target = baseline_ticket * 1.05
@@ -410,6 +532,108 @@ def compute_scorecard(
             "status": status_lower_is_better(current_conv_days, conv_days_target),
             "delta_kind": "days",
         },
+        "skus_criticos": {
+            "baseline": current_skus_criticos,
+            "target": skus_criticos_target,
+            "current": current_skus_criticos,
+            "delta": current_skus_criticos - skus_criticos_target,
+            "status": status_lower_is_better(
+                current_skus_criticos, skus_criticos_target
+            ),
+            "delta_kind": "count",
+        },
+        "cobertura_critica": {
+            "baseline": current_cobertura,
+            "target": cobertura_target,
+            "current": current_cobertura,
+            "delta": current_cobertura - cobertura_target,
+            "status": status_higher_is_better(current_cobertura, cobertura_target),
+            "delta_kind": "days",
+        },
+        "quiebre_7d": {
+            "baseline": current_quiebre_7d,
+            "target": 5.0,
+            "current": current_quiebre_7d,
+            "delta": current_quiebre_7d - 5.0,
+            "status": status_lower_is_better(current_quiebre_7d, 5.0),
+            "delta_kind": "count",
+        },
+        "otif": {
+            "baseline": current_otif,
+            "target": otif_target,
+            "current": current_otif,
+            "delta": current_otif - otif_target,
+            "status": status_higher_is_better(current_otif, otif_target),
+            "delta_kind": "pp",
+        },
+        "lead_time_entrega": {
+            "baseline": current_lead_time,
+            "target": lead_time_target,
+            "current": current_lead_time,
+            "delta": current_lead_time - lead_time_target,
+            "status": status_lower_is_better(current_lead_time, lead_time_target),
+            "delta_kind": "days",
+        },
+        "fill_rate": {
+            "baseline": current_fill_rate,
+            "target": fill_rate_target,
+            "current": current_fill_rate,
+            "delta": current_fill_rate - fill_rate_target,
+            "status": status_higher_is_better(current_fill_rate, fill_rate_target),
+            "delta_kind": "pp",
+        },
+        "conciliacion_devoluciones": {
+            "baseline": current_conciliacion,
+            "target": conciliacion_target,
+            "current": current_conciliacion,
+            "delta": current_conciliacion - conciliacion_target,
+            "status": status_higher_is_better(
+                current_conciliacion, conciliacion_target
+            ),
+            "delta_kind": "pp",
+        },
+        "tasa_devolucion_validada": {
+            "baseline": current_tasa_dev,
+            "target": current_tasa_dev,
+            "current": current_tasa_dev,
+            "delta": 0.0,
+            "status": "🟢",
+            "delta_kind": "pp",
+        },
+        "categorias_brecha_dev": {
+            "baseline": current_gap_cats,
+            "target": 0.0,
+            "current": current_gap_cats,
+            "delta": current_gap_cats,
+            "status": status_lower_is_better(current_gap_cats, 0.0),
+            "delta_kind": "count",
+        },
+        "factura_electronica_aceptacion": {
+            "baseline": current_fe_aceptacion,
+            "target": fe_aceptacion_target,
+            "current": current_fe_aceptacion,
+            "delta": current_fe_aceptacion - fe_aceptacion_target,
+            "status": status_higher_is_better(
+                current_fe_aceptacion, fe_aceptacion_target
+            ),
+            "delta_kind": "pp",
+        },
+        "factura_electronica_rechazo": {
+            "baseline": current_fe_rechazo,
+            "target": fe_rechazo_target,
+            "current": current_fe_rechazo,
+            "delta": current_fe_rechazo - fe_rechazo_target,
+            "status": status_lower_is_better(current_fe_rechazo, fe_rechazo_target),
+            "delta_kind": "pp",
+        },
+        "facturas_electronicas_emitidas": {
+            "baseline": current_fe_emitidas,
+            "target": current_fe_emitidas,
+            "current": current_fe_emitidas,
+            "delta": 0.0,
+            "status": "🟢",
+            "delta_kind": "count",
+        },
     }
 
 
@@ -432,6 +656,30 @@ def render_markdown(
     q10 = results.get("Q10", [])
     q11 = results.get("Q11", [])
     q12 = results.get("Q12", [])
+    q13 = results.get("Q13", [])
+    q14 = results.get("Q14", [])
+    q15 = results.get("Q15", [])
+    q16 = results.get("Q16", [])
+    inv_summary = (
+        critical_inventory_summary_from_rows(q13)
+        if critical_inventory_summary_from_rows and q13
+        else {}
+    )
+    otif_summary = (
+        otif_summary_from_warehouse_rows(q14)
+        if otif_summary_from_warehouse_rows and q14
+        else {}
+    )
+    dev_summary = (
+        conciliacion_summary_from_category_rows(q15)
+        if conciliacion_summary_from_category_rows and q15
+        else {}
+    )
+    fe_summary = (
+        factura_electronica_summary_from_documento_rows(q16)
+        if factura_electronica_summary_from_documento_rows and q16
+        else {}
+    )
     funnel_summary = (
         funnel_summary_from_vendor_rows(q12)
         if funnel_summary_from_vendor_rows and q12
@@ -540,6 +788,62 @@ def render_markdown(
         f"| {scorecard['dias_conversion']['current']:.1f} "
         f"| {format_delta(scorecard['dias_conversion']['delta'], 'days')} "
         f"| {scorecard['dias_conversion']['status']} |"
+    )
+    lines.append(
+        "| SKUs Inventario Crítico | Top-N bajo umbral + alta rotación 90d "
+        f"| {scorecard['skus_criticos']['baseline']:.0f} "
+        f"| {scorecard['skus_criticos']['target']:.0f} "
+        f"| {scorecard['skus_criticos']['current']:.0f} "
+        f"| {format_delta(scorecard['skus_criticos']['delta'], 'count')} "
+        f"| {scorecard['skus_criticos']['status']} |"
+    )
+    lines.append(
+        "| Cobertura Inventario (días prom.) | `Saldo / venta_diaria` SKUs críticos "
+        f"| {scorecard['cobertura_critica']['baseline']:.1f} "
+        f"| {scorecard['cobertura_critica']['target']:.1f} "
+        f"| {scorecard['cobertura_critica']['current']:.1f} "
+        f"| {format_delta(scorecard['cobertura_critica']['delta'], 'days')} "
+        f"| {scorecard['cobertura_critica']['status']} |"
+    )
+    lines.append(
+        "| OTIF Entregas % | `A tiempo / total` (InvHistoricoEntregas) "
+        f"| {format_pct(scorecard['otif']['baseline'])} "
+        f"| {format_pct(scorecard['otif']['target'])} "
+        f"| {format_pct(scorecard['otif']['current'])} "
+        f"| {format_delta(scorecard['otif']['delta'], 'pp')} "
+        f"| {scorecard['otif']['status']} |"
+    )
+    lines.append(
+        "| Lead Time Entrega (días prom.) | `AVG(FechaEntrega - FechaFactura)` "
+        f"| {scorecard['lead_time_entrega']['baseline']:.1f} "
+        f"| {scorecard['lead_time_entrega']['target']:.1f} "
+        f"| {scorecard['lead_time_entrega']['current']:.1f} "
+        f"| {format_delta(scorecard['lead_time_entrega']['delta'], 'days')} "
+        f"| {scorecard['lead_time_entrega']['status']} |"
+    )
+    lines.append(
+        "| Conciliación Devoluciones % | `1 - |ERP-BI|/ERP` por unidades "
+        f"| {format_pct(scorecard['conciliacion_devoluciones']['baseline'])} "
+        f"| {format_pct(scorecard['conciliacion_devoluciones']['target'])} "
+        f"| {format_pct(scorecard['conciliacion_devoluciones']['current'])} "
+        f"| {format_delta(scorecard['conciliacion_devoluciones']['delta'], 'pp')} "
+        f"| {scorecard['conciliacion_devoluciones']['status']} |"
+    )
+    lines.append(
+        "| Aceptación Factura Electrónica % | `Aceptadas / Emitidas` (DIAN) "
+        f"| {format_pct(scorecard['factura_electronica_aceptacion']['baseline'])} "
+        f"| {format_pct(scorecard['factura_electronica_aceptacion']['target'])} "
+        f"| {format_pct(scorecard['factura_electronica_aceptacion']['current'])} "
+        f"| {format_delta(scorecard['factura_electronica_aceptacion']['delta'], 'pp')} "
+        f"| {scorecard['factura_electronica_aceptacion']['status']} |"
+    )
+    lines.append(
+        "| Rechazo Factura Electrónica % | `Rechazadas / Emitidas` (DIAN) "
+        f"| {format_pct(scorecard['factura_electronica_rechazo']['baseline'])} "
+        f"| {format_pct(scorecard['factura_electronica_rechazo']['target'])} "
+        f"| {format_pct(scorecard['factura_electronica_rechazo']['current'])} "
+        f"| {format_delta(scorecard['factura_electronica_rechazo']['delta'], 'pp')} "
+        f"| {scorecard['factura_electronica_rechazo']['status']} |"
     )
 
     lines.append("")
@@ -699,6 +1003,122 @@ def render_markdown(
         lines.append("- **Sin datos de embudo cotización (Q12 vacío).**")
 
     lines.append("")
+    lines.append("### 3.9 Inventario crítico y quiebres (InvDetalleExistencias)")
+    if inv_summary:
+        lines.append(
+            f"- **SKUs críticos (top 25):** {int(as_float(inv_summary.get('SKUs_Criticos'))):,} | "
+            f"**Quiebre <7d:** {int(as_float(inv_summary.get('SKUs_Quiebre_7d'))):,} | "
+            f"**Stock ≤10:** {int(as_float(inv_summary.get('SKUs_Stock_Bajo'))):,} | "
+            f"**Cobertura prom.:** {as_float(inv_summary.get('Promedio_Dias_Cobertura')):.1f} días"
+        )
+        lines.append("- **Top 10 SKUs por riesgo de quiebre (menor cobertura):**")
+        for row in q13[:10]:
+            dias = row.get("Dias_Cobertura")
+            dias_txt = f"{as_float(dias):.1f}" if dias is not None else "—"
+            lines.append(
+                f"  - {row.get('SKU')} | {row.get('Producto', '')[:50]} | "
+                f"{row.get('AlmacenCodigo')} | Stock: {as_float(row.get('Saldo_Actual')):.0f} | "
+                f"Venta 90d: {as_float(row.get('Cantidad_90d')):.0f} | "
+                f"Cobertura: {dias_txt}d | {row.get('Prioridad')}"
+            )
+    else:
+        lines.append("- **Sin datos de inventario crítico (Q13 vacío).**")
+
+    lines.append("")
+    lines.append("### 3.10 OTIF — cumplimiento de entregas (InvHistoricoEntregas)")
+    if otif_summary:
+        lines.append(
+            f"- **Total entregas:** {int(as_float(otif_summary.get('Total_Entregas'))):,} | "
+            f"**A tiempo:** {int(as_float(otif_summary.get('Entregas_A_Tiempo'))):,} | "
+            f"**OTIF:** {format_pct(as_float(otif_summary.get('OTIF_Pct')))} | "
+            f"**Lead prom.:** {as_float(otif_summary.get('Lead_Time_Promedio_Dias')):.1f}d | "
+            f"**Fill rate:** {format_pct(as_float(otif_summary.get('Fill_Rate_Pct')))}"
+        )
+        lines.append("- **Bodegas con peor OTIF:**")
+        for row in q14[:5]:
+            lines.append(
+                f"  - {row.get('Almacen_Codigo')} | "
+                f"OTIF: {format_pct(as_float(row.get('OTIF_Pct')))} | "
+                f"Entregas: {int(as_float(row.get('Total_Entregas')))} | "
+                f"Lead: {as_float(row.get('Lead_Time_Promedio_Dias')):.1f}d"
+            )
+    else:
+        lines.append("- **Sin datos OTIF (Q14 vacío).**")
+
+    lines.append("")
+    lines.append("### 3.11 Conciliación devoluciones ERP vs BI")
+    if dev_summary:
+        lines.append(
+            f"- **Unidades ERP:** {int(as_float(dev_summary.get('Unidades_ERP'))):,} | "
+            f"**BI:** {int(as_float(dev_summary.get('Unidades_BI'))):,} | "
+            f"**Conciliación:** {format_pct(as_float(dev_summary.get('Conciliacion_Pct')))} | "
+            f"**Tasa validada:** {format_pct(as_float(dev_summary.get('Tasa_Devolucion_Validada_Pct')))} | "
+            f"**Brechas categoría:** {int(as_float(dev_summary.get('Categorias_Con_Diferencia')))}"
+        )
+        gaps = sorted(
+            q15,
+            key=lambda r: abs(as_float(r.get("Diferencia_Unidades"))),
+            reverse=True,
+        )
+        gap_rows = [r for r in gaps if as_float(r.get("Diferencia_Unidades")) != 0][:5]
+        if gap_rows:
+            lines.append("- **Categorías con brecha (top):**")
+            for row in gap_rows:
+                lines.append(
+                    f"  - {row.get('Categoria')} | ERP: {int(as_float(row.get('Unidades_ERP')))} | "
+                    f"BI: {int(as_float(row.get('Unidades_BI')))} | "
+                    f"Δ: {int(as_float(row.get('Diferencia_Unidades')))}"
+                )
+        else:
+            lines.append("- **Sin brechas por categoría en el periodo (ERP = BI).**")
+        erosion = sorted(
+            q15, key=lambda r: as_float(r.get("Impacto_Margen_BI")), reverse=True
+        )[:5]
+        lines.append("- **Mayor erosión de margen (devoluciones):**")
+        for row in erosion:
+            lines.append(
+                f"  - {row.get('Categoria')} | "
+                f"Impacto: {format_currency(as_float(row.get('Impacto_Margen_BI')))} | "
+                f"Tasa validada: {format_pct(as_float(row.get('Tasa_Devolucion_Validada_Pct')))}"
+            )
+    else:
+        lines.append("- **Sin datos de conciliación devoluciones (Q15 vacío).**")
+
+    lines.append("")
+    lines.append("### 3.12 Factura electrónica DIAN")
+    if fe_summary:
+        lines.append(
+            f"- **Emitidas:** {int(as_float(fe_summary.get('Emitidas'))):,} | "
+            f"**Aceptadas:** {int(as_float(fe_summary.get('Aceptadas'))):,} | "
+            f"**Rechazadas:** {int(as_float(fe_summary.get('Rechazadas'))):,} | "
+            f"**Aceptación:** {format_pct(as_float(fe_summary.get('Tasa_Aceptacion_Pct')))} | "
+            f"**Rechazo:** {format_pct(as_float(fe_summary.get('Tasa_Rechazo_Pct')))}"
+        )
+        rechazos = [r for r in q16 if as_float(r.get("Rechazadas")) > 0][:5]
+        if rechazos:
+            lines.append("- **Tipos de documento con rechazos:**")
+            for row in rechazos:
+                lines.append(
+                    f"  - {row.get('DocumentosCodigo')} | "
+                    f"Rechazadas: {int(as_float(row.get('Rechazadas')))} | "
+                    f"Rechazo: {format_pct(as_float(row.get('Tasa_Rechazo_Pct')))}"
+                )
+        else:
+            lines.append("- **Sin rechazos DIAN en el periodo.**")
+        top_emit = sorted(q16, key=lambda r: as_float(r.get("Emitidas")), reverse=True)[
+            :5
+        ]
+        lines.append("- **Mayor volumen electrónico:**")
+        for row in top_emit:
+            lines.append(
+                f"  - {row.get('DocumentosCodigo')} | "
+                f"Emitidas: {int(as_float(row.get('Emitidas')))} | "
+                f"Aceptación: {format_pct(as_float(row.get('Tasa_Aceptacion_Pct')))}"
+            )
+    else:
+        lines.append("- **Sin datos de factura electrónica (Q16 vacío).**")
+
+    lines.append("")
     lines.append("## 4) Weekly Action Plan (Execution)")
     lines.append("")
     lines.append(
@@ -722,7 +1142,7 @@ def render_markdown(
 
     lines.append("## 5) SQL Blocks Used (Traceability)")
     lines.append("")
-    for q in range(1, 13):
+    for q in range(1, 17):
         lines.append(f"- [x] Q{q}")
 
     return "\n".join(lines) + "\n"
@@ -747,7 +1167,7 @@ def generate_kpi_control_board(
     results: Dict[str, List[Dict[str, Any]]] = {}
     conn = get_connection()
     try:
-        for key in [f"Q{i}" for i in range(1, 13)]:
+        for key in [f"Q{i}" for i in range(1, 17)]:
             query = render_query(blocks[key], start_date, end_date)
             results[key] = execute_query(conn, query)
     finally:

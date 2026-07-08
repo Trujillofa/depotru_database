@@ -505,3 +505,264 @@ GROUP BY
     ISNULL(vnd.VendedorCodigo, CAST(c.VendedorID AS VARCHAR(20))),
     ISNULL(NULLIF(LTRIM(RTRIM(vnd.VendedorNombre)), ''), 'SIN_NOMBRE')
 ORDER BY Cotizaciones DESC;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q13) Inventario crítico y quiebres (InvDetalleExistencias + banco_datos 90d) */
+/* Cobertura días = SaldoActual / venta_diaria_promedio                        */
+/* -------------------------------------------------------------------------- */
+WITH velocidad AS (
+    SELECT
+        ArticulosCodigo,
+        SUM(Cantidad) AS Cantidad_90d,
+        SUM(Cantidad) / 90.0 AS Venta_Diaria_Promedio
+    FROM SmartBusiness.dbo.banco_datos
+    WHERE Fecha >= DATEADD(DAY, -90, CAST(@end_date AS DATE))
+      AND Fecha <= CAST(@end_date AS DATE)
+      AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+      AND Cantidad > 0
+    GROUP BY ArticulosCodigo
+),
+existencias AS (
+    SELECT
+        a.ArticulosCodigo,
+        a.ArticulosNombre,
+        al.AlmacenCodigo,
+        al.AlmacenNombre,
+        CAST(d.SaldoActual AS DECIMAL(18, 4)) AS Saldo_Actual,
+        CAST(d.StockMinimo AS DECIMAL(18, 4)) AS Stock_Minimo
+    FROM J3System.dbo.InvDetalleExistencias d
+    JOIN J3System.dbo.InvExistencias e ON e.ExistenciasID = d.ExistenciasID
+    JOIN J3System.dbo.AdmArticulos a ON a.ArticulosID = e.ArticulosID
+    JOIN J3System.dbo.AdmAlmacen al ON al.AlmacenID = d.AlmacenID
+    WHERE d.Ano = (SELECT MAX(Ano) FROM J3System.dbo.InvDetalleExistencias)
+      AND CAST(d.SaldoActual AS DECIMAL(18, 4)) >= 0
+      AND al.AlmacenCodigo IS NOT NULL
+      AND al.AlmacenCodigo <> ''
+)
+SELECT TOP (25)
+    ex.ArticulosCodigo AS SKU,
+    ex.ArticulosNombre AS Producto,
+    ex.AlmacenCodigo,
+    ex.AlmacenNombre,
+    ex.Saldo_Actual,
+    v.Cantidad_90d,
+    v.Venta_Diaria_Promedio,
+    CASE
+        WHEN v.Venta_Diaria_Promedio > 0
+        THEN ex.Saldo_Actual / v.Venta_Diaria_Promedio
+        ELSE NULL
+    END AS Dias_Cobertura,
+    CASE
+        WHEN ex.Stock_Minimo > 0 AND ex.Saldo_Actual < ex.Stock_Minimo
+        THEN 'DEBAJO_MINIMO'
+        WHEN v.Venta_Diaria_Promedio > 0
+             AND ex.Saldo_Actual / v.Venta_Diaria_Promedio < 3
+        THEN 'QUIEBRE_INMINENTE'
+        WHEN ex.Saldo_Actual <= 10
+        THEN 'STOCK_CRITICO'
+        WHEN v.Venta_Diaria_Promedio > 0
+             AND ex.Saldo_Actual / v.Venta_Diaria_Promedio < 14
+        THEN 'COBERTURA_BAJA'
+        ELSE 'ALERTA_ROTACION'
+    END AS Prioridad
+FROM existencias ex
+INNER JOIN velocidad v ON v.ArticulosCodigo = ex.ArticulosCodigo
+WHERE v.Cantidad_90d >= 50
+  AND (
+    (ex.Stock_Minimo > 0 AND ex.Saldo_Actual < ex.Stock_Minimo)
+    OR ex.Saldo_Actual <= 10
+    OR (
+        v.Venta_Diaria_Promedio > 0
+        AND ex.Saldo_Actual / v.Venta_Diaria_Promedio < 14
+    )
+  )
+ORDER BY
+    CASE WHEN v.Venta_Diaria_Promedio > 0 THEN ex.Saldo_Actual / v.Venta_Diaria_Promedio ELSE 999999 END,
+    v.Cantidad_90d DESC;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q14) OTIF — cumplimiento entregas (InvHistoricoEntregas)                   */
+/* A tiempo: FechaEntrega (DD/MM/YYYY) <= FechaProximaEntrega                 */
+/* -------------------------------------------------------------------------- */
+WITH entregas_filtradas AS (
+    SELECT
+        e.Docto,
+        e.Numero,
+        e.FechaFactura,
+        e.FechaProximaEntrega,
+        CASE
+            WHEN LEN(e.FechaEntrega) >= 10
+             AND SUBSTRING(e.FechaEntrega, 3, 1) = '/'
+             AND SUBSTRING(e.FechaEntrega, 6, 1) = '/'
+            THEN CONVERT(DATE, LEFT(e.FechaEntrega, 10), 103)
+            ELSE NULL
+        END AS FechaEntrega_Parsed,
+        e.Cliente,
+        e.Almacen,
+        e.CantidadFacturada,
+        e.Entrega
+    FROM J3System.dbo.InvHistoricoEntregas e
+    WHERE e.Tipo = 'Entrega'
+      AND e.FechaFactura BETWEEN @start_date AND @end_date
+      AND e.Docto NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+)
+SELECT
+    Almacen AS Almacen_Codigo,
+    COUNT(*) AS Total_Entregas,
+    SUM(
+        CASE
+            WHEN FechaEntrega_Parsed IS NOT NULL
+             AND FechaEntrega_Parsed <= FechaProximaEntrega
+            THEN 1 ELSE 0
+        END
+    ) AS Entregas_A_Tiempo,
+    SUM(
+        CASE
+            WHEN FechaEntrega_Parsed IS NOT NULL
+             AND FechaEntrega_Parsed > FechaProximaEntrega
+            THEN 1 ELSE 0
+        END
+    ) AS Entregas_Tarde,
+    CASE
+        WHEN SUM(CASE WHEN FechaEntrega_Parsed IS NOT NULL THEN 1 ELSE 0 END) = 0
+        THEN 0
+        ELSE SUM(
+            CASE
+                WHEN FechaEntrega_Parsed IS NOT NULL
+                 AND FechaEntrega_Parsed <= FechaProximaEntrega
+                THEN 1 ELSE 0
+            END
+        ) * 100.0
+        / SUM(CASE WHEN FechaEntrega_Parsed IS NOT NULL THEN 1 ELSE 0 END)
+    END AS OTIF_Pct,
+    CASE
+        WHEN SUM(CASE WHEN FechaEntrega_Parsed IS NOT NULL THEN 1 ELSE 0 END) = 0
+        THEN 0
+        ELSE AVG(
+            CAST(DATEDIFF(DAY, FechaFactura, FechaEntrega_Parsed) AS FLOAT)
+        )
+    END AS Lead_Time_Promedio_Dias,
+    CASE
+        WHEN COUNT(*) = 0 THEN 0
+        ELSE SUM(CASE WHEN Entrega >= CantidadFacturada THEN 1 ELSE 0 END) * 100.0 / COUNT(*)
+    END AS Fill_Rate_Pct
+FROM entregas_filtradas
+WHERE FechaEntrega_Parsed IS NOT NULL
+GROUP BY Almacen
+ORDER BY OTIF_Pct ASC, Total_Entregas DESC;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q15) Conciliación devoluciones ERP vs BI por categoría                     */
+/* ERP: InvDevolucionVentas* | BI: banco_datos negativos / DVE,DVD,DDD,DDT   */
+/* -------------------------------------------------------------------------- */
+WITH categoria_lookup AS (
+    SELECT ArticulosCodigo, MAX(categoria) AS categoria
+    FROM SmartBusiness.dbo.banco_datos
+    GROUP BY ArticulosCodigo
+),
+erp_devoluciones AS (
+    SELECT
+        ISNULL(cl.categoria, 'SIN_CATEGORIA') AS Categoria,
+        det.Cantidad AS Unidades,
+        det.VentaSinIva - det.ValorCosto AS Impacto_Margen
+    FROM J3System.dbo.InvDevolucionVentas d
+    JOIN J3System.dbo.InvDevolucionVentasDetalle det ON det.DevolucionID = d.DevolucionID
+    JOIN J3System.dbo.AdmDocumentos dc ON dc.DocumentosID = d.DocumentosID
+    JOIN J3System.dbo.AdmArticulos a ON a.ArticulosID = det.ArticulosID
+    LEFT JOIN categoria_lookup cl ON cl.ArticulosCodigo = a.ArticulosCodigo
+    WHERE d.Fecha BETWEEN @start_date AND @end_date
+      AND dc.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+),
+bi_devoluciones AS (
+    SELECT
+        ISNULL(categoria, 'SIN_CATEGORIA') AS Categoria,
+        ABS(Cantidad) AS Unidades,
+        ABS(TotalSinIva - ValorCosto) AS Impacto_Margen
+    FROM SmartBusiness.dbo.banco_datos
+    WHERE Fecha BETWEEN @start_date AND @end_date
+      AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+      AND (Cantidad < 0 OR DocumentosCodigo IN ('DVE', 'DVD', 'DDD', 'DDT'))
+),
+ventas_brutas AS (
+    SELECT
+        ISNULL(categoria, 'SIN_CATEGORIA') AS Categoria,
+        SUM(Cantidad) AS Unidades_Vendidas
+    FROM SmartBusiness.dbo.banco_datos
+    WHERE Fecha BETWEEN @start_date AND @end_date
+      AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+      AND Cantidad > 0
+    GROUP BY ISNULL(categoria, 'SIN_CATEGORIA')
+),
+erp_cat AS (
+    SELECT Categoria, SUM(Unidades) AS Unidades_ERP, SUM(Impacto_Margen) AS Impacto_Margen_ERP
+    FROM erp_devoluciones GROUP BY Categoria
+),
+bi_cat AS (
+    SELECT Categoria, SUM(Unidades) AS Unidades_BI, SUM(Impacto_Margen) AS Impacto_Margen_BI
+    FROM bi_devoluciones GROUP BY Categoria
+)
+SELECT
+    COALESCE(e.Categoria, b.Categoria) AS Categoria,
+    ISNULL(e.Unidades_ERP, 0) AS Unidades_ERP,
+    ISNULL(b.Unidades_BI, 0) AS Unidades_BI,
+    ISNULL(b.Unidades_BI, 0) - ISNULL(e.Unidades_ERP, 0) AS Diferencia_Unidades,
+    CASE
+        WHEN ISNULL(e.Unidades_ERP, 0) = 0 THEN
+            CASE WHEN ISNULL(b.Unidades_BI, 0) = 0 THEN 0 ELSE 100 END
+        ELSE ABS(ISNULL(b.Unidades_BI, 0) - ISNULL(e.Unidades_ERP, 0)) * 100.0 / e.Unidades_ERP
+    END AS Diferencia_Pct,
+    ISNULL(v.Unidades_Vendidas, 0) AS Unidades_Vendidas,
+    CASE
+        WHEN ISNULL(v.Unidades_Vendidas, 0) = 0 THEN 0
+        ELSE ISNULL(e.Unidades_ERP, 0) * 100.0 / v.Unidades_Vendidas
+    END AS Tasa_Devolucion_Validada_Pct,
+    ISNULL(b.Impacto_Margen_BI, 0) AS Impacto_Margen_BI
+FROM erp_cat e
+FULL OUTER JOIN bi_cat b ON b.Categoria = e.Categoria
+LEFT JOIN ventas_brutas v ON v.Categoria = COALESCE(e.Categoria, b.Categoria)
+ORDER BY Diferencia_Unidades DESC, Impacto_Margen_BI DESC;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q16) Factura electrónica — aceptación DIAN (InvEstadoFacturaElectronica)    */
+/* Aceptada: Codigo=200, Enviado=1, CUFE no vacío                             */
+/* -------------------------------------------------------------------------- */
+WITH fe_filtrada AS (
+    SELECT
+        dc.DocumentosCodigo,
+        fe.Codigo,
+        fe.Enviado,
+        fe.Cufe,
+        fe.Total,
+        CASE
+            WHEN fe.Codigo = '200'
+             AND fe.Enviado = 1
+             AND LEN(ISNULL(fe.Cufe, '')) > 0
+            THEN 1
+            ELSE 0
+        END AS Es_Aceptada
+    FROM J3System.dbo.InvEstadoFacturaElectronica fe
+    JOIN J3System.dbo.AdmDocumentos dc ON dc.DocumentosID = fe.DocumentosID
+    WHERE fe.FechaFactura BETWEEN @start_date AND @end_date
+      AND dc.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+)
+SELECT
+    DocumentosCodigo,
+    COUNT(*) AS Emitidas,
+    SUM(Es_Aceptada) AS Aceptadas,
+    COUNT(*) - SUM(Es_Aceptada) AS Rechazadas,
+    CASE
+        WHEN COUNT(*) = 0 THEN 0
+        ELSE SUM(Es_Aceptada) * 100.0 / COUNT(*)
+    END AS Tasa_Aceptacion_Pct,
+    CASE
+        WHEN COUNT(*) = 0 THEN 0
+        ELSE (COUNT(*) - SUM(Es_Aceptada)) * 100.0 / COUNT(*)
+    END AS Tasa_Rechazo_Pct,
+    SUM(Total) AS Valor_Total
+FROM fe_filtrada
+GROUP BY DocumentosCodigo
+ORDER BY Rechazadas DESC, Emitidas DESC;

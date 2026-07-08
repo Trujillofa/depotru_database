@@ -279,6 +279,36 @@ class TestJ3SystemTraining:
         assert "NumeroCotiza" in funnel_sql
         assert "Tasa_Conversion_Pct" in funnel_sql
 
+    def test_j3system_examples_include_critical_inventory(self):
+        examples = dict(get_j3system_training_examples())
+        inv_sql = examples["SKUs con inventario crítico y alta rotación en J3System"]
+        assert "InvDetalleExistencias" in inv_sql
+        assert "banco_datos" in inv_sql
+        assert "Dias_Cobertura" in inv_sql
+
+    def test_j3system_examples_include_otif(self):
+        examples = dict(get_j3system_training_examples())
+        otif_sql = examples["OTIF de entregas por bodega en J3System"]
+        assert "InvHistoricoEntregas" in otif_sql
+        assert "OTIF_Pct" in otif_sql
+        assert "FechaProximaEntrega" in otif_sql
+
+    def test_j3system_examples_include_devoluciones_conciliacion(self):
+        examples = dict(get_j3system_training_examples())
+        sql = examples["Conciliación de devoluciones ERP vs banco_datos por categoría"]
+        assert "InvDevolucionVentas" in sql
+        assert "banco_datos" in sql
+        assert "Diferencia_Unidades" in sql
+
+    def test_j3system_examples_include_factura_electronica(self):
+        examples = dict(get_j3system_training_examples())
+        sql = examples[
+            "Tasa de aceptación de factura electrónica DIAN por tipo de documento"
+        ]
+        assert "InvEstadoFacturaElectronica" in sql
+        assert "Tasa_Aceptacion_Pct" in sql
+        assert "Tasa_Rechazo_Pct" in sql
+
     def test_j3system_examples_cover_aggregate_and_one_per_sale(self):
         examples = dict(get_j3system_training_examples())
         assert (

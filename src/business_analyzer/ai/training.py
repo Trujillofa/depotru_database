@@ -14,6 +14,16 @@ from typing import List, Optional, Tuple
 from business_analyzer.core.j3system_cotizacion_funnel import (
     build_cotizacion_funnel_by_vendor_sql,
 )
+from business_analyzer.core.j3system_critical_inventory import (
+    build_critical_inventory_sql,
+)
+from business_analyzer.core.j3system_devoluciones_conciliacion import (
+    build_devoluciones_by_category_sql,
+)
+from business_analyzer.core.j3system_factura_electronica import (
+    build_factura_electronica_by_documento_sql,
+)
+from business_analyzer.core.j3system_otif import build_otif_by_warehouse_sql
 from business_analyzer.core.j3system_sales_warehouse import (
     WAREHOUSE_CODES,
     build_one_warehouse_per_sale_sql,
@@ -501,6 +511,22 @@ def get_j3system_training_examples() -> List[Tuple[str, str]]:
         (
             "Tasa de conversión de cotizaciones a factura por vendedor en J3System",
             build_cotizacion_funnel_by_vendor_sql("2024-12-01", "2024-12-31"),
+        ),
+        (
+            "SKUs con inventario crítico y alta rotación en J3System",
+            build_critical_inventory_sql("2024-12-31", top_n=25),
+        ),
+        (
+            "OTIF de entregas por bodega en J3System",
+            build_otif_by_warehouse_sql("2024-12-01", "2024-12-31"),
+        ),
+        (
+            "Conciliación de devoluciones ERP vs banco_datos por categoría",
+            build_devoluciones_by_category_sql("2024-12-01", "2024-12-31"),
+        ),
+        (
+            "Tasa de aceptación de factura electrónica DIAN por tipo de documento",
+            build_factura_electronica_by_documento_sql("2024-12-01", "2024-12-31"),
         ),
     ]
 
