@@ -658,6 +658,7 @@ def contabilidad_from_runner_report(raw: Dict[str, Any]) -> Dict[str, Any]:
         "summary": {},
         "balance_summary": {},
         "balance_clase": [],
+        "pyg_acumulado_clase": [],
         "pyg_summary": {},
         "conciliacion_ingresos": {},
         "pyg_clase": [],
@@ -726,6 +727,20 @@ def contabilidad_from_runner_report(raw: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
+    pyg_acumulado_clase: List[Dict[str, Any]] = []
+    for row in raw.get("pyg_acumulado_clase") or []:
+        pyg_acumulado_clase.append(
+            {
+                "clase_puc": row.get("Clase_Puc") or "",
+                "tipo_cuenta": row.get("Tipo_Cuenta") or "",
+                "total_debitos": round(to_float(row.get("Total_Debitos")) or 0.0, 2),
+                "total_creditos": round(to_float(row.get("Total_Creditos")) or 0.0, 2),
+                "saldo_acumulado": round(
+                    to_float(row.get("Saldo_Acumulado")) or 0.0, 2
+                ),
+            }
+        )
+
     balance_raw = raw.get("balance_summary") or {}
 
     return {
@@ -782,6 +797,12 @@ def contabilidad_from_runner_report(raw: Dict[str, Any]) -> Dict[str, Any]:
             "pasivo_mas_patrimonio": round(
                 to_float(balance_raw.get("Pasivo_Mas_Patrimonio")) or 0.0, 2
             ),
+            "resultado_pyg_acumulado": round(
+                to_float(balance_raw.get("Resultado_PyG_Acumulado")) or 0.0, 2
+            ),
+            "ecuacion_diferencia_bruta": round(
+                to_float(balance_raw.get("Ecuacion_Diferencia_Bruta")) or 0.0, 2
+            ),
             "ecuacion_diferencia": round(
                 to_float(balance_raw.get("Ecuacion_Diferencia")) or 0.0, 2
             ),
@@ -789,6 +810,7 @@ def contabilidad_from_runner_report(raw: Dict[str, Any]) -> Dict[str, Any]:
             "corte_fecha": (raw.get("period") or {}).get("end"),
         },
         "balance_clase": balance_clase,
+        "pyg_acumulado_clase": pyg_acumulado_clase,
         "pyg_clase": pyg_clase,
         "gastos_centro": gastos_centro,
         "top_gastos": top_gastos,

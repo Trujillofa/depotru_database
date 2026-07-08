@@ -372,9 +372,12 @@ def _print_contabilidad(report: Dict[str, Any]) -> None:
     print(f"    Pasivo (cl. 2):        {balance.get('pasivo_total', '$0')}")
     print(f"    Patrimonio (cl. 3):    {balance.get('patrimonio_total', '$0')}")
     print(
-        f"    Ecuación contable:     "
-        f"{'OK' if balance.get('ecuacion_ok') else 'Revisar'}"
+        f"    Resultado PyG acum.:   " f"{balance.get('resultado_pyg_acumulado', '$0')}"
     )
+    ecuacion_msg = "OK" if balance.get("ecuacion_ok") else "Revisar"
+    if not balance.get("ecuacion_ok"):
+        ecuacion_msg += f" (dif. {balance.get('ecuacion_diferencia', '$0')})"
+    print(f"    Ecuación contable:     {ecuacion_msg}")
     print("  PyG (movimientos del periodo):")
     print(
         f"    Cuadre:                "

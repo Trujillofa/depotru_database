@@ -511,6 +511,10 @@ class PDFReportGenerator:
             ("Patrimonio total (clase 3)", balance.get("patrimonio_total", "$0")),
             ("Pasivo + Patrimonio", balance.get("pasivo_mas_patrimonio", "$0")),
             (
+                "Resultado PyG acumulado (cl. 4–6)",
+                balance.get("resultado_pyg_acumulado", "$0"),
+            ),
+            (
                 f"Ecuación contable al {balance.get('corte_fecha', '')}",
                 ecuacion_status,
             ),

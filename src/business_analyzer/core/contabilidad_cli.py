@@ -72,9 +72,20 @@ def render_markdown(report: dict) -> str:
         f"{format_money(float(balance_summary.get('Pasivo_Total', 0)))}",
         f"- **Patrimonio (clase 3):** "
         f"{format_money(float(balance_summary.get('Patrimonio_Total', 0)))}",
-        f"- **Ecuación contable:** "
+        f"- **Resultado PyG acumulado (cl. 4–6):** "
+        f"{format_money(float(balance_summary.get('Resultado_PyG_Acumulado', 0)))}",
+        f"  _{help_text.get('resultado_pyg_acumulado', '')}_",
+        f"- **Ecuación contable (ajustada):** "
         f"{'OK' if balance_summary.get('Ecuacion_OK') else 'Revisar'}",
     ]
+    if not balance_summary.get("Ecuacion_OK"):
+        lines.append(
+            f"  - Diferencia ajustada: "
+            f"{format_money(float(balance_summary.get('Ecuacion_Diferencia', 0)))}"
+        )
+    bruta = float(balance_summary.get("Ecuacion_Diferencia_Bruta", 0))
+    if abs(bruta) > 1:
+        lines.append(f"  - Diferencia bruta (sin ajuste PyG): {format_money(bruta)}")
     for row in report.get("balance_clase", []):
         lines.append(
             f"  - Clase {row.get('Clase_Puc')} {row.get('Tipo_Cuenta')}: "

@@ -268,6 +268,7 @@ def _format_contabilidad(data: Dict[str, Any]) -> Dict[str, Any]:
             "summary": {},
             "balance_summary": {},
             "balance_clase": [],
+            "pyg_acumulado_clase": [],
             "pyg_summary": {},
             "conciliacion_ingresos": {},
             "pyg_clase": [],
@@ -302,14 +303,33 @@ def _format_contabilidad(data: Dict[str, Any]) -> Dict[str, Any]:
             "pasivo_mas_patrimonio": format_currency(
                 balance.get("pasivo_mas_patrimonio", 0), 0
             ),
+            "resultado_pyg_acumulado": format_currency(
+                balance.get("resultado_pyg_acumulado", 0), 0
+            ),
+            "ecuacion_diferencia_bruta": format_currency(
+                balance.get("ecuacion_diferencia_bruta", 0), 0
+            ),
             "ecuacion_diferencia": format_currency(
                 balance.get("ecuacion_diferencia", 0), 0
             ),
             "ecuacion_ok": balance.get("ecuacion_ok", False),
             "corte_fecha": balance.get("corte_fecha") or "",
-            "ecuacion_label": "Ecuación contable (Activo = Pasivo + Patrimonio)",
+            "ecuacion_label": (
+                "Ecuación contable (Activo = Pasivo + Patrimonio − resultado acum.)"
+            ),
             "ecuacion_help": metric_help.get("ecuacion_contable", ""),
+            "resultado_pyg_help": metric_help.get("resultado_pyg_acumulado", ""),
         },
+        "pyg_acumulado_clase": [
+            {
+                "clase_puc": row.get("clase_puc", ""),
+                "tipo_cuenta": row.get("tipo_cuenta", ""),
+                "total_debitos": format_currency(row.get("total_debitos", 0), 0),
+                "total_creditos": format_currency(row.get("total_creditos", 0), 0),
+                "saldo_acumulado": format_currency(row.get("saldo_acumulado", 0), 0),
+            }
+            for row in data.get("pyg_acumulado_clase", [])
+        ],
         "balance_clase": [
             {
                 "clase_puc": row.get("clase_puc", ""),

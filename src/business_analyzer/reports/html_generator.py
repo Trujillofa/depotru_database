@@ -366,6 +366,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     <div style="font-size:0.75rem; color:var(--text-muted);">Pasivo + Patrimonio</div>
                     <div style="font-size:1.05rem; font-weight:700;">{{ contabilidad.balance_summary.pasivo_mas_patrimonio }}</div>
                 </div>
+                <div class="kpi-card" style="background:#fff7ed; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.75rem; color:var(--text-muted);">Resultado PyG acum. (cl. 4–6)</div>
+                    <div style="font-size:1.05rem; font-weight:700;">{{ contabilidad.balance_summary.resultado_pyg_acumulado }}</div>
+                    <div style="font-size:0.7rem; color:var(--text-muted); margin-top:0.2rem;">{{ contabilidad.balance_summary.resultado_pyg_help }}</div>
+                </div>
             </div>
             {% if contabilidad.balance_clase %}
             <table>
