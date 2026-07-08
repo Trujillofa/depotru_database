@@ -22,12 +22,21 @@ def test_render_markdown_shows_cuadre():
             "Margen_Bruto_Contable": 300_000,
             "Margen_Contable_Pct": 37.5,
         },
+        "balance_summary": {
+            "Activo_Total": 2_000_000,
+            "Pasivo_Total": 800_000,
+            "Patrimonio_Total": 1_200_000,
+            "Ecuacion_OK": True,
+        },
         "conciliacion_ingresos": {"Conciliacion_Ingresos_Pct": 94.0},
         "gastos_centro": [],
         "top_gastos": [],
+        "balance_clase": [],
+        "metric_help": {},
     }
     md = render_markdown(report)
-    assert "Cuadre OK" in md
+    assert "Balance — clases 1–3" in md
+    assert "Cuadre (D = C)" in md
     assert "94,00%" in md
 
 

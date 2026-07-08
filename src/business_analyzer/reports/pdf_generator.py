@@ -417,29 +417,163 @@ class PDFReportGenerator:
         table.setStyle(self._table_style())
         story.extend([table, Spacer(1, 6 * mm)])
 
+    def _contabilidad_metric_table(
+        self, rows: List[List[Any]], col_widths: Optional[List[float]] = None
+    ) -> Table:
+        """Two-column metric table with wrapped labels and right-aligned values."""
+        body: List[List[Any]] = []
+        for label, value in rows:
+            body.append(
+                [
+                    Paragraph(str(label), self.styles["Normal"]),
+                    Paragraph(f"<b>{value}</b>", self.styles["Normal"]),
+                ]
+            )
+        table = Table(
+            body,
+            colWidths=col_widths or [10.5 * cm, 5.5 * cm],
+            hAlign="LEFT",
+        )
+        table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 0),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#f8fafc")],
+                    ),
+                ]
+            )
+        )
+        return table
+
     def _add_contabilidad_section(self, story: List[Any]) -> None:
-        """Add ERP accounting PyG summary when available."""
+        """Add ERP accounting balance + PyG summary when available."""
         cont = self.data.get("formatted", {}).get("contabilidad", {})
         if not cont.get("available"):
             return
 
+        period = cont.get("period", {})
+        balance = cont.get("balance_summary", {})
         pyg = cont.get("pyg_summary", {})
         conc = cont.get("conciliacion_ingresos", {})
+        help_text = cont.get("metric_help", {})
+
         story.append(
-            Paragraph("📒 Contabilidad ERP — PyG PUC", self.styles["SectionTitle"])
+            Paragraph(
+                "📒 Contabilidad ERP — Balance y PyG (PUC)",
+                self.styles["SectionTitle"],
+            )
         )
-        data = [
-            ["Métrica", "Valor"],
-            ["Ingresos (clase 4)", pyg.get("ingresos_creditos", "$0")],
-            ["Margen bruto contable", pyg.get("margen_bruto_contable", "$0")],
-            ["Margen contable %", pyg.get("margen_contable_pct", "0%")],
-            ["Conciliación ingresos", conc.get("conciliacion_pct", "0%")],
-            ["Ingresos contables 41", conc.get("ingresos_contables_41", "$0")],
-            ["Ventas BI con IVA", conc.get("ventas_bi_con_iva", "$0")],
+        story.append(
+            Paragraph(
+                f"Periodo {period.get('start', '')} a {period.get('end', '')}. "
+                "Balance (clases 1–3): saldos acumulados al cierre. "
+                "PyG (clases 4–6): movimientos del periodo. "
+                "Fuente: ConMovimiento + PUC (consolidado).",
+                self.styles["Normal"],
+            )
+        )
+        story.append(Spacer(1, 3 * mm))
+
+        story.append(
+            Paragraph(
+                "<b>Estado de situación financiera (clases 1–3)</b>",
+                self.styles["Normal"],
+            )
+        )
+        story.append(
+            Paragraph(help_text.get("balance_intro", ""), self.styles["Normal"])
+        )
+        story.append(
+            Paragraph(
+                balance.get("ecuacion_help", help_text.get("ecuacion_contable", "")),
+                self.styles["Normal"],
+            )
+        )
+        ecuacion_status = (
+            "OK"
+            if balance.get("ecuacion_ok")
+            else f"Revisar (dif. {balance.get('ecuacion_diferencia', '$0')})"
+        )
+        balance_rows = [
+            ("Activo total (clase 1)", balance.get("activo_total", "$0")),
+            ("Pasivo total (clase 2)", balance.get("pasivo_total", "$0")),
+            ("Patrimonio total (clase 3)", balance.get("patrimonio_total", "$0")),
+            ("Pasivo + Patrimonio", balance.get("pasivo_mas_patrimonio", "$0")),
+            (
+                f"Ecuación contable al {balance.get('corte_fecha', '')}",
+                ecuacion_status,
+            ),
         ]
-        table = Table(data, colWidths=[7 * cm, 9 * cm])
-        table.setStyle(self._table_style())
-        story.extend([table, Spacer(1, 6 * mm)])
+        story.append(self._contabilidad_metric_table(balance_rows))
+        story.append(Spacer(1, 4 * mm))
+
+        story.append(
+            Paragraph(
+                "<b>Estado de resultados — PyG (clases 4–6)</b>",
+                self.styles["Normal"],
+            )
+        )
+        story.append(Paragraph(help_text.get("pyg_intro", ""), self.styles["Normal"]))
+        pyg_rows = [
+            (
+                pyg.get("ingresos_label", "Ingresos (clase 4)"),
+                pyg.get("ingresos_creditos", "$0"),
+            ),
+            (
+                pyg.get("costos_label", "Costos (clase 6)"),
+                pyg.get("costos_debitos", "$0"),
+            ),
+            (
+                pyg.get("gastos_label", "Gastos (clase 5)"),
+                pyg.get("gastos_debitos", "$0"),
+            ),
+            (
+                pyg.get("margen_label", "Margen bruto contable"),
+                f"{pyg.get('margen_bruto_contable', '$0')} "
+                f"({pyg.get('margen_contable_pct', '0%')})",
+            ),
+        ]
+        story.append(self._contabilidad_metric_table(pyg_rows))
+        story.append(Paragraph(pyg.get("margen_help", ""), self.styles["Normal"]))
+        story.append(Spacer(1, 4 * mm))
+
+        story.append(
+            Paragraph(
+                f"<b>{conc.get('conciliacion_label', 'Conciliación ingresos')}</b>",
+                self.styles["Normal"],
+            )
+        )
+        story.append(
+            Paragraph(conc.get("conciliacion_help", ""), self.styles["Normal"])
+        )
+        conc_rows = [
+            (
+                conc.get("ingresos_41_label", "Ingresos grupo PUC 41"),
+                conc.get("ingresos_contables_41", "$0"),
+            ),
+            (
+                conc.get("ventas_bi_label", "Ventas BI con IVA"),
+                conc.get("ventas_bi_con_iva", "$0"),
+            ),
+            (
+                conc.get("diferencia_label", "Diferencia contable − BI"),
+                conc.get("diferencia_con_iva", "$0"),
+            ),
+            ("% conciliación", conc.get("conciliacion_pct", "0%")),
+        ]
+        story.append(self._contabilidad_metric_table(conc_rows))
+        story.append(Spacer(1, 6 * mm))
 
     def _add_inventory_table(self, story: List[Any]) -> None:
         """Add low stock inventory table."""

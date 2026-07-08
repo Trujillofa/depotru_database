@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from business_analyzer.core.j3system_contabilidad import (
+    balance_summary_from_clase_rows,
+    build_contabilidad_balance_clase_sql,
     build_contabilidad_conciliacion_ingresos_sql,
     build_contabilidad_gastos_centro_sql,
     build_contabilidad_pyg_clase_sql,
@@ -28,6 +30,27 @@ def test_summary_sql_uses_con_movimiento():
     assert "CONMOVIMIENTODETALLE" in sql
     assert "CUADRE_OK" in sql
     assert "ADMDOCUMENTOS" in sql
+
+
+def test_balance_clase_sql_filters_123_cumulative():
+    sql = build_contabilidad_balance_clase_sql("2024-12-31").upper()
+    assert "MOVIMIENTOS_ACUMULADOS" in sql
+    assert "SALDO_ACUMULADO" in sql
+    assert "ACTIVO" in sql
+    assert "2024-12-31" in sql
+
+
+def test_balance_summary_from_clase_rows():
+    rows = [
+        {"Clase_Puc": "1", "Saldo_Acumulado": 1_000_000},
+        {"Clase_Puc": "2", "Saldo_Acumulado": -400_000},
+        {"Clase_Puc": "3", "Saldo_Acumulado": -600_000},
+    ]
+    summary = balance_summary_from_clase_rows(rows)
+    assert summary["Activo_Total"] == 1_000_000
+    assert summary["Pasivo_Total"] == 400_000
+    assert summary["Patrimonio_Total"] == 600_000
+    assert summary["Ecuacion_OK"] is True
 
 
 def test_pyg_clase_sql_filters_456():

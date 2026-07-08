@@ -7,6 +7,7 @@ from business_analyzer.ai.formatting import (
     format_integer,
     format_percentage,
 )
+from business_analyzer.core.j3system_contabilidad import CONTABILIDAD_METRIC_HELP
 
 
 def format_for_display(
@@ -265,27 +266,60 @@ def _format_contabilidad(data: Dict[str, Any]) -> Dict[str, Any]:
             "note": data.get("note"),
             "period": data.get("period") or {},
             "summary": {},
+            "balance_summary": {},
+            "balance_clase": [],
             "pyg_summary": {},
             "conciliacion_ingresos": {},
             "pyg_clase": [],
             "gastos_centro": [],
             "top_gastos": [],
+            "metric_help": data.get("metric_help") or dict(CONTABILIDAD_METRIC_HELP),
         }
 
     summary = data.get("summary") or {}
+    balance = data.get("balance_summary") or {}
     pyg = data.get("pyg_summary") or {}
     conc = data.get("conciliacion_ingresos") or {}
+    metric_help = data.get("metric_help") or dict(CONTABILIDAD_METRIC_HELP)
     return {
         "available": True,
         "note": data.get("note"),
         "period": data.get("period") or {},
+        "metric_help": metric_help,
         "summary": {
             "movimientos": format_integer(summary.get("movimientos", 0)),
             "lineas": format_integer(summary.get("lineas", 0)),
             "total_debitos": format_currency(summary.get("total_debitos", 0), 0),
             "total_creditos": format_currency(summary.get("total_creditos", 0), 0),
             "cuadre_ok": summary.get("cuadre_ok", False),
+            "cuadre_label": "Cuadre contable (D = C)",
+            "cuadre_help": metric_help.get("cuadre", ""),
         },
+        "balance_summary": {
+            "activo_total": format_currency(balance.get("activo_total", 0), 0),
+            "pasivo_total": format_currency(balance.get("pasivo_total", 0), 0),
+            "patrimonio_total": format_currency(balance.get("patrimonio_total", 0), 0),
+            "pasivo_mas_patrimonio": format_currency(
+                balance.get("pasivo_mas_patrimonio", 0), 0
+            ),
+            "ecuacion_diferencia": format_currency(
+                balance.get("ecuacion_diferencia", 0), 0
+            ),
+            "ecuacion_ok": balance.get("ecuacion_ok", False),
+            "corte_fecha": balance.get("corte_fecha") or "",
+            "ecuacion_label": "Ecuación contable (Activo = Pasivo + Patrimonio)",
+            "ecuacion_help": metric_help.get("ecuacion_contable", ""),
+        },
+        "balance_clase": [
+            {
+                "clase_puc": row.get("clase_puc", ""),
+                "tipo_cuenta": row.get("tipo_cuenta", ""),
+                "total_debitos": format_currency(row.get("total_debitos", 0), 0),
+                "total_creditos": format_currency(row.get("total_creditos", 0), 0),
+                "saldo_acumulado": format_currency(row.get("saldo_acumulado", 0), 0),
+            }
+            for row in data.get("balance_clase", [])
+        ],
         "pyg_summary": {
             "ingresos_creditos": format_currency(pyg.get("ingresos_creditos", 0), 0),
             "costos_debitos": format_currency(pyg.get("costos_debitos", 0), 0),
@@ -296,6 +330,12 @@ def _format_contabilidad(data: Dict[str, Any]) -> Dict[str, Any]:
             "margen_contable_pct": format_percentage(
                 pyg.get("margen_contable_pct", 0), 1
             ),
+            "ingresos_label": "Ingresos operacionales (clase 4, créditos del periodo)",
+            "costos_label": "Costos de ventas (clase 6, débitos del periodo)",
+            "gastos_label": "Gastos operativos (clase 5, débitos del periodo)",
+            "margen_label": "Margen bruto contable (cl. 4 − cl. 6)",
+            "margen_help": metric_help.get("margen_bruto_contable", ""),
+            "margen_pct_help": metric_help.get("margen_contable_pct", ""),
         },
         "conciliacion_ingresos": {
             "ingresos_contables_41": format_currency(
@@ -305,6 +345,11 @@ def _format_contabilidad(data: Dict[str, Any]) -> Dict[str, Any]:
             "ventas_bi_sin_iva": format_currency(conc.get("ventas_bi_sin_iva", 0), 0),
             "diferencia_con_iva": format_currency(conc.get("diferencia_con_iva", 0), 0),
             "conciliacion_pct": format_percentage(conc.get("conciliacion_pct", 0), 1),
+            "conciliacion_label": "Conciliación ingresos contables vs BI",
+            "ingresos_41_label": "Ingresos grupo PUC 41 (libro mayor, créditos)",
+            "ventas_bi_label": "Ventas BI con IVA (banco_datos, mismo periodo)",
+            "diferencia_label": "Diferencia contable − BI (con IVA)",
+            "conciliacion_help": metric_help.get("conciliacion_ingresos", ""),
         },
         "pyg_clase": [
             {

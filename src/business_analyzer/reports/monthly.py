@@ -363,25 +363,35 @@ def _print_contabilidad(report: Dict[str, Any]) -> None:
     conc = cont.get("conciliacion_ingresos", {})
     period = cont.get("period", {})
 
-    print("\n  📒 CONTABILIDAD ERP — PyG PUC (Q17)")
+    balance = cont.get("balance_summary", {})
+    print("\n  📒 CONTABILIDAD ERP — Balance y PyG (Q17)")
     print("-" * 80)
     print(f"  Periodo: {period.get('start', '')} a {period.get('end', '')}")
+    print("  Balance (acumulado al cierre):")
+    print(f"    Activo (cl. 1):        {balance.get('activo_total', '$0')}")
+    print(f"    Pasivo (cl. 2):        {balance.get('pasivo_total', '$0')}")
+    print(f"    Patrimonio (cl. 3):    {balance.get('patrimonio_total', '$0')}")
     print(
-        f"  Movimientos: {summary.get('movimientos', '0')} | "
-        f"Líneas: {summary.get('lineas', '0')} | "
-        f"Cuadre: {'OK' if summary.get('cuadre_ok') else 'Revisar'}"
+        f"    Ecuación contable:     "
+        f"{'OK' if balance.get('ecuacion_ok') else 'Revisar'}"
     )
-    print(f"  Ingresos (clase 4):     {pyg.get('ingresos_creditos', '$0')}")
-    print(f"  Costos (clase 6):       {pyg.get('costos_debitos', '$0')}")
-    print(f"  Gastos (clase 5):       {pyg.get('gastos_debitos', '$0')}")
+    print("  PyG (movimientos del periodo):")
     print(
-        f"  Margen bruto contable:  {pyg.get('margen_bruto_contable', '$0')} "
-        f"({pyg.get('margen_contable_pct', '0%')})"
+        f"    Cuadre:                "
+        f"{'OK' if summary.get('cuadre_ok') else 'Revisar'} "
+        f"({summary.get('movimientos', '0')} mov.)"
     )
     print(
-        f"  Conciliación ingresos:  {conc.get('conciliacion_pct', '0%')} "
-        f"(contable {conc.get('ingresos_contables_41', '$0')} vs "
-        f"BI {conc.get('ventas_bi_con_iva', '$0')})"
+        f"    {pyg.get('ingresos_label', 'Ingresos')}: {pyg.get('ingresos_creditos', '$0')}"
+    )
+    print(
+        f"    {pyg.get('margen_label', 'Margen')}: {pyg.get('margen_bruto_contable', '$0')} ({pyg.get('margen_contable_pct', '0%')})"
+    )
+    print(
+        f"    {conc.get('conciliacion_label', 'Conciliación')}: "
+        f"{conc.get('conciliacion_pct', '0%')} "
+        f"({conc.get('ingresos_contables_41', '$0')} vs "
+        f"{conc.get('ventas_bi_con_iva', '$0')})"
     )
     gastos_centro = cont.get("gastos_centro", [])
     if gastos_centro:

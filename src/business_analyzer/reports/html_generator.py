@@ -334,32 +334,87 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <!-- Contabilidad ERP (Q17) -->
         {% if contabilidad.available %}
         <div class="section" style="border-left: 4px solid #7c3aed;">
-            <h2>📒 Contabilidad ERP — PyG PUC</h2>
+            <h2>📒 Contabilidad ERP — Balance y PyG (PUC)</h2>
             <p style="color:var(--text-muted); font-size:0.85rem;">
-                Periodo {{ contabilidad.period.start }} a {{ contabilidad.period.end }} —
-                fuente <code>ConMovimiento</code> + <code>ConMovimientoDetalle</code> + PUC (consolidado).
+                Ventas del periodo {{ contabilidad.period.start }} a {{ contabilidad.period.end }}.
+                Fuente consolidada: <code>ConMovimiento</code> + <code>ConMovimientoDetalle</code> + PUC.
+                Los saldos de balance (clases 1–3) son acumulados al cierre; PyG (clases 4–6) refleja solo el periodo.
             </p>
-            <div class="kpi-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:0.75rem; margin-bottom:1rem;">
-                <div class="kpi-card" style="background:#f5f3ff; border-radius:0.5rem; padding:0.75rem;">
-                    <div style="font-size:0.8rem; color:var(--text-muted);">Cuadre</div>
-                    <div style="font-size:1.1rem; font-weight:700;">{% if contabilidad.summary.cuadre_ok %}OK{% else %}Revisar{% endif %}</div>
-                </div>
+
+            <h3>Estado de situación financiera (clases 1–3)</h3>
+            <p style="color:var(--text-muted); font-size:0.82rem; margin-top:0;">
+                {{ contabilidad.metric_help.balance_intro }}
+                Corte: <strong>{{ contabilidad.balance_summary.corte_fecha }}</strong>.
+                {{ contabilidad.balance_summary.ecuacion_label }}:
+                {% if contabilidad.balance_summary.ecuacion_ok %}<span style="color:var(--accent);">OK</span>{% else %}<span style="color:var(--warning);">Dif. {{ contabilidad.balance_summary.ecuacion_diferencia }}</span>{% endif %}.
+                <span style="display:block; margin-top:0.25rem;">{{ contabilidad.balance_summary.ecuacion_help }}</span>
+            </p>
+            <div class="kpi-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:0.75rem; margin:0.75rem 0 1rem;">
                 <div class="kpi-card" style="background:#eff6ff; border-radius:0.5rem; padding:0.75rem;">
-                    <div style="font-size:0.8rem; color:var(--text-muted);">Ingresos (clase 4)</div>
-                    <div style="font-size:1.1rem; font-weight:700;">{{ contabilidad.pyg_summary.ingresos_creditos }}</div>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">Activo (clase 1)</div>
+                    <div style="font-size:1.05rem; font-weight:700;">{{ contabilidad.balance_summary.activo_total }}</div>
+                </div>
+                <div class="kpi-card" style="background:#fef2f2; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.75rem; color:var(--text-muted);">Pasivo (clase 2)</div>
+                    <div style="font-size:1.05rem; font-weight:700;">{{ contabilidad.balance_summary.pasivo_total }}</div>
+                </div>
+                <div class="kpi-card" style="background:#f0fdf4; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.75rem; color:var(--text-muted);">Patrimonio (clase 3)</div>
+                    <div style="font-size:1.05rem; font-weight:700;">{{ contabilidad.balance_summary.patrimonio_total }}</div>
+                </div>
+                <div class="kpi-card" style="background:#f5f3ff; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.75rem; color:var(--text-muted);">Pasivo + Patrimonio</div>
+                    <div style="font-size:1.05rem; font-weight:700;">{{ contabilidad.balance_summary.pasivo_mas_patrimonio }}</div>
+                </div>
+            </div>
+            {% if contabilidad.balance_clase %}
+            <table>
+                <thead>
+                    <tr><th>Clase</th><th>Tipo</th><th class="num">Débitos acum.</th><th class="num">Créditos acum.</th><th class="num">Saldo acumulado</th></tr>
+                </thead>
+                <tbody>
+                {% for row in contabilidad.balance_clase %}
+                    <tr>
+                        <td>{{ row.clase_puc }}</td>
+                        <td>{{ row.tipo_cuenta }}</td>
+                        <td class="num">{{ row.total_debitos }}</td>
+                        <td class="num">{{ row.total_creditos }}</td>
+                        <td class="num">{{ row.saldo_acumulado }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+
+            <h3 style="margin-top:1.25rem;">Estado de resultados — PyG (clases 4–6)</h3>
+            <p style="color:var(--text-muted); font-size:0.82rem; margin-top:0;">
+                {{ contabilidad.metric_help.pyg_intro }}
+                {{ contabilidad.summary.cuadre_label }}:
+                {% if contabilidad.summary.cuadre_ok %}OK{% else %}Revisar{% endif %}
+                ({{ contabilidad.summary.movimientos }} movimientos, {{ contabilidad.summary.lineas }} líneas).
+            </p>
+            <div class="kpi-grid" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:0.75rem; margin:0.75rem 0 1rem;">
+                <div class="kpi-card" style="background:#eff6ff; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.75rem; color:var(--text-muted);">{{ contabilidad.pyg_summary.ingresos_label }}</div>
+                    <div style="font-size:1.05rem; font-weight:700;">{{ contabilidad.pyg_summary.ingresos_creditos }}</div>
                 </div>
                 <div class="kpi-card" style="background:#fff7ed; border-radius:0.5rem; padding:0.75rem;">
-                    <div style="font-size:0.8rem; color:var(--text-muted);">Margen bruto contable</div>
-                    <div style="font-size:1.1rem; font-weight:700;">{{ contabilidad.pyg_summary.margen_bruto_contable }} ({{ contabilidad.pyg_summary.margen_contable_pct }})</div>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">{{ contabilidad.pyg_summary.costos_label }}</div>
+                    <div style="font-size:1.05rem; font-weight:700;">{{ contabilidad.pyg_summary.costos_debitos }}</div>
                 </div>
-                <div class="kpi-card" style="background:#ecfdf5; border-radius:0.5rem; padding:0.75rem;">
-                    <div style="font-size:0.8rem; color:var(--text-muted);">Conciliación ingresos</div>
-                    <div style="font-size:1.1rem; font-weight:700;">{{ contabilidad.conciliacion_ingresos.conciliacion_pct }}</div>
+                <div class="kpi-card" style="background:#fef2f2; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.75rem; color:var(--text-muted);">{{ contabilidad.pyg_summary.gastos_label }}</div>
+                    <div style="font-size:1.05rem; font-weight:700;">{{ contabilidad.pyg_summary.gastos_debitos }}</div>
+                </div>
+                <div class="kpi-card" style="background:#f5f3ff; border-radius:0.5rem; padding:0.75rem;">
+                    <div style="font-size:0.75rem; color:var(--text-muted);">{{ contabilidad.pyg_summary.margen_label }}</div>
+                    <div style="font-size:1.05rem; font-weight:700;">{{ contabilidad.pyg_summary.margen_bruto_contable }} ({{ contabilidad.pyg_summary.margen_contable_pct }})</div>
+                    <div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.25rem;">{{ contabilidad.pyg_summary.margen_help }}</div>
                 </div>
             </div>
             <table>
                 <thead>
-                    <tr><th>Clase PUC</th><th>Tipo</th><th class="num">Créditos</th><th class="num">Débitos</th><th class="num">Saldo neto</th></tr>
+                    <tr><th>Clase PUC</th><th>Tipo</th><th class="num">Créditos periodo</th><th class="num">Débitos periodo</th><th class="num">Saldo neto</th></tr>
                 </thead>
                 <tbody>
                 {% for row in contabilidad.pyg_clase %}
@@ -373,11 +428,31 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 {% endfor %}
                 </tbody>
             </table>
-            <p style="margin-top:0.75rem; color:var(--text-muted); font-size:0.85rem;">
-                Conciliación grupo 41: contable {{ contabilidad.conciliacion_ingresos.ingresos_contables_41 }}
-                vs BI con IVA {{ contabilidad.conciliacion_ingresos.ventas_bi_con_iva }}
-                (diferencia {{ contabilidad.conciliacion_ingresos.diferencia_con_iva }}).
+
+            <h3 style="margin-top:1.25rem;">{{ contabilidad.conciliacion_ingresos.conciliacion_label }}</h3>
+            <p style="color:var(--text-muted); font-size:0.82rem; margin-top:0;">
+                {{ contabilidad.conciliacion_ingresos.conciliacion_help }}
             </p>
+            <table style="margin-top:0.5rem; max-width:720px;">
+                <tbody>
+                    <tr>
+                        <td>{{ contabilidad.conciliacion_ingresos.ingresos_41_label }}</td>
+                        <td class="num"><strong>{{ contabilidad.conciliacion_ingresos.ingresos_contables_41 }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td>{{ contabilidad.conciliacion_ingresos.ventas_bi_label }}</td>
+                        <td class="num"><strong>{{ contabilidad.conciliacion_ingresos.ventas_bi_con_iva }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td>{{ contabilidad.conciliacion_ingresos.diferencia_label }}</td>
+                        <td class="num">{{ contabilidad.conciliacion_ingresos.diferencia_con_iva }}</td>
+                    </tr>
+                    <tr>
+                        <td>% conciliación</td>
+                        <td class="num"><strong>{{ contabilidad.conciliacion_ingresos.conciliacion_pct }}</strong></td>
+                    </tr>
+                </tbody>
+            </table>
             {% if contabilidad.gastos_centro %}
             <h3>Gastos por centro de costo (top)</h3>
             <table>
@@ -786,7 +861,10 @@ class HTMLReportGenerator:
                     "available": False,
                     "note": None,
                     "period": {},
+                    "metric_help": {},
                     "summary": {},
+                    "balance_summary": {},
+                    "balance_clase": [],
                     "pyg_summary": {},
                     "conciliacion_ingresos": {},
                     "pyg_clase": [],

@@ -42,6 +42,17 @@ def test_conciliacion_ingresos_near_bi(december_report):
 
 @pytest.mark.requires_db
 @pytest.mark.integration
+def test_balance_has_three_classes(december_report):
+    classes = {row["Clase_Puc"] for row in december_report["balance_clase"]}
+    assert classes == {"1", "2", "3"}
+    balance = december_report["balance_summary"]
+    assert float(balance["Activo_Total"]) > 0
+    assert float(balance["Pasivo_Total"]) > 0
+    assert float(balance["Patrimonio_Total"]) > 0
+
+
+@pytest.mark.requires_db
+@pytest.mark.integration
 def test_gastos_centro_has_sala_principal(december_report):
     centros = [
         r["SubCentroCostoNombre"].strip() for r in december_report["gastos_centro"]

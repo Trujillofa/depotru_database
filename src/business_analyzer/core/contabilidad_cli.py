@@ -52,47 +52,69 @@ def format_money(value: float) -> str:
 def render_markdown(report: dict) -> str:
     period = report["period"]
     summary = report.get("summary") or {}
+    balance_summary = report.get("balance_summary") or {}
     pyg_summary = report.get("pyg_summary") or {}
     conc = report.get("conciliacion_ingresos") or {}
+    help_text = report.get("metric_help") or {}
     lines = [
         "# Contabilidad — Libro Mayor J3System",
         "",
         f"- **Periodo:** {period['start']} a {period['end']}",
         "- **Fuente:** `ConMovimiento` + `ConMovimientoDetalle` + `AdmCuentasPuc`",
         "",
-        "## Resumen (cuadre)",
+        "## Balance — clases 1–3 (saldos acumulados al cierre)",
         "",
-        f"- **Movimientos:** {int(summary.get('Movimientos', 0)):,}".replace(",", "."),
-        f"- **Líneas:** {int(summary.get('Lineas', 0)):,}".replace(",", "."),
-        f"- **Débitos:** {format_money(float(summary.get('Total_Debitos', 0)))}",
-        f"- **Créditos:** {format_money(float(summary.get('Total_Creditos', 0)))}",
-        f"- **Cuadre OK:** {'Sí' if int(summary.get('Cuadre_OK', 0)) else 'No'}",
+        f"_{help_text.get('balance_intro', '')}_",
         "",
-        "## PyG por clase PUC",
-        "",
-        f"- **Ingresos (créditos clase 4):** "
-        f"{format_money(float(pyg_summary.get('Ingresos_Creditos', 0)))}",
-        f"- **Costos (débitos clase 6):** "
-        f"{format_money(float(pyg_summary.get('Costos_Debitos', 0)))}",
-        f"- **Gastos (débitos clase 5):** "
-        f"{format_money(float(pyg_summary.get('Gastos_Debitos', 0)))}",
-        f"- **Margen bruto contable:** "
-        f"{format_money(float(pyg_summary.get('Margen_Bruto_Contable', 0)))} "
-        f"({format_pct(float(pyg_summary.get('Margen_Contable_Pct', 0)))})",
-        "",
-        "## Conciliación ingresos contables vs BI",
-        "",
-        f"- **Ingresos contables (41):** "
-        f"{format_money(float(conc.get('Ingresos_Contables_41', 0)))}",
-        f"- **Ventas BI con IVA:** {format_money(float(conc.get('Ventas_BI_Con_Iva', 0)))}",
-        f"- **Ventas BI sin IVA:** {format_money(float(conc.get('Ventas_BI_Sin_Iva', 0)))}",
-        f"- **Conciliación:** {format_pct(float(conc.get('Conciliacion_Ingresos_Pct', 0)))}",
-        "",
-        "## Gastos por centro de costo (top)",
-        "",
-        "| Centro | Gastos | Costos | Total |",
-        "|---|---:|---:|---:|",
+        f"- **Activo (clase 1):** "
+        f"{format_money(float(balance_summary.get('Activo_Total', 0)))}",
+        f"- **Pasivo (clase 2):** "
+        f"{format_money(float(balance_summary.get('Pasivo_Total', 0)))}",
+        f"- **Patrimonio (clase 3):** "
+        f"{format_money(float(balance_summary.get('Patrimonio_Total', 0)))}",
+        f"- **Ecuación contable:** "
+        f"{'OK' if balance_summary.get('Ecuacion_OK') else 'Revisar'}",
     ]
+    for row in report.get("balance_clase", []):
+        lines.append(
+            f"  - Clase {row.get('Clase_Puc')} {row.get('Tipo_Cuenta')}: "
+            f"saldo {format_money(float(row.get('Saldo_Acumulado', 0)))}"
+        )
+    lines.extend(
+        [
+            "",
+            "## PyG — clases 4–6 (movimientos del periodo)",
+            "",
+            f"_{help_text.get('pyg_intro', '')}_",
+            "",
+            f"- **Cuadre (D = C):** {'Sí' if int(summary.get('Cuadre_OK', 0)) else 'No'}",
+            f"- **Ingresos operacionales (clase 4):** "
+            f"{format_money(float(pyg_summary.get('Ingresos_Creditos', 0)))}",
+            f"- **Costos de ventas (clase 6):** "
+            f"{format_money(float(pyg_summary.get('Costos_Debitos', 0)))}",
+            f"- **Gastos operativos (clase 5):** "
+            f"{format_money(float(pyg_summary.get('Gastos_Debitos', 0)))}",
+            f"- **Margen bruto contable:** "
+            f"{format_money(float(pyg_summary.get('Margen_Bruto_Contable', 0)))} "
+            f"({format_pct(float(pyg_summary.get('Margen_Contable_Pct', 0)))})",
+            "",
+            "## Conciliación ingresos contables vs BI",
+            "",
+            f"_{help_text.get('conciliacion_ingresos', '')}_",
+            "",
+            f"- **Ingresos grupo PUC 41:** "
+            f"{format_money(float(conc.get('Ingresos_Contables_41', 0)))}",
+            f"- **Ventas BI con IVA:** "
+            f"{format_money(float(conc.get('Ventas_BI_Con_Iva', 0)))}",
+            f"- **% conciliación:** "
+            f"{format_pct(float(conc.get('Conciliacion_Ingresos_Pct', 0)))}",
+            "",
+            "## Gastos por centro de costo (top)",
+            "",
+            "| Centro | Gastos | Costos | Total |",
+            "|---|---:|---:|---:|",
+        ]
+    )
     for row in report.get("gastos_centro", [])[:12]:
         lines.append(
             f"| {row.get('SubCentroCostoNombre', '').strip()} | "

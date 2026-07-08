@@ -496,6 +496,24 @@ class TestManagerSalesReport:
                 }
             ],
             "top_gastos": [],
+            "balance_clase": [
+                {
+                    "Clase_Puc": "1",
+                    "Tipo_Cuenta": "Activo",
+                    "Total_Debitos": 2_000_000.0,
+                    "Total_Creditos": 500_000.0,
+                    "Saldo_Acumulado": 1_500_000.0,
+                }
+            ],
+            "balance_summary": {
+                "Activo_Total": 1_500_000.0,
+                "Pasivo_Total": 500_000.0,
+                "Patrimonio_Total": 1_000_000.0,
+                "Pasivo_Mas_Patrimonio": 1_500_000.0,
+                "Ecuacion_Diferencia": 0.0,
+                "Ecuacion_OK": True,
+            },
+            "metric_help": {},
         }
 
     @patch("business_analyzer.analysis.manager_report.report.ContabilidadRunner")
@@ -518,6 +536,7 @@ class TestManagerSalesReport:
         assert cont["summary"]["cuadre_ok"] is True
         assert cont["pyg_summary"]["margen_contable_pct"] == 40.0
         assert cont["conciliacion_ingresos"]["conciliacion_pct"] == 93.75
+        assert cont["balance_summary"]["activo_total"] == 1_500_000.0
         assert result["formatted"]["contabilidad"]["pyg_summary"]["ingresos_creditos"]
         cont_runner.build_report.assert_called_once_with("2024-05-01", "2024-05-31")
 

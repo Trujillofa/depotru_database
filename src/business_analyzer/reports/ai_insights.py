@@ -206,9 +206,12 @@ class ReportAIInsights:
                 "conciliacion_pct", 0
             )
             margen_cont = (cont.get("pyg_summary") or {}).get("margen_contable_pct", 0)
+            balance = cont.get("balance_summary") or {}
+            activo = balance.get("activo_total", 0)
             insights.append(
-                f"📒 Contabilidad ERP: conciliación ingresos {format_percentage(conc_pct, 1)} "
-                f"(grupo 41 vs BI); margen bruto contable {format_percentage(margen_cont, 1)}."
+                f"📒 Contabilidad ERP: activo {format_currency(activo, 0)} al cierre; "
+                f"conciliación ingresos {format_percentage(conc_pct, 1)}; "
+                f"margen bruto contable {format_percentage(margen_cont, 1)}."
             )
 
         return insights

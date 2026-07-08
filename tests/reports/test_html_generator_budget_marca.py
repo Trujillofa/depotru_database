@@ -51,6 +51,30 @@ def test_html_includes_budget_and_marca_real_sections(tmp_path):
                 "available": True,
                 "note": None,
                 "period": {"start": "2024-05-01", "end": "2024-05-31"},
+                "metric_help": {
+                    "balance_intro": "Saldos acumulados al cierre.",
+                    "pyg_intro": "Movimientos del periodo.",
+                    "conciliacion_ingresos": "Compara PUC 41 vs BI.",
+                },
+                "balance_summary": {
+                    "activo_total": "$2.000.000",
+                    "pasivo_total": "$800.000",
+                    "patrimonio_total": "$1.200.000",
+                    "pasivo_mas_patrimonio": "$2.000.000",
+                    "ecuacion_diferencia": "$0",
+                    "ecuacion_ok": True,
+                    "corte_fecha": "2024-05-31",
+                    "ecuacion_label": "Ecuación contable",
+                },
+                "balance_clase": [
+                    {
+                        "clase_puc": "1",
+                        "tipo_cuenta": "Activo",
+                        "total_debitos": "$2.500.000",
+                        "total_creditos": "$500.000",
+                        "saldo_acumulado": "$2.000.000",
+                    }
+                ],
                 "summary": {
                     "movimientos": "100",
                     "lineas": "500",
@@ -64,6 +88,11 @@ def test_html_includes_budget_and_marca_real_sections(tmp_path):
                     "gastos_debitos": "$50.000",
                     "margen_bruto_contable": "$200.000",
                     "margen_contable_pct": "40,0%",
+                    "ingresos_label": "Ingresos operacionales (clase 4)",
+                    "costos_label": "Costos de ventas (clase 6)",
+                    "gastos_label": "Gastos operativos (clase 5)",
+                    "margen_label": "Margen bruto contable",
+                    "margen_help": "Ingresos menos costos.",
                 },
                 "conciliacion_ingresos": {
                     "ingresos_contables_41": "$480.000",
@@ -71,6 +100,11 @@ def test_html_includes_budget_and_marca_real_sections(tmp_path):
                     "ventas_bi_sin_iva": "$380.000",
                     "diferencia_con_iva": "$30.000",
                     "conciliacion_pct": "93,8%",
+                    "conciliacion_label": "Conciliación ingresos",
+                    "ingresos_41_label": "Ingresos grupo PUC 41",
+                    "ventas_bi_label": "Ventas BI con IVA",
+                    "diferencia_label": "Diferencia",
+                    "conciliacion_help": "Compara libro mayor vs BI.",
                 },
                 "pyg_clase": [
                     {
@@ -101,7 +135,9 @@ def test_html_includes_budget_and_marca_real_sections(tmp_path):
     html = out.read_text(encoding="utf-8")
     assert "Presupuesto vs Real" in html
     assert "Ventas por Marca Real" in html
-    assert "Contabilidad ERP" in html
+    assert "Balance y PyG" in html
+    assert "Estado de situación financiera" in html
+    assert "Activo (clase 1)" in html
     assert "SALA PRINCIPAL" in html
     assert "SIKA" in html
     assert "Vendedor A" in html

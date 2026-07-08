@@ -656,11 +656,14 @@ def contabilidad_from_runner_report(raw: Dict[str, Any]) -> Dict[str, Any]:
         "note": raw.get("note"),
         "period": raw.get("period") or {},
         "summary": {},
+        "balance_summary": {},
+        "balance_clase": [],
         "pyg_summary": {},
         "conciliacion_ingresos": {},
         "pyg_clase": [],
         "gastos_centro": [],
         "top_gastos": [],
+        "metric_help": raw.get("metric_help") or {},
     }
     summary = raw.get("summary") or {}
     movimientos = int(to_float(summary.get("Movimientos")) or 0)
@@ -709,6 +712,22 @@ def contabilidad_from_runner_report(raw: Dict[str, Any]) -> Dict[str, Any]:
             }
         )
 
+    balance_clase: List[Dict[str, Any]] = []
+    for row in raw.get("balance_clase") or []:
+        balance_clase.append(
+            {
+                "clase_puc": row.get("Clase_Puc") or "",
+                "tipo_cuenta": row.get("Tipo_Cuenta") or "",
+                "total_debitos": round(to_float(row.get("Total_Debitos")) or 0.0, 2),
+                "total_creditos": round(to_float(row.get("Total_Creditos")) or 0.0, 2),
+                "saldo_acumulado": round(
+                    to_float(row.get("Saldo_Acumulado")) or 0.0, 2
+                ),
+            }
+        )
+
+    balance_raw = raw.get("balance_summary") or {}
+
     return {
         "available": True,
         "note": None,
@@ -754,7 +773,24 @@ def contabilidad_from_runner_report(raw: Dict[str, Any]) -> Dict[str, Any]:
                 to_float(conc.get("Conciliacion_Ingresos_Pct")) or 0.0, 2
             ),
         },
+        "balance_summary": {
+            "activo_total": round(to_float(balance_raw.get("Activo_Total")) or 0.0, 2),
+            "pasivo_total": round(to_float(balance_raw.get("Pasivo_Total")) or 0.0, 2),
+            "patrimonio_total": round(
+                to_float(balance_raw.get("Patrimonio_Total")) or 0.0, 2
+            ),
+            "pasivo_mas_patrimonio": round(
+                to_float(balance_raw.get("Pasivo_Mas_Patrimonio")) or 0.0, 2
+            ),
+            "ecuacion_diferencia": round(
+                to_float(balance_raw.get("Ecuacion_Diferencia")) or 0.0, 2
+            ),
+            "ecuacion_ok": bool(balance_raw.get("Ecuacion_OK")),
+            "corte_fecha": (raw.get("period") or {}).get("end"),
+        },
+        "balance_clase": balance_clase,
         "pyg_clase": pyg_clase,
         "gastos_centro": gastos_centro,
         "top_gastos": top_gastos,
+        "metric_help": raw.get("metric_help") or {},
     }

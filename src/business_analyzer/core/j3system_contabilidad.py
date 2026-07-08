@@ -21,7 +21,43 @@ DEFAULT_TOP_N_GASTOS = 15
 DEFAULT_TOP_N_CENTROS = 20
 
 EXCLUDED_DOC_CODES: tuple[str, ...] = ("XY", "AS", "TS", "YX", "ISC")
+BALANCE_CLASSES: tuple[str, ...] = ("1", "2", "3")
 PYG_CLASSES: tuple[str, ...] = ("4", "5", "6")
+
+PUC_CLASE_LABELS: Dict[str, str] = {
+    "1": "Activo",
+    "2": "Pasivo",
+    "3": "Patrimonio",
+    "4": "Ingresos",
+    "5": "Gastos",
+    "6": "Costos",
+}
+
+CONTABILIDAD_METRIC_HELP: Dict[str, str] = {
+    "balance_intro": (
+        "Saldos acumulados al cierre del periodo (movimientos históricos hasta la "
+        "fecha fin). Clases 1=Activo, 2=Pasivo, 3=Patrimonio."
+    ),
+    "pyg_intro": (
+        "Movimientos del periodo en cuentas de resultado. Clase 4=Ingresos, "
+        "5=Gastos operativos, 6=Costos de ventas."
+    ),
+    "margen_bruto_contable": (
+        "Ingresos operacionales (créditos clase 4) menos costos de ventas "
+        "(débitos clase 6), según libro mayor."
+    ),
+    "margen_contable_pct": "Margen bruto contable ÷ ingresos clase 4 × 100.",
+    "conciliacion_ingresos": (
+        "Compara créditos del grupo PUC 41 (ingresos operacionales) contra "
+        "facturación BI con IVA en banco_datos del mismo periodo."
+    ),
+    "cuadre": "Suma de débitos = suma de créditos en movimientos del periodo.",
+    "ecuacion_contable": (
+        "Compara Activo (clase 1) contra Pasivo + Patrimonio (clases 2 y 3) "
+        "con saldos acumulados al cierre. Una diferencia puede indicar cuentas "
+        "de resultado (4–6) con saldo histórico sin cierre a patrimonio."
+    ),
+}
 
 
 def _excluded_docs_sql() -> str:
@@ -80,6 +116,68 @@ movimientos_filtrados AS (
 )""".strip()
 
 
+def _movimientos_acumulados_hasta_cte(
+    *,
+    end_date: str,
+    j3_database: Optional[str] = None,
+) -> str:
+    """Cumulative movements through ``end_date`` (balance sheet position)."""
+    movimiento = qualified_j3_table("ConMovimiento", j3_database)
+    detalle = qualified_j3_table("ConMovimientoDetalle", j3_database)
+    adm_docs = qualified_j3_table("AdmDocumentos", j3_database)
+    cuentas = qualified_j3_table("AdmCuentasPuc", j3_database)
+    end = _validate_period_date(end_date, "end_date")
+    excluded = _excluded_docs_sql()
+    signed = puc_signed_balance_sql()
+    return f"""
+movimientos_acumulados AS (
+    SELECT
+        p.CuentasPucCodigo,
+        p.CuentasPucNombre,
+        p.CuentasPucNaturaleza,
+        det.MovimientoDetalleTipo,
+        det.MovimientoDetalleValor,
+        {signed} AS Saldo_Firmado
+    FROM {movimiento} m
+    JOIN {detalle} det ON det.MovimientoID = m.MovimientoID
+    JOIN {adm_docs} dc ON dc.DocumentosID = m.DocumentosID
+    JOIN {cuentas} p ON p.CuentasPucID = det.CuentasPucID
+    WHERE m.MovimientoFecha <= '{end}'
+      AND dc.DocumentosCodigo NOT IN ({excluded})
+)""".strip()
+
+
+def build_contabilidad_balance_clase_sql(
+    end_date: str,
+    *,
+    j3_database: Optional[str] = None,
+) -> str:
+    """Balance sheet snapshot by PUC class (1=Activo, 2=Pasivo, 3=Patrimonio)."""
+    cte = _movimientos_acumulados_hasta_cte(end_date=end_date, j3_database=j3_database)
+    classes = ", ".join(f"'{c}'" for c in BALANCE_CLASSES)
+    case_lines = "\n        ".join(
+        f"WHEN '{code}' THEN '{PUC_CLASE_LABELS[code]}'" for code in BALANCE_CLASSES
+    )
+    return f"""
+WITH {cte}
+SELECT
+    LEFT(CuentasPucCodigo, 1) AS Clase_Puc,
+    CASE LEFT(CuentasPucCodigo, 1)
+        {case_lines}
+        ELSE 'Otro'
+    END AS Tipo_Cuenta,
+    SUM(CASE WHEN MovimientoDetalleTipo = 'D' THEN MovimientoDetalleValor ELSE 0 END)
+        AS Total_Debitos,
+    SUM(CASE WHEN MovimientoDetalleTipo = 'C' THEN MovimientoDetalleValor ELSE 0 END)
+        AS Total_Creditos,
+    SUM(Saldo_Firmado) AS Saldo_Acumulado
+FROM movimientos_acumulados
+WHERE LEFT(CuentasPucCodigo, 1) IN ({classes})
+GROUP BY LEFT(CuentasPucCodigo, 1)
+ORDER BY Clase_Puc;
+""".strip()
+
+
 def build_contabilidad_summary_sql(
     start_date: str,
     end_date: str,
@@ -129,9 +227,9 @@ WITH {cte}
 SELECT
     LEFT(CuentasPucCodigo, 1) AS Clase_Puc,
     CASE LEFT(CuentasPucCodigo, 1)
-        WHEN '4' THEN 'Ingresos'
-        WHEN '5' THEN 'Gastos'
-        WHEN '6' THEN 'Costos'
+        WHEN '4' THEN '{PUC_CLASE_LABELS["4"]}'
+        WHEN '5' THEN '{PUC_CLASE_LABELS["5"]}'
+        WHEN '6' THEN '{PUC_CLASE_LABELS["6"]}'
         ELSE 'Otro'
     END AS Tipo_Cuenta,
     SUM(CASE WHEN MovimientoDetalleTipo = 'C' THEN MovimientoDetalleValor ELSE 0 END)
@@ -278,6 +376,33 @@ def _as_float(value: Any) -> float:
     return float(value)
 
 
+def balance_summary_from_clase_rows(
+    rows: Sequence[Mapping[str, Any]],
+) -> Dict[str, Any]:
+    """Aggregate balance sheet metrics from class-level cumulative rows."""
+    by_class = {str(r.get("Clase_Puc", "")): r for r in rows}
+    activo_signed = _as_float(by_class.get("1", {}).get("Saldo_Acumulado"))
+    pasivo_signed = _as_float(by_class.get("2", {}).get("Saldo_Acumulado"))
+    patrimonio_signed = _as_float(by_class.get("3", {}).get("Saldo_Acumulado"))
+    activo = abs(activo_signed)
+    pasivo = abs(pasivo_signed)
+    patrimonio = abs(patrimonio_signed)
+    pasivo_mas_patrimonio = pasivo + patrimonio
+    diferencia = activo - pasivo_mas_patrimonio
+    tolerancia = max(activo * 0.001, 1.0)
+    return {
+        "Activo_Total": activo,
+        "Pasivo_Total": pasivo,
+        "Patrimonio_Total": patrimonio,
+        "Pasivo_Mas_Patrimonio": pasivo_mas_patrimonio,
+        "Ecuacion_Diferencia": diferencia,
+        "Ecuacion_OK": abs(diferencia) <= tolerancia,
+        "Activo_Signed": activo_signed,
+        "Pasivo_Signed": pasivo_signed,
+        "Patrimonio_Signed": patrimonio_signed,
+    }
+
+
 def pyg_summary_from_clase_rows(
     rows: Sequence[Mapping[str, Any]],
 ) -> Dict[str, Any]:
@@ -349,6 +474,11 @@ class ContabilidadRunner:
         rows = self._execute_j3_query(sql)
         return dict(rows[0]) if rows else {}
 
+    def fetch_balance_clase(self, end_date: str) -> List[Dict[str, Any]]:
+        end = _validate_period_date(end_date, "end_date")
+        sql = build_contabilidad_balance_clase_sql(end, j3_database=self.j3_database)
+        return self._execute_j3_query(sql)
+
     def fetch_pyg_clase(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
         validate_contabilidad_sql_period(start_date, end_date)
         sql = build_contabilidad_pyg_clase_sql(
@@ -393,17 +523,22 @@ class ContabilidadRunner:
 
     def build_report(self, start_date: str, end_date: str) -> Dict[str, Any]:
         summary = self.fetch_summary(start_date, end_date)
+        balance_clase = self.fetch_balance_clase(end_date)
         pyg_clase = self.fetch_pyg_clase(start_date, end_date)
         gastos_centro = self.fetch_gastos_centro(start_date, end_date)
         top_gastos = self.fetch_top_gastos(start_date, end_date)
         conciliacion = self.fetch_conciliacion_ingresos(start_date, end_date)
+        balance_summary = balance_summary_from_clase_rows(balance_clase)
         pyg_summary = pyg_summary_from_clase_rows(pyg_clase)
         return {
             "period": {"start": start_date, "end": end_date},
             "summary": summary,
+            "balance_clase": balance_clase,
+            "balance_summary": balance_summary,
             "pyg_clase": pyg_clase,
             "pyg_summary": pyg_summary,
             "gastos_centro": gastos_centro,
             "top_gastos": top_gastos,
             "conciliacion_ingresos": conciliacion,
+            "metric_help": dict(CONTABILIDAD_METRIC_HELP),
         }
