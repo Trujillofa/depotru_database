@@ -59,7 +59,7 @@ def test_accounting_equation_adjusted_for_open_pyg(december_report):
     pyg_acum = december_report.get("pyg_acumulado_clase") or []
     assert len(pyg_acum) == 3
     assert abs(float(balance["Ecuacion_Diferencia_Bruta"]) - 1_558_791_907) < 1_000_000
-    assert abs(float(balance["Resultado_PyG_Acumulado"]) + 1_558_296_988) < 1_000_000
+    assert abs(float(balance["Resultado_PyG_Acumulado"]) - 1_558_791_907) < 1_000_000
     assert abs(float(balance["Ecuacion_Diferencia"])) < 500_000
     assert balance["Ecuacion_OK"] is True
 

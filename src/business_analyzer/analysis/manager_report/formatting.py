@@ -315,7 +315,7 @@ def _format_contabilidad(data: Dict[str, Any]) -> Dict[str, Any]:
             "ecuacion_ok": balance.get("ecuacion_ok", False),
             "corte_fecha": balance.get("corte_fecha") or "",
             "ecuacion_label": (
-                "Ecuación contable (Activo = Pasivo + Patrimonio − resultado acum.)"
+                "Ecuación contable (Activo = Pasivo + Patrimonio + resultado acum.)"
             ),
             "ecuacion_help": metric_help.get("ecuacion_contable", ""),
             "resultado_pyg_help": metric_help.get("resultado_pyg_acumulado", ""),

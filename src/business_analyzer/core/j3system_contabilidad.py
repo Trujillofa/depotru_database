@@ -53,13 +53,13 @@ CONTABILIDAD_METRIC_HELP: Dict[str, str] = {
     ),
     "cuadre": "Suma de débitos = suma de créditos en movimientos del periodo.",
     "ecuacion_contable": (
-        "Activo = Pasivo + Patrimonio − resultado acumulado (clases 4–6 sin cierre "
-        "a patrimonio). El resultado acumulado es la suma de saldos históricos de "
-        "ingresos, gastos y costos aún abiertos en el mayor."
+        "Activo = Pasivo + Patrimonio + resultado acumulado (clases 4–6 sin cierre "
+        "a patrimonio). El resultado es ingresos (cl. 4) menos gastos (cl. 5) y "
+        "costos (cl. 6) según saldos históricos abiertos en el mayor."
     ),
     "resultado_pyg_acumulado": (
-        "Saldos históricos netos de las cuentas de resultado (4–6) sin traslado "
-        "de cierre a patrimonio. Negativo = pérdida acumulada abierta."
+        "Utilidad/pérdida acumulada abierta: saldo clase 4 − clase 5 − clase 6 "
+        "sin traslado de cierre a patrimonio. Positivo = utilidad abierta."
     ),
 }
 
@@ -425,11 +425,18 @@ def balance_summary_from_clase_rows(
     patrimonio = abs(patrimonio_signed)
     pasivo_mas_patrimonio = pasivo + patrimonio
     diferencia_bruta = activo - pasivo_mas_patrimonio
-    resultado_pyg_signed = sum(
-        _as_float(r.get("Saldo_Acumulado")) for r in (pyg_acumulado_rows or [])
+    pyg_by_class = {
+        str(r.get("Clase_Puc", "")): _as_float(r.get("Saldo_Acumulado"))
+        for r in (pyg_acumulado_rows or [])
+    }
+    # Economic open result: ingresos − gastos − costos (PUC classes 4–6).
+    resultado_pyg_signed = (
+        pyg_by_class.get("4", 0.0)
+        - pyg_by_class.get("5", 0.0)
+        - pyg_by_class.get("6", 0.0)
     )
-    # Open PyG balances (cl. 4–6) explain the bruta gap: A − P − E + PyG ≈ 0.
-    diferencia_ajustada = diferencia_bruta + resultado_pyg_signed
+    # Open PyG explains bruta gap: A − P − E ≈ utilidad acumulada abierta.
+    diferencia_ajustada = diferencia_bruta - resultado_pyg_signed
     tolerancia = max(activo * 0.0001, 500_000.0)
     return {
         "Activo_Total": activo,

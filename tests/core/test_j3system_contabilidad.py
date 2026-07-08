@@ -68,9 +68,27 @@ def test_balance_summary_adjusts_for_open_pyg():
     ]
     summary = balance_summary_from_clase_rows(balance_rows, pyg_rows)
     assert abs(summary["Ecuacion_Diferencia_Bruta"] - 1_558_791_907) < 1
-    assert abs(summary["Resultado_PyG_Acumulado"] - (-1_557_753_000)) < 1_000_000
+    assert abs(summary["Resultado_PyG_Acumulado"] - 1_558_791_907) < 1_000_000
     tolerancia = max(summary["Activo_Total"] * 0.0001, 500_000.0)
     assert abs(summary["Ecuacion_Diferencia"]) < tolerancia
+    assert summary["Ecuacion_OK"] is True
+
+
+def test_balance_summary_adjusts_when_expense_classes_debit_positive():
+    """May-style cutoffs: gastos/costos carry debit-positive signed balances."""
+    balance_rows = [
+        {"Clase_Puc": "1", "Saldo_Acumulado": 18_266_024_309},
+        {"Clase_Puc": "2", "Saldo_Acumulado": 5_968_424_587},
+        {"Clase_Puc": "3", "Saldo_Acumulado": 11_658_589_278},
+    ]
+    pyg_rows = [
+        {"Clase_Puc": "4", "Saldo_Acumulado": 27_197_876_019},
+        {"Clase_Puc": "5", "Saldo_Acumulado": 3_147_568_098},
+        {"Clase_Puc": "6", "Saldo_Acumulado": 23_411_297_476},
+    ]
+    summary = balance_summary_from_clase_rows(balance_rows, pyg_rows)
+    assert abs(summary["Ecuacion_Diferencia_Bruta"] - 639_010_444) < 1
+    assert abs(summary["Resultado_PyG_Acumulado"] - 639_010_445) < 1
     assert summary["Ecuacion_OK"] is True
 
 
