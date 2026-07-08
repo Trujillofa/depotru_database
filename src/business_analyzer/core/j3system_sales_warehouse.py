@@ -9,7 +9,7 @@ import os
 import re
 from typing import Optional, Tuple
 
-from business_analyzer.core.database import Database
+from business_analyzer.core.database import Database, env_database_name
 
 WAREHOUSE_CODES: Tuple[str, ...] = (
     "ALM",
@@ -66,7 +66,7 @@ WAREHOUSE_CODE_TO_NAME = {
 
 def qualified_j3_table(table: str, j3_database: Optional[str] = None) -> str:
     """Return a validated ``J3System.dbo.<table>`` reference."""
-    db_name = j3_database or os.getenv("DB_NAME_J3SYSTEM", "J3System")
+    db_name = j3_database or env_database_name("DB_NAME_J3SYSTEM", "J3System")
     validated_db = Database.validate_sql_identifier(db_name, "j3 database")
     validated_table = Database.validate_sql_identifier(table, "table")
     return f"{validated_db}.dbo.{validated_table}"

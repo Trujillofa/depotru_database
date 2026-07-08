@@ -416,17 +416,20 @@ class Database:
 
     @staticmethod
     def validate_sql_identifier(identifier: str, param_name: str) -> str:
-        if not identifier:
+        if identifier is None:
             raise ValueError(f"{param_name} cannot be empty")
-        if not re.match(r"^[a-zA-Z0-9_-]+$", identifier):
+        normalized = str(identifier).strip()
+        if not normalized:
+            raise ValueError(f"{param_name} cannot be empty")
+        if not re.match(r"^[a-zA-Z0-9_-]+$", normalized):
             raise ValueError(
-                f"Invalid {param_name}: '{identifier}'. Only alphanumeric, _, - allowed."
+                f"Invalid {param_name}: '{normalized}'. Only alphanumeric, _, - allowed."
             )
-        if len(identifier) > 128:
+        if len(normalized) > 128:
             raise ValueError(
-                f"{param_name} too long ({len(identifier)} chars). Max 128."
+                f"{param_name} too long ({len(normalized)} chars). Max 128."
             )
-        return identifier
+        return normalized
 
     def execute_query(
         self, query: str, params: Optional[tuple] = None, fetch: bool = True
@@ -554,6 +557,23 @@ def load_connections(file_path: str) -> List[Dict[str, Any]]:
 
 def decrypt_navicat_password(encrypted: str) -> str:
     return Database._decrypt_navicat_password(encrypted)
+
+
+def env_database_name(env_var: str, default: str) -> str:
+    """Read a database name from env, stripping whitespace; fall back if unset/blank."""
+    raw = os.getenv(env_var)
+    if raw is None:
+        return default
+    cleaned = raw.strip()
+    return cleaned if cleaned else default
+
+
+def qualified_sb_table(table: str, sb_database: Optional[str] = None) -> str:
+    """Return a validated ``SmartBusiness.dbo.<table>`` reference."""
+    db_name = sb_database or env_database_name("DB_NAME", "SmartBusiness")
+    validated_db = Database.validate_sql_identifier(db_name, "smartbusiness database")
+    validated_table = Database.validate_sql_identifier(table, "table")
+    return f"{validated_db}.dbo.{validated_table}"
 
 
 def validate_sql_identifier(identifier: str, param_name: str) -> str:

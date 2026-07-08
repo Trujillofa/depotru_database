@@ -39,6 +39,15 @@ except ImportError:
     )
 
 
+def _env_str(key: str, default: str) -> str:
+    """Read env var with strip(); use default when unset or blank after strip."""
+    value = os.getenv(key)
+    if value is None:
+        return default
+    cleaned = value.strip()
+    return cleaned if cleaned else default
+
+
 class Config:
     """Application configuration"""
 
@@ -50,13 +59,13 @@ class Config:
     )
 
     # Direct database connection (if not using NCX file)
-    DB_HOST = os.getenv("DB_HOST", None)
-    DB_PORT = int(os.getenv("DB_PORT", "1433"))
-    DB_USER = os.getenv("DB_USER", None)
-    DB_PASSWORD = os.getenv("DB_PASSWORD", None)
-    DB_NAME = os.getenv("DB_NAME", "SmartBusiness")
-    DB_NAME_J3SYSTEM = os.getenv("DB_NAME_J3SYSTEM", "J3System")
-    DB_TABLE = os.getenv("DB_TABLE", "banco_datos")
+    DB_HOST = _env_str("DB_HOST", "") or None
+    DB_PORT = int(_env_str("DB_PORT", "1433"))
+    DB_USER = _env_str("DB_USER", "") or None
+    DB_PASSWORD = _env_str("DB_PASSWORD", "") or None
+    DB_NAME = _env_str("DB_NAME", "SmartBusiness")
+    DB_NAME_J3SYSTEM = _env_str("DB_NAME_J3SYSTEM", "J3System")
+    DB_TABLE = _env_str("DB_TABLE", "banco_datos")
 
     # Database connection settings
     DB_LOGIN_TIMEOUT = int(os.getenv("DB_LOGIN_TIMEOUT", "30"))

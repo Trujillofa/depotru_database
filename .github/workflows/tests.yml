@@ -87,10 +87,11 @@ jobs:
           pytest tests/ -v --tb=short --cov=src --cov-report=term --cov-report=xml \
             -m "not requires_db and not requires_api"
         env:
-          # Use credentials from GitHub secrets
+          # CI-safe tests only build SQL strings; use stable database identifiers.
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
           DB_SERVER: ${{ secrets.DB_SERVER }}
-          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_NAME: SmartBusiness
+          DB_NAME_J3SYSTEM: J3System
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
 

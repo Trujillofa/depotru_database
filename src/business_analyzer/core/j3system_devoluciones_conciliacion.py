@@ -10,10 +10,9 @@ from ``banco_datos`` (same pattern as cross-db inventory).
 
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, List, Mapping, Optional, Sequence, cast
 
-from business_analyzer.core.database import Database
+from business_analyzer.core.database import Database, qualified_sb_table
 from business_analyzer.core.j3system_sales_warehouse import (
     _validate_period_date,
     qualified_j3_table,
@@ -23,14 +22,6 @@ DEFAULT_TOP_N_GAPS = 15
 
 EXCLUDED_DOC_CODES: tuple[str, ...] = ("XY", "AS", "TS", "YX", "ISC")
 RETURN_DOC_CODES: tuple[str, ...] = ("DVE", "DVD", "DDD", "DDT")
-
-
-def qualified_sb_table(table: str, sb_database: Optional[str] = None) -> str:
-    """Return a validated ``SmartBusiness.dbo.<table>`` reference."""
-    db_name = sb_database or os.getenv("DB_NAME", "SmartBusiness")
-    validated_db = Database.validate_sql_identifier(db_name, "smartbusiness database")
-    validated_table = Database.validate_sql_identifier(table, "table")
-    return f"{validated_db}.dbo.{validated_table}"
 
 
 def _excluded_docs_sql() -> str:

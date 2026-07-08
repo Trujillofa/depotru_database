@@ -63,9 +63,11 @@ from business_analyzer.core.database import (
     DatabaseError,
     QueryError,
     decrypt_navicat_password,
+    env_database_name,
     get_db_connection,
     is_transient_db_error,
     load_connections,
+    qualified_sb_table,
     validate_sql_identifier,
 )
 
@@ -406,6 +408,25 @@ class TestNavicatNCX:
 
 class TestSQLInjectionPrevention:
     """Test SQL injection prevention via validate_sql_identifier"""
+
+    def test_validate_sql_identifier_strips_whitespace(self):
+        """Trailing/leading whitespace from env vars should not fail validation."""
+        assert (
+            Database.validate_sql_identifier("  SmartBusiness  ", "database")
+            == "SmartBusiness"
+        )
+
+    def test_env_database_name_strips_and_falls_back(self, monkeypatch):
+        monkeypatch.setenv("DB_NAME", "  SmartBusiness \n")
+        assert env_database_name("DB_NAME", "Fallback") == "SmartBusiness"
+        monkeypatch.setenv("DB_NAME", "   ")
+        assert env_database_name("DB_NAME", "Fallback") == "Fallback"
+        monkeypatch.delenv("DB_NAME", raising=False)
+        assert env_database_name("DB_NAME", "Fallback") == "Fallback"
+
+    def test_qualified_sb_table_tolerates_padded_db_name_env(self, monkeypatch):
+        monkeypatch.setenv("DB_NAME", "SmartBusiness\n")
+        assert qualified_sb_table("banco_datos") == "SmartBusiness.dbo.banco_datos"
 
     def test_validate_sql_identifier_valid(self):
         """Test valid SQL identifiers pass validation"""
