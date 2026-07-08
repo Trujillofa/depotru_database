@@ -3,27 +3,38 @@
 - **Periodo:** 2024-12-01 a 2024-12-31
 - **Fuente:** `ConMovimiento` + `ConMovimientoDetalle` + `AdmCuentasPuc`
 
-## Resumen (cuadre)
+## Balance — clases 1–3 (saldos acumulados al cierre)
 
-- **Movimientos:** 14.349
-- **Líneas:** 127.715
-- **Débitos:** $325.761.892.616
-- **Créditos:** $325.761.892.616
-- **Cuadre OK:** Sí
+_Saldos acumulados al cierre del periodo (movimientos históricos hasta la fecha fin). Clases 1=Activo, 2=Pasivo, 3=Patrimonio._
 
-## PyG por clase PUC
+- **Activo (clase 1):** $22.618.603.367
+- **Pasivo (clase 2):** $8.720.061.703
+- **Patrimonio (clase 3):** $12.339.749.757
+- **Resultado PyG acumulado (cl. 4–6):** $1.558.791.908
+  _Utilidad/pérdida acumulada abierta: saldo clase 4 − clase 5 − clase 6 sin traslado de cierre a patrimonio. Positivo = utilidad abierta._
+- **Ecuación contable (ajustada):** OK
+  - Diferencia bruta (sin ajuste PyG): $1.558.791.907
+  - Clase 1 Activo: saldo $22.618.603.367
+  - Clase 2 Pasivo: saldo $8.720.061.703
+  - Clase 3 Patrimonio: saldo $12.339.749.757
 
-- **Ingresos (créditos clase 4):** $8.593.631.739
-- **Costos (débitos clase 6):** $9.592.915.597
-- **Gastos (débitos clase 5):** $1.037.365.811
+## PyG — clases 4–6 (movimientos del periodo)
+
+_Movimientos del periodo en cuentas de resultado. Clase 4=Ingresos, 5=Gastos operativos, 6=Costos de ventas._
+
+- **Cuadre (D = C):** Sí
+- **Ingresos operacionales (clase 4):** $8.593.631.739
+- **Costos de ventas (clase 6):** $9.592.915.597
+- **Gastos operativos (clase 5):** $1.037.365.811
 - **Margen bruto contable:** $-999.283.858 (-11,63%)
 
 ## Conciliación ingresos contables vs BI
 
-- **Ingresos contables (41):** $8.556.522.717
+_Compara créditos del grupo PUC 41 (ingresos operacionales) contra facturación BI con IVA en banco_datos del mismo periodo._
+
+- **Ingresos grupo PUC 41:** $8.556.522.717
 - **Ventas BI con IVA:** $8.045.039.214
-- **Ventas BI sin IVA:** $6.829.835.326
-- **Conciliación:** 94,02%
+- **% conciliación:** 94,02%
 
 ## Gastos por centro de costo (top)
 
