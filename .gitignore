@@ -117,6 +117,9 @@ Thumbs.db
 # AI Agent Configuration
 .agents/config.yml
 .agents/logs/
+.crew/
+.grok/
+.omo/
 
 # Documentation builds
 docs/_build/
