@@ -1,0 +1,2200 @@
+{
+  "metadata": {
+    "year": 2024,
+    "month": 5,
+    "month_name": "May",
+    "start_date": "2024-05-01",
+    "end_date": "2024-05-31",
+    "record_count": 25765
+  },
+  "summary": {
+    "total_revenue_with_iva": 6075445440.53,
+    "total_revenue_without_iva": 5161470530.05,
+    "total_cost": 4511682802.72,
+    "gross_profit": 649787727.33,
+    "gross_margin_pct": 12.59,
+    "total_quantity_sold": 377585,
+    "order_count": 25765,
+    "average_order_value": 235802.27,
+    "average_order_profit": 25219.78
+  },
+  "top_products": [
+    {
+      "product_name": "CEMENTO GRIS USO GENERAL CEMEX 50KG ",
+      "sku": "0020090002",
+      "total_revenue": 710246743.0,
+      "total_quantity": 26932,
+      "profit": 55037424.08,
+      "profit_margin_pct": 7.75,
+      "transactions": 736
+    },
+    {
+      "product_name": "BARRA CORRUGADA 1/2 X 6 MTS NTC 2289 PESO 5.95 KG",
+      "sku": "0020190001",
+      "total_revenue": 160811843.12,
+      "total_quantity": 6998,
+      "profit": 11776133.23,
+      "profit_margin_pct": 7.32,
+      "transactions": 158
+    },
+    {
+      "product_name": "ZINC 0.23 CAL.33 3X10 ACESCO ",
+      "sku": "0020400008",
+      "total_revenue": 93636327.64,
+      "total_quantity": 2750,
+      "profit": 9323662.38,
+      "profit_margin_pct": 9.96,
+      "transactions": 72
+    },
+    {
+      "product_name": "BARRA CORRUGADA 12MM X 6 MTS NTC 2289 PESO 5.32 KG",
+      "sku": "0020190003",
+      "total_revenue": 67561408.8,
+      "total_quantity": 3314,
+      "profit": 5065984.08,
+      "profit_margin_pct": 7.5,
+      "transactions": 72
+    },
+    {
+      "product_name": "BARRA CORRUGADA 3/8 X 6 MTS NTC 2289 PESO 3.36 KG",
+      "sku": "0020190012",
+      "total_revenue": 63066333.87,
+      "total_quantity": 4851,
+      "profit": 4636539.72,
+      "profit_margin_pct": 7.35,
+      "transactions": 111
+    },
+    {
+      "product_name": "TUBO RECTANGULAR.3X11/2 X 1.10",
+      "sku": "0020260019",
+      "total_revenue": 59591538.82,
+      "total_quantity": 1218,
+      "profit": 5434797.33,
+      "profit_margin_pct": 9.12,
+      "transactions": 106
+    },
+    {
+      "product_name": "CEMENTO GRIS USO GENERAL CEMEX 50 KG S.I",
+      "sku": "0030070001",
+      "total_revenue": 59195238.0,
+      "total_quantity": 2178,
+      "profit": 5330916.8,
+      "profit_margin_pct": 9.01,
+      "transactions": 7
+    },
+    {
+      "product_name": "LADRILLO BLOQUELON SANTA FE 23X80X8",
+      "sku": "0030030001",
+      "total_revenue": 55248200.0,
+      "total_quantity": 10902,
+      "profit": 4128722.0,
+      "profit_margin_pct": 7.47,
+      "transactions": 53
+    },
+    {
+      "product_name": "ZINC 0.23 CAL.33 3X12 ACESCO ",
+      "sku": "0020400009",
+      "total_revenue": 46472247.2,
+      "total_quantity": 1130,
+      "profit": 4837119.06,
+      "profit_margin_pct": 10.41,
+      "transactions": 33
+    },
+    {
+      "product_name": "BARRA CORRUGADA 9MM X 6 MTS NTC 2289 PESO 3KG",
+      "sku": "0020190005",
+      "total_revenue": 46309800.63,
+      "total_quantity": 3903,
+      "profit": 3210910.84,
+      "profit_margin_pct": 6.93,
+      "transactions": 82
+    },
+    {
+      "product_name": "BARRA CORRUGADA 11MM X 6 MTS NTC 2289 PESO 4.48KG",
+      "sku": "0020190002",
+      "total_revenue": 44640571.5,
+      "total_quantity": 2567,
+      "profit": 3417362.36,
+      "profit_margin_pct": 7.66,
+      "transactions": 58
+    },
+    {
+      "product_name": "BARRA CORRUGADA 5/8 X 6 MTS NTC 2289 PESO 9.35 KG",
+      "sku": "0020190008",
+      "total_revenue": 42686190.68,
+      "total_quantity": 1185,
+      "profit": 3167854.68,
+      "profit_margin_pct": 7.42,
+      "transactions": 35
+    },
+    {
+      "product_name": "ZINC 0.20 CAL.34 3X10 ACESCO ",
+      "sku": "0020400003",
+      "total_revenue": 42449502.6,
+      "total_quantity": 1430,
+      "profit": 3353530.53,
+      "profit_margin_pct": 7.9,
+      "transactions": 41
+    },
+    {
+      "product_name": "ALAMBRE NEGRO RECOCIDO X KILO CONTINUO",
+      "sku": "0020030012",
+      "total_revenue": 41957511.2,
+      "total_quantity": 10007,
+      "profit": 3878297.05,
+      "profit_margin_pct": 9.24,
+      "transactions": 309
+    },
+    {
+      "product_name": "MALLA ELECTROSOLDADA 4MM 2.35 X 6 MTS ",
+      "sku": "0020030011",
+      "total_revenue": 40617733.96,
+      "total_quantity": 535,
+      "profit": 2997523.68,
+      "profit_margin_pct": 7.38,
+      "transactions": 101
+    }
+  ],
+  "top_customers": [
+    {
+      "customer_name": "FERRETERIA MAGRETH S A S",
+      "total_revenue": 247438254.27,
+      "total_orders": 360,
+      "average_order_value": 687328.48,
+      "total_quantity": 11203
+    },
+    {
+      "customer_name": "DEPOSITO TRUJILLO SAS",
+      "total_revenue": 142490204.99,
+      "total_orders": 108,
+      "average_order_value": 1319353.75,
+      "total_quantity": 2689
+    },
+    {
+      "customer_name": "ONG FUNDACION GESTION SOCIAL DE COLOMBIA",
+      "total_revenue": 107374218.0,
+      "total_orders": 50,
+      "average_order_value": 2147484.36,
+      "total_quantity": 5019
+    },
+    {
+      "customer_name": "ANDALUCIA DISEÑO Y CONSTRUCCIONES S.A.S",
+      "total_revenue": 96067927.85,
+      "total_orders": 5,
+      "average_order_value": 19213585.57,
+      "total_quantity": 1458
+    },
+    {
+      "customer_name": "GIL ANTONIO VARGAS  MERCHAN",
+      "total_revenue": 83805426.32,
+      "total_orders": 53,
+      "average_order_value": 1581234.46,
+      "total_quantity": 2770
+    },
+    {
+      "customer_name": "COMERCIALIZADORA INTERNACIONAL C.I PISCICOLA NEW YORK S.A.",
+      "total_revenue": 71113590.18,
+      "total_orders": 121,
+      "average_order_value": 587715.62,
+      "total_quantity": 2106
+    },
+    {
+      "customer_name": "CONSTRUCERAMICAS COLOMBIA SAS",
+      "total_revenue": 69686626.1,
+      "total_orders": 4,
+      "average_order_value": 17421656.52,
+      "total_quantity": 2165
+    },
+    {
+      "customer_name": "GRUPO MASISO SAS",
+      "total_revenue": 69309312.94,
+      "total_orders": 133,
+      "average_order_value": 521122.65,
+      "total_quantity": 7563
+    },
+    {
+      "customer_name": "AGROCENTRO RIVERA S.A.S",
+      "total_revenue": 67571813.11,
+      "total_orders": 72,
+      "average_order_value": 938497.4,
+      "total_quantity": 6084
+    },
+    {
+      "customer_name": "OSCAR ALBERTO PEREZ VILLAREAL",
+      "total_revenue": 65864990.7,
+      "total_orders": 332,
+      "average_order_value": 198388.53,
+      "total_quantity": 3416
+    },
+    {
+      "customer_name": "JAVIER  BONILLA TAMAYO",
+      "total_revenue": 63794651.69,
+      "total_orders": 36,
+      "average_order_value": 1772073.66,
+      "total_quantity": 3809
+    },
+    {
+      "customer_name": "HORAIDA  LAVADO GARAY",
+      "total_revenue": 62284546.35,
+      "total_orders": 216,
+      "average_order_value": 288354.38,
+      "total_quantity": 3424
+    },
+    {
+      "customer_name": "FERRETERIA LA GRAN REBAJA DE CAMPOALEGRE S.A.S",
+      "total_revenue": 61248385.91,
+      "total_orders": 93,
+      "average_order_value": 658584.79,
+      "total_quantity": 4327
+    },
+    {
+      "customer_name": "FERRETERIA EL DIAMANTE ALGECIRAS SAS ZOMAC",
+      "total_revenue": 58079265.86,
+      "total_orders": 128,
+      "average_order_value": 453744.26,
+      "total_quantity": 4690
+    },
+    {
+      "customer_name": "JUDITH  PERDOMO ROJAS",
+      "total_revenue": 53541112.07,
+      "total_orders": 77,
+      "average_order_value": 695339.12,
+      "total_quantity": 3204
+    }
+  ],
+  "category_breakdown": [
+    {
+      "category_path": "CEMENTO GRIS > CEMENTO GRIS",
+      "total_revenue": 710418871.0,
+      "total_cost": 655353152.92,
+      "profit": 55065718.08,
+      "profit_margin_pct": 7.75,
+      "total_quantity": 27003,
+      "transactions": 763
+    },
+    {
+      "category_path": "HIERRO > HIERRO",
+      "total_revenue": 549898331.08,
+      "total_cost": 508615084.04,
+      "profit": 41283247.04,
+      "profit_margin_pct": 7.51,
+      "total_quantity": 55287,
+      "transactions": 757
+    },
+    {
+      "category_path": "ZINC > ZINC",
+      "total_revenue": 391605029.24,
+      "total_cost": 351855696.83,
+      "profit": 39749332.41,
+      "profit_margin_pct": 10.15,
+      "total_quantity": 12037,
+      "transactions": 555
+    },
+    {
+      "category_path": "PRODUCTOS SIKA > PRODUCTOS SIKA",
+      "total_revenue": 327249149.28,
+      "total_cost": 275773263.87,
+      "profit": 51475885.41,
+      "profit_margin_pct": 15.73,
+      "total_quantity": 8474,
+      "transactions": 1939
+    },
+    {
+      "category_path": "OTROS > OTROS",
+      "total_revenue": 320137681.29,
+      "total_cost": 264488162.02,
+      "profit": 55649519.26,
+      "profit_margin_pct": 17.38,
+      "total_quantity": 30065,
+      "transactions": 2162
+    },
+    {
+      "category_path": "PERFIERIA > PERFIERIA",
+      "total_revenue": 266273962.41,
+      "total_cost": 238796532.13,
+      "profit": 27477430.28,
+      "profit_margin_pct": 10.32,
+      "total_quantity": 14668,
+      "transactions": 729
+    },
+    {
+      "category_path": "TANQUES > TANQUES",
+      "total_revenue": 235303346.0,
+      "total_cost": 204391099.21,
+      "profit": 30912246.79,
+      "profit_margin_pct": 13.14,
+      "total_quantity": 1393,
+      "transactions": 492
+    },
+    {
+      "category_path": "TUBERIA Y ACCE PVC > TUBERIA Y ACCE PVC",
+      "total_revenue": 211774286.29,
+      "total_cost": 175450771.34,
+      "profit": 36323514.95,
+      "profit_margin_pct": 17.15,
+      "total_quantity": 68743,
+      "transactions": 4100
+    },
+    {
+      "category_path": "CUBIERTA TRAPEZOIDAL > CUBIERTA TRAPEZOIDAL",
+      "total_revenue": 169759628.8,
+      "total_cost": 147899884.05,
+      "profit": 21859744.75,
+      "profit_margin_pct": 12.88,
+      "total_quantity": 17862,
+      "transactions": 284
+    },
+    {
+      "category_path": "TEJAS DE FIBROCEMENTO > TEJAS DE FIBROCEMENTO",
+      "total_revenue": 161700799.2,
+      "total_cost": 147934950.35,
+      "profit": 13765848.85,
+      "profit_margin_pct": 8.51,
+      "total_quantity": 3088,
+      "transactions": 196
+    },
+    {
+      "category_path": "ART LEY 788 > ART LEY 788",
+      "total_revenue": 156651529.0,
+      "total_cost": 124799966.83,
+      "profit": 31851562.17,
+      "profit_margin_pct": 20.33,
+      "total_quantity": 5251,
+      "transactions": 56
+    },
+    {
+      "category_path": "ALAMBRES > ALAMBRES",
+      "total_revenue": 152608746.78,
+      "total_cost": 133685040.68,
+      "profit": 18923706.1,
+      "profit_margin_pct": 12.4,
+      "total_quantity": 9288,
+      "transactions": 762
+    },
+    {
+      "category_path": "ALAMBRES Y MALLAS > ALAMBRES Y MALLAS",
+      "total_revenue": 119183548.16,
+      "total_cost": 108499660.27,
+      "profit": 10683887.9,
+      "profit_margin_pct": 8.96,
+      "total_quantity": 22814,
+      "transactions": 618
+    },
+    {
+      "category_path": "ART Y HERRAM AGRICOLAS > ART Y HERRAM AGRICOLAS",
+      "total_revenue": 106468521.18,
+      "total_cost": 92569965.32,
+      "profit": 13898555.86,
+      "profit_margin_pct": 13.05,
+      "total_quantity": 5415,
+      "transactions": 816
+    },
+    {
+      "category_path": "SANITARIOS > SANITARIOS",
+      "total_revenue": 106008977.96,
+      "total_cost": 90863429.76,
+      "profit": 15145548.2,
+      "profit_margin_pct": 14.29,
+      "total_quantity": 567,
+      "transactions": 288
+    },
+    {
+      "category_path": "EUROCERAMICA > EUROCERAMICA",
+      "total_revenue": 103346574.91,
+      "total_cost": 85962690.1,
+      "profit": 17383884.81,
+      "profit_margin_pct": 16.82,
+      "total_quantity": 2076,
+      "transactions": 254
+    },
+    {
+      "category_path": "ART Y HERRAMIENTAS AGRICOLAS > ART Y HERRAMIENTAS AGRICOLAS",
+      "total_revenue": 97120551.54,
+      "total_cost": 86604618.53,
+      "profit": 10515933.01,
+      "profit_margin_pct": 10.83,
+      "total_quantity": 4418,
+      "transactions": 582
+    },
+    {
+      "category_path": "GRIFERIAS > GRIFERIAS",
+      "total_revenue": 82417543.54,
+      "total_cost": 70782627.62,
+      "profit": 11634915.92,
+      "profit_margin_pct": 14.12,
+      "total_quantity": 8211,
+      "transactions": 1570
+    },
+    {
+      "category_path": "PRODUCTOS EXCLUIDOS > PRODUCTOS EXCLUIDOS",
+      "total_revenue": 58953748.0,
+      "total_cost": 53875043.33,
+      "profit": 5078704.67,
+      "profit_margin_pct": 8.61,
+      "total_quantity": 10959,
+      "transactions": 62
+    },
+    {
+      "category_path": "OTRAS > OTRAS",
+      "total_revenue": 56643793.3,
+      "total_cost": 46678022.16,
+      "profit": 9965771.14,
+      "profit_margin_pct": 17.59,
+      "total_quantity": 816,
+      "transactions": 297
+    },
+    {
+      "category_path": "MANGUERAS  > MANGUERAS ",
+      "total_revenue": 52521525.0,
+      "total_cost": 38544307.74,
+      "profit": 13977217.26,
+      "profit_margin_pct": 26.61,
+      "total_quantity": 672,
+      "transactions": 124
+    },
+    {
+      "category_path": "TUBERIA Y ACCE GALVANIZADOS > TUBERIA Y ACCE GALVANIZADOS",
+      "total_revenue": 52080348.5,
+      "total_cost": 47345738.62,
+      "profit": 4734609.88,
+      "profit_margin_pct": 9.09,
+      "total_quantity": 1288,
+      "transactions": 185
+    },
+    {
+      "category_path": "CERAMICAS ALFA > CERAMICAS ALFA",
+      "total_revenue": 51787036.64,
+      "total_cost": 41999949.0,
+      "profit": 9787087.64,
+      "profit_margin_pct": 18.9,
+      "total_quantity": 1377,
+      "transactions": 180
+    },
+    {
+      "category_path": "GRAPAS Y PUNTILLAS > GRAPAS Y PUNTILLAS",
+      "total_revenue": 50851160.0,
+      "total_cost": 44259751.04,
+      "profit": 6591408.96,
+      "profit_margin_pct": 12.96,
+      "total_quantity": 16168,
+      "transactions": 1113
+    },
+    {
+      "category_path": "LIMPIADORES Y SOLDADURAS > LIMPIADORES Y SOLDADURAS",
+      "total_revenue": 43100175.4,
+      "total_cost": 35936056.99,
+      "profit": 7164118.41,
+      "profit_margin_pct": 16.62,
+      "total_quantity": 6206,
+      "transactions": 701
+    },
+    {
+      "category_path": "ACERO > ACERO",
+      "total_revenue": 40304250.2,
+      "total_cost": 36162735.73,
+      "profit": 4141514.47,
+      "profit_margin_pct": 10.28,
+      "total_quantity": 1770,
+      "transactions": 134
+    },
+    {
+      "category_path": "LAVAPLATOS > LAVAPLATOS",
+      "total_revenue": 37415706.64,
+      "total_cost": 32035964.91,
+      "profit": 5379741.73,
+      "profit_margin_pct": 14.38,
+      "total_quantity": 1052,
+      "transactions": 369
+    },
+    {
+      "category_path": "MATERIALES EMO > MATERIALES EMO",
+      "total_revenue": 37292368.93,
+      "total_cost": 32350931.8,
+      "profit": 4941437.13,
+      "profit_margin_pct": 13.25,
+      "total_quantity": 786,
+      "transactions": 80
+    },
+    {
+      "category_path": "TEJA TRANSLUCIDA > TEJA TRANSLUCIDA",
+      "total_revenue": 30972782.55,
+      "total_cost": 24569933.96,
+      "profit": 6402848.59,
+      "profit_margin_pct": 20.67,
+      "total_quantity": 780,
+      "transactions": 154
+    },
+    {
+      "category_path": "REGISTROS > REGISTROS",
+      "total_revenue": 28712802.0,
+      "total_cost": 24321816.08,
+      "profit": 4390985.92,
+      "profit_margin_pct": 15.29,
+      "total_quantity": 2984,
+      "transactions": 507
+    },
+    {
+      "category_path": "HERRAMIENTAS > HERRAMIENTAS",
+      "total_revenue": 27919084.64,
+      "total_cost": 23344328.5,
+      "profit": 4574756.14,
+      "profit_margin_pct": 16.39,
+      "total_quantity": 4327,
+      "transactions": 690
+    },
+    {
+      "category_path": "CEMENTO BLANCO > CEMENTO BLANCO",
+      "total_revenue": 25113288.0,
+      "total_cost": 20826568.48,
+      "profit": 4286719.52,
+      "profit_margin_pct": 17.07,
+      "total_quantity": 627,
+      "transactions": 128
+    },
+    {
+      "category_path": "CUERDAS Y SOGAS > CUERDAS Y SOGAS",
+      "total_revenue": 24287591.0,
+      "total_cost": 21024106.35,
+      "profit": 3263484.65,
+      "profit_margin_pct": 13.44,
+      "total_quantity": 1426,
+      "transactions": 191
+    },
+    {
+      "category_path": "MANGURAS > MANGURAS",
+      "total_revenue": 22094858.0,
+      "total_cost": 16343385.3,
+      "profit": 5751472.7,
+      "profit_margin_pct": 26.03,
+      "total_quantity": 1448,
+      "transactions": 79
+    },
+    {
+      "category_path": "PRODUCTOS  ABRASIVOS > PRODUCTOS  ABRASIVOS",
+      "total_revenue": 19140792.0,
+      "total_cost": 15383429.87,
+      "profit": 3757362.13,
+      "profit_margin_pct": 19.63,
+      "total_quantity": 9554,
+      "transactions": 552
+    },
+    {
+      "category_path": "SALA ENCHAPES > SALA ENCHAPES",
+      "total_revenue": 18712502.0,
+      "total_cost": 15970446.6,
+      "profit": 2742055.4,
+      "profit_margin_pct": 14.65,
+      "total_quantity": 1284,
+      "transactions": 202
+    },
+    {
+      "category_path": "PAREDES Y PISOS > PAREDES Y PISOS",
+      "total_revenue": 17748074.9,
+      "total_cost": 15902182.76,
+      "profit": 1845892.14,
+      "profit_margin_pct": 10.4,
+      "total_quantity": 521,
+      "transactions": 39
+    },
+    {
+      "category_path": "PINTULAND > PINTULAND",
+      "total_revenue": 16405534.0,
+      "total_cost": 13736639.0,
+      "profit": 2668895.0,
+      "profit_margin_pct": 16.27,
+      "total_quantity": 331,
+      "transactions": 143
+    },
+    {
+      "category_path": "VINILTEX > VINILTEX",
+      "total_revenue": 15720572.05,
+      "total_cost": 13220588.0,
+      "profit": 2499984.05,
+      "profit_margin_pct": 15.9,
+      "total_quantity": 95,
+      "transactions": 45
+    },
+    {
+      "category_path": "BAJA ROTACION > BAJA ROTACION",
+      "total_revenue": 13995210.0,
+      "total_cost": 12753645.0,
+      "profit": 1241565.0,
+      "profit_margin_pct": 8.87,
+      "total_quantity": 130,
+      "transactions": 5
+    },
+    {
+      "category_path": "CHAPAS Y CANDADOS > CHAPAS Y CANDADOS",
+      "total_revenue": 13577665.0,
+      "total_cost": 12096049.04,
+      "profit": 1481615.96,
+      "profit_margin_pct": 10.91,
+      "total_quantity": 896,
+      "transactions": 156
+    },
+    {
+      "category_path": "KORAZA > KORAZA",
+      "total_revenue": 13215009.5,
+      "total_cost": 10739597.75,
+      "profit": 2475411.75,
+      "profit_margin_pct": 18.73,
+      "total_quantity": 75,
+      "transactions": 41
+    },
+    {
+      "category_path": "DOMESTICO > DOMESTICO",
+      "total_revenue": 12748816.86,
+      "total_cost": 10632490.67,
+      "profit": 2116326.19,
+      "profit_margin_pct": 16.6,
+      "total_quantity": 302,
+      "transactions": 96
+    },
+    {
+      "category_path": "PINTULUX > PINTULUX",
+      "total_revenue": 11886106.4,
+      "total_cost": 9781044.18,
+      "profit": 2105062.22,
+      "profit_margin_pct": 17.71,
+      "total_quantity": 152,
+      "transactions": 66
+    },
+    {
+      "category_path": "RODILLOS Y BROCHAS > RODILLOS Y BROCHAS",
+      "total_revenue": 11070784.0,
+      "total_cost": 9436114.62,
+      "profit": 1634669.38,
+      "profit_margin_pct": 14.77,
+      "total_quantity": 2739,
+      "transactions": 508
+    },
+    {
+      "category_path": "MALLAS PLASTICAS > MALLAS PLASTICAS",
+      "total_revenue": 10173940.0,
+      "total_cost": 9078992.62,
+      "profit": 1094947.38,
+      "profit_margin_pct": 10.76,
+      "total_quantity": 78,
+      "transactions": 58
+    },
+    {
+      "category_path": "PROD HENKEL > PROD HENKEL",
+      "total_revenue": 8571089.0,
+      "total_cost": 7356117.33,
+      "profit": 1214971.67,
+      "profit_margin_pct": 14.18,
+      "total_quantity": 1838,
+      "transactions": 129
+    },
+    {
+      "category_path": "LAVAMANOS > LAVAMANOS",
+      "total_revenue": 8341601.0,
+      "total_cost": 6916707.44,
+      "profit": 1424893.56,
+      "profit_margin_pct": 17.08,
+      "total_quantity": 108,
+      "transactions": 75
+    },
+    {
+      "category_path": "ARTIC PARA PINTURAS > ARTIC PARA PINTURAS",
+      "total_revenue": 8196900.41,
+      "total_cost": 7116573.6,
+      "profit": 1080326.81,
+      "profit_margin_pct": 13.18,
+      "total_quantity": 417,
+      "transactions": 59
+    },
+    {
+      "category_path": "PINTURAS VARIAS > PINTURAS VARIAS",
+      "total_revenue": 7794747.0,
+      "total_cost": 5999505.04,
+      "profit": 1795241.96,
+      "profit_margin_pct": 23.03,
+      "total_quantity": 430,
+      "transactions": 130
+    },
+    {
+      "category_path": "HERRAMIENTAS GRAV AL 5% > HERRAMIENTAS GRAV AL 5%",
+      "total_revenue": 7312445.2,
+      "total_cost": 6465505.3,
+      "profit": 846939.9,
+      "profit_margin_pct": 11.58,
+      "total_quantity": 410,
+      "transactions": 152
+    },
+    {
+      "category_path": "REJILLAS > REJILLAS",
+      "total_revenue": 6932461.0,
+      "total_cost": 6004883.42,
+      "profit": 927577.58,
+      "profit_margin_pct": 13.38,
+      "total_quantity": 1178,
+      "transactions": 191
+    },
+    {
+      "category_path": "TRANSPORTE > TRANSPORTE",
+      "total_revenue": 6458290.55,
+      "total_cost": 186.0,
+      "profit": 6458104.55,
+      "profit_margin_pct": 100.0,
+      "total_quantity": 93,
+      "transactions": 96
+    },
+    {
+      "category_path": "BUJES > BUJES",
+      "total_revenue": 4244275.33,
+      "total_cost": 3384592.81,
+      "profit": 859682.52,
+      "profit_margin_pct": 20.26,
+      "total_quantity": 3158,
+      "transactions": 332
+    },
+    {
+      "category_path": "BASES Y CONCENTRADOS > BASES Y CONCENTRADOS",
+      "total_revenue": 4046582.7,
+      "total_cost": 2978001.0,
+      "profit": 1068581.7,
+      "profit_margin_pct": 26.41,
+      "total_quantity": 38,
+      "transactions": 29
+    },
+    {
+      "category_path": "HERRAMIENTAS ELECTRICAS > HERRAMIENTAS ELECTRICAS",
+      "total_revenue": 2558527.0,
+      "total_cost": 2090113.18,
+      "profit": 468413.82,
+      "profit_margin_pct": 18.31,
+      "total_quantity": 56,
+      "transactions": 6
+    },
+    {
+      "category_path": "DECORADOS > DECORADOS",
+      "total_revenue": 2299504.0,
+      "total_cost": 1718170.14,
+      "profit": 581333.86,
+      "profit_margin_pct": 25.28,
+      "total_quantity": 382,
+      "transactions": 39
+    },
+    {
+      "category_path": "ARTICULO0S PARA PINTURA > ARTICULO0S PARA PINTURA",
+      "total_revenue": 2242864.0,
+      "total_cost": 1796407.2,
+      "profit": 446456.8,
+      "profit_margin_pct": 19.91,
+      "total_quantity": 478,
+      "transactions": 89
+    },
+    {
+      "category_path": "DESCONTINUADOS > DESCONTINUADOS",
+      "total_revenue": 2042851.0,
+      "total_cost": 1687417.42,
+      "profit": 355433.58,
+      "profit_margin_pct": 17.4,
+      "total_quantity": 47,
+      "transactions": 11
+    },
+    {
+      "category_path": "ABRAZADERAS > ABRAZADERAS",
+      "total_revenue": 1665610.0,
+      "total_cost": 1381076.17,
+      "profit": 284533.83,
+      "profit_margin_pct": 17.08,
+      "total_quantity": 662,
+      "transactions": 72
+    },
+    {
+      "category_path": "GALVANIZADOS > GALVANIZADOS",
+      "total_revenue": 1658623.0,
+      "total_cost": 1242719.75,
+      "profit": 415903.25,
+      "profit_margin_pct": 25.08,
+      "total_quantity": 790,
+      "transactions": 48
+    },
+    {
+      "category_path": "MANGUERAS > MANGUERAS",
+      "total_revenue": 1461520.0,
+      "total_cost": 1270890.0,
+      "profit": 190630.0,
+      "profit_margin_pct": 13.04,
+      "total_quantity": 10,
+      "transactions": 6
+    },
+    {
+      "category_path": "ACCESORIOS POLIETILENO > ACCESORIOS POLIETILENO",
+      "total_revenue": 1449579.0,
+      "total_cost": 989278.78,
+      "profit": 460300.22,
+      "profit_margin_pct": 31.75,
+      "total_quantity": 1370,
+      "transactions": 95
+    },
+    {
+      "category_path": "SERV DE TRANSPORTE EXCLUIDOS > SERV DE TRANSPORTE EXCLUIDOS",
+      "total_revenue": 969405.0,
+      "total_cost": 0.0,
+      "profit": 969405.0,
+      "profit_margin_pct": 100.0,
+      "total_quantity": 12,
+      "transactions": 12
+    },
+    {
+      "category_path": "INTERVINIL > INTERVINIL",
+      "total_revenue": 316637.0,
+      "total_cost": 227528.0,
+      "profit": 89109.0,
+      "profit_margin_pct": 28.14,
+      "total_quantity": 2,
+      "transactions": 2
+    },
+    {
+      "category_path": "ANDERSON > ABRAZADERAS",
+      "total_revenue": 311233.0,
+      "total_cost": 258141.57,
+      "profit": 53091.43,
+      "profit_margin_pct": 17.06,
+      "total_quantity": 231,
+      "transactions": 9
+    },
+    {
+      "category_path": "SERVICIOS DE CORTE > SERVICIOS DE CORTE",
+      "total_revenue": 189090.0,
+      "total_cost": 90000.0,
+      "profit": 99090.0,
+      "profit_margin_pct": 52.4,
+      "total_quantity": 45,
+      "transactions": 18
+    },
+    {
+      "category_path": "SALA DE EMCHAPES > SALA DE EMCHAPES",
+      "total_revenue": 34125.0,
+      "total_cost": 32500.0,
+      "profit": 1625.0,
+      "profit_margin_pct": 4.76,
+      "total_quantity": 1,
+      "transactions": 1
+    },
+    {
+      "category_path": "OTROS SERV > OTROS SERV",
+      "total_revenue": 0.0,
+      "total_cost": 0.0,
+      "profit": 0.0,
+      "profit_margin_pct": 0.0,
+      "total_quantity": 0,
+      "transactions": 2
+    },
+    {
+      "category_path": "BOLSAS PLASTICAS > BOLSAS PLASTICAS",
+      "total_revenue": -33.3,
+      "total_cost": 32.6,
+      "profit": -65.9,
+      "profit_margin_pct": 197.9,
+      "total_quantity": 326,
+      "transactions": 334
+    }
+  ],
+  "daily_trend": [
+    {
+      "date": "2024-05-02",
+      "revenue_with_iva": 410840101.06,
+      "revenue_without_iva": 347931677.44,
+      "cost": 309815980.83,
+      "profit": 38115696.6,
+      "profit_margin_pct": 10.95,
+      "quantity": 25784,
+      "orders": 1438
+    },
+    {
+      "date": "2024-05-03",
+      "revenue_with_iva": 197878912.62,
+      "revenue_without_iva": 167485358.08,
+      "cost": 147303415.0,
+      "profit": 20181943.08,
+      "profit_margin_pct": 12.05,
+      "quantity": 13331,
+      "orders": 978
+    },
+    {
+      "date": "2024-05-04",
+      "revenue_with_iva": 195619042.89,
+      "revenue_without_iva": 168636016.93,
+      "cost": 147734657.27,
+      "profit": 20901359.67,
+      "profit_margin_pct": 12.39,
+      "quantity": 10827,
+      "orders": 594
+    },
+    {
+      "date": "2024-05-06",
+      "revenue_with_iva": 294448737.56,
+      "revenue_without_iva": 248352428.98,
+      "cost": 216927441.23,
+      "profit": 31424987.75,
+      "profit_margin_pct": 12.65,
+      "quantity": 19012,
+      "orders": 1363
+    },
+    {
+      "date": "2024-05-07",
+      "revenue_with_iva": 284460358.43,
+      "revenue_without_iva": 239960447.23,
+      "cost": 210184199.81,
+      "profit": 29776247.42,
+      "profit_margin_pct": 12.41,
+      "quantity": 18595,
+      "orders": 1224
+    },
+    {
+      "date": "2024-05-08",
+      "revenue_with_iva": 304029275.48,
+      "revenue_without_iva": 259761302.45,
+      "cost": 228254283.34,
+      "profit": 31507019.11,
+      "profit_margin_pct": 12.13,
+      "quantity": 15111,
+      "orders": 1085
+    },
+    {
+      "date": "2024-05-09",
+      "revenue_with_iva": 305927996.31,
+      "revenue_without_iva": 263904646.61,
+      "cost": 236049269.92,
+      "profit": 27855376.7,
+      "profit_margin_pct": 10.56,
+      "quantity": 17620,
+      "orders": 935
+    },
+    {
+      "date": "2024-05-10",
+      "revenue_with_iva": 166096066.34,
+      "revenue_without_iva": 140556965.82,
+      "cost": 123475250.14,
+      "profit": 17081715.68,
+      "profit_margin_pct": 12.15,
+      "quantity": 11873,
+      "orders": 961
+    },
+    {
+      "date": "2024-05-11",
+      "revenue_with_iva": 118613872.86,
+      "revenue_without_iva": 100993637.58,
+      "cost": 88742953.96,
+      "profit": 12250683.62,
+      "profit_margin_pct": 12.13,
+      "quantity": 8901,
+      "orders": 613
+    },
+    {
+      "date": "2024-05-14",
+      "revenue_with_iva": 324262795.29,
+      "revenue_without_iva": 281250145.72,
+      "cost": 231308606.85,
+      "profit": 49941538.87,
+      "profit_margin_pct": 17.76,
+      "quantity": 16359,
+      "orders": 1357
+    },
+    {
+      "date": "2024-05-15",
+      "revenue_with_iva": 319978527.32,
+      "revenue_without_iva": 271352292.69,
+      "cost": 238921712.15,
+      "profit": 32430580.54,
+      "profit_margin_pct": 11.95,
+      "quantity": 20930,
+      "orders": 1319
+    },
+    {
+      "date": "2024-05-16",
+      "revenue_with_iva": 184312781.93,
+      "revenue_without_iva": 155544722.82,
+      "cost": 136865602.36,
+      "profit": 18679120.46,
+      "profit_margin_pct": 12.01,
+      "quantity": 13391,
+      "orders": 970
+    },
+    {
+      "date": "2024-05-17",
+      "revenue_with_iva": 327357005.62,
+      "revenue_without_iva": 280599076.95,
+      "cost": 247475570.75,
+      "profit": 33123506.2,
+      "profit_margin_pct": 11.8,
+      "quantity": 19732,
+      "orders": 1105
+    },
+    {
+      "date": "2024-05-18",
+      "revenue_with_iva": 120623279.25,
+      "revenue_without_iva": 102875866.74,
+      "cost": 87722606.6,
+      "profit": 15153260.14,
+      "profit_margin_pct": 14.73,
+      "quantity": 7591,
+      "orders": 617
+    },
+    {
+      "date": "2024-05-20",
+      "revenue_with_iva": 304915056.95,
+      "revenue_without_iva": 257382775.82,
+      "cost": 227534765.33,
+      "profit": 29848010.49,
+      "profit_margin_pct": 11.6,
+      "quantity": 15139,
+      "orders": 1057
+    },
+    {
+      "date": "2024-05-21",
+      "revenue_with_iva": 214199967.19,
+      "revenue_without_iva": 181142718.01,
+      "cost": 159827862.9,
+      "profit": 21314855.11,
+      "profit_margin_pct": 11.77,
+      "quantity": 12440,
+      "orders": 1031
+    },
+    {
+      "date": "2024-05-22",
+      "revenue_with_iva": 301171546.53,
+      "revenue_without_iva": 255819554.35,
+      "cost": 225817571.25,
+      "profit": 30001983.1,
+      "profit_margin_pct": 11.73,
+      "quantity": 20105,
+      "orders": 1350
+    },
+    {
+      "date": "2024-05-23",
+      "revenue_with_iva": 177876790.13,
+      "revenue_without_iva": 150637198.23,
+      "cost": 131361879.4,
+      "profit": 19275318.83,
+      "profit_margin_pct": 12.8,
+      "quantity": 15206,
+      "orders": 1090
+    },
+    {
+      "date": "2024-05-24",
+      "revenue_with_iva": 224367787.45,
+      "revenue_without_iva": 188841334.15,
+      "cost": 165655292.97,
+      "profit": 23186041.18,
+      "profit_margin_pct": 12.28,
+      "quantity": 13833,
+      "orders": 973
+    },
+    {
+      "date": "2024-05-25",
+      "revenue_with_iva": 91481163.02,
+      "revenue_without_iva": 77548883.32,
+      "cost": 66940640.2,
+      "profit": 10608243.12,
+      "profit_margin_pct": 13.68,
+      "quantity": 3253,
+      "orders": 476
+    },
+    {
+      "date": "2024-05-27",
+      "revenue_with_iva": 284697169.85,
+      "revenue_without_iva": 240909948.94,
+      "cost": 212468410.33,
+      "profit": 28441538.62,
+      "profit_margin_pct": 11.81,
+      "quantity": 17498,
+      "orders": 1105
+    },
+    {
+      "date": "2024-05-28",
+      "revenue_with_iva": 284610565.93,
+      "revenue_without_iva": 241990551.03,
+      "cost": 215223642.21,
+      "profit": 26766908.82,
+      "profit_margin_pct": 11.06,
+      "quantity": 15901,
+      "orders": 1076
+    },
+    {
+      "date": "2024-05-29",
+      "revenue_with_iva": 213685572.4,
+      "revenue_without_iva": 180299913.53,
+      "cost": 159281054.56,
+      "profit": 21018858.97,
+      "profit_margin_pct": 11.66,
+      "quantity": 14389,
+      "orders": 913
+    },
+    {
+      "date": "2024-05-30",
+      "revenue_with_iva": 196535409.44,
+      "revenue_without_iva": 165869016.85,
+      "cost": 144920084.88,
+      "profit": 20948931.97,
+      "profit_margin_pct": 12.63,
+      "quantity": 16794,
+      "orders": 1111
+    },
+    {
+      "date": "2024-05-31",
+      "revenue_with_iva": 227455658.67,
+      "revenue_without_iva": 191824049.78,
+      "cost": 151870048.5,
+      "profit": 39954001.28,
+      "profit_margin_pct": 20.83,
+      "quantity": 13970,
+      "orders": 1024
+    }
+  ],
+  "inventory_insights": {
+    "low_stock_alert": [],
+    "fast_movers_in_month": [],
+    "note": "J3System enrichment disabled or unavailable"
+  },
+  "formatted": {
+    "summary": {
+      "total_revenue_with_iva": "$6.075.445.441",
+      "total_revenue_without_iva": "$5.161.470.530",
+      "total_cost": "$4.511.682.803",
+      "gross_profit": "$649.787.727",
+      "gross_margin_pct": "12,6%",
+      "total_quantity_sold": "377.585",
+      "order_count": "25.765",
+      "average_order_value": "$235.802",
+      "average_order_profit": "$25.220"
+    },
+    "top_products": [
+      {
+        "product_name": "CEMENTO GRIS USO GENERAL CEMEX 50KG ",
+        "sku": "0020090002",
+        "total_revenue": "$710.246.743",
+        "total_quantity": "26.932",
+        "profit": "$55.037.424",
+        "profit_margin_pct": "7,8%",
+        "transactions": "736"
+      },
+      {
+        "product_name": "BARRA CORRUGADA 1/2 X 6 MTS NTC 2289 PESO 5.95 KG",
+        "sku": "0020190001",
+        "total_revenue": "$160.811.843",
+        "total_quantity": "6.998",
+        "profit": "$11.776.133",
+        "profit_margin_pct": "7,3%",
+        "transactions": "158"
+      },
+      {
+        "product_name": "ZINC 0.23 CAL.33 3X10 ACESCO ",
+        "sku": "0020400008",
+        "total_revenue": "$93.636.328",
+        "total_quantity": "2.750",
+        "profit": "$9.323.662",
+        "profit_margin_pct": "10,0%",
+        "transactions": "72"
+      },
+      {
+        "product_name": "BARRA CORRUGADA 12MM X 6 MTS NTC 2289 PESO 5.32 KG",
+        "sku": "0020190003",
+        "total_revenue": "$67.561.409",
+        "total_quantity": "3.314",
+        "profit": "$5.065.984",
+        "profit_margin_pct": "7,5%",
+        "transactions": "72"
+      },
+      {
+        "product_name": "BARRA CORRUGADA 3/8 X 6 MTS NTC 2289 PESO 3.36 KG",
+        "sku": "0020190012",
+        "total_revenue": "$63.066.334",
+        "total_quantity": "4.851",
+        "profit": "$4.636.540",
+        "profit_margin_pct": "7,3%",
+        "transactions": "111"
+      },
+      {
+        "product_name": "TUBO RECTANGULAR.3X11/2 X 1.10",
+        "sku": "0020260019",
+        "total_revenue": "$59.591.539",
+        "total_quantity": "1.218",
+        "profit": "$5.434.797",
+        "profit_margin_pct": "9,1%",
+        "transactions": "106"
+      },
+      {
+        "product_name": "CEMENTO GRIS USO GENERAL CEMEX 50 KG S.I",
+        "sku": "0030070001",
+        "total_revenue": "$59.195.238",
+        "total_quantity": "2.178",
+        "profit": "$5.330.917",
+        "profit_margin_pct": "9,0%",
+        "transactions": "7"
+      },
+      {
+        "product_name": "LADRILLO BLOQUELON SANTA FE 23X80X8",
+        "sku": "0030030001",
+        "total_revenue": "$55.248.200",
+        "total_quantity": "10.902",
+        "profit": "$4.128.722",
+        "profit_margin_pct": "7,5%",
+        "transactions": "53"
+      },
+      {
+        "product_name": "ZINC 0.23 CAL.33 3X12 ACESCO ",
+        "sku": "0020400009",
+        "total_revenue": "$46.472.247",
+        "total_quantity": "1.130",
+        "profit": "$4.837.119",
+        "profit_margin_pct": "10,4%",
+        "transactions": "33"
+      },
+      {
+        "product_name": "BARRA CORRUGADA 9MM X 6 MTS NTC 2289 PESO 3KG",
+        "sku": "0020190005",
+        "total_revenue": "$46.309.801",
+        "total_quantity": "3.903",
+        "profit": "$3.210.911",
+        "profit_margin_pct": "6,9%",
+        "transactions": "82"
+      },
+      {
+        "product_name": "BARRA CORRUGADA 11MM X 6 MTS NTC 2289 PESO 4.48KG",
+        "sku": "0020190002",
+        "total_revenue": "$44.640.572",
+        "total_quantity": "2.567",
+        "profit": "$3.417.362",
+        "profit_margin_pct": "7,7%",
+        "transactions": "58"
+      },
+      {
+        "product_name": "BARRA CORRUGADA 5/8 X 6 MTS NTC 2289 PESO 9.35 KG",
+        "sku": "0020190008",
+        "total_revenue": "$42.686.191",
+        "total_quantity": "1.185",
+        "profit": "$3.167.855",
+        "profit_margin_pct": "7,4%",
+        "transactions": "35"
+      },
+      {
+        "product_name": "ZINC 0.20 CAL.34 3X10 ACESCO ",
+        "sku": "0020400003",
+        "total_revenue": "$42.449.503",
+        "total_quantity": "1.430",
+        "profit": "$3.353.531",
+        "profit_margin_pct": "7,9%",
+        "transactions": "41"
+      },
+      {
+        "product_name": "ALAMBRE NEGRO RECOCIDO X KILO CONTINUO",
+        "sku": "0020030012",
+        "total_revenue": "$41.957.511",
+        "total_quantity": "10.007",
+        "profit": "$3.878.297",
+        "profit_margin_pct": "9,2%",
+        "transactions": "309"
+      },
+      {
+        "product_name": "MALLA ELECTROSOLDADA 4MM 2.35 X 6 MTS ",
+        "sku": "0020030011",
+        "total_revenue": "$40.617.734",
+        "total_quantity": "535",
+        "profit": "$2.997.524",
+        "profit_margin_pct": "7,4%",
+        "transactions": "101"
+      }
+    ],
+    "top_customers": [
+      {
+        "customer_name": "FERRETERIA MAGRETH S A S",
+        "total_revenue": "$247.438.254",
+        "total_orders": "360",
+        "average_order_value": "$687.328",
+        "total_quantity": "11.203"
+      },
+      {
+        "customer_name": "DEPOSITO TRUJILLO SAS",
+        "total_revenue": "$142.490.205",
+        "total_orders": "108",
+        "average_order_value": "$1.319.354",
+        "total_quantity": "2.689"
+      },
+      {
+        "customer_name": "ONG FUNDACION GESTION SOCIAL DE COLOMBIA",
+        "total_revenue": "$107.374.218",
+        "total_orders": "50",
+        "average_order_value": "$2.147.484",
+        "total_quantity": "5.019"
+      },
+      {
+        "customer_name": "ANDALUCIA DISEÑO Y CONSTRUCCIONES S.A.S",
+        "total_revenue": "$96.067.928",
+        "total_orders": "5",
+        "average_order_value": "$19.213.586",
+        "total_quantity": "1.458"
+      },
+      {
+        "customer_name": "GIL ANTONIO VARGAS  MERCHAN",
+        "total_revenue": "$83.805.426",
+        "total_orders": "53",
+        "average_order_value": "$1.581.234",
+        "total_quantity": "2.770"
+      },
+      {
+        "customer_name": "COMERCIALIZADORA INTERNACIONAL C.I PISCICOLA NEW YORK S.A.",
+        "total_revenue": "$71.113.590",
+        "total_orders": "121",
+        "average_order_value": "$587.716",
+        "total_quantity": "2.106"
+      },
+      {
+        "customer_name": "CONSTRUCERAMICAS COLOMBIA SAS",
+        "total_revenue": "$69.686.626",
+        "total_orders": "4",
+        "average_order_value": "$17.421.657",
+        "total_quantity": "2.165"
+      },
+      {
+        "customer_name": "GRUPO MASISO SAS",
+        "total_revenue": "$69.309.313",
+        "total_orders": "133",
+        "average_order_value": "$521.123",
+        "total_quantity": "7.563"
+      },
+      {
+        "customer_name": "AGROCENTRO RIVERA S.A.S",
+        "total_revenue": "$67.571.813",
+        "total_orders": "72",
+        "average_order_value": "$938.497",
+        "total_quantity": "6.084"
+      },
+      {
+        "customer_name": "OSCAR ALBERTO PEREZ VILLAREAL",
+        "total_revenue": "$65.864.991",
+        "total_orders": "332",
+        "average_order_value": "$198.389",
+        "total_quantity": "3.416"
+      },
+      {
+        "customer_name": "JAVIER  BONILLA TAMAYO",
+        "total_revenue": "$63.794.652",
+        "total_orders": "36",
+        "average_order_value": "$1.772.074",
+        "total_quantity": "3.809"
+      },
+      {
+        "customer_name": "HORAIDA  LAVADO GARAY",
+        "total_revenue": "$62.284.546",
+        "total_orders": "216",
+        "average_order_value": "$288.354",
+        "total_quantity": "3.424"
+      },
+      {
+        "customer_name": "FERRETERIA LA GRAN REBAJA DE CAMPOALEGRE S.A.S",
+        "total_revenue": "$61.248.386",
+        "total_orders": "93",
+        "average_order_value": "$658.585",
+        "total_quantity": "4.327"
+      },
+      {
+        "customer_name": "FERRETERIA EL DIAMANTE ALGECIRAS SAS ZOMAC",
+        "total_revenue": "$58.079.266",
+        "total_orders": "128",
+        "average_order_value": "$453.744",
+        "total_quantity": "4.690"
+      },
+      {
+        "customer_name": "JUDITH  PERDOMO ROJAS",
+        "total_revenue": "$53.541.112",
+        "total_orders": "77",
+        "average_order_value": "$695.339",
+        "total_quantity": "3.204"
+      }
+    ],
+    "category_breakdown": [
+      {
+        "category_path": "CEMENTO GRIS > CEMENTO GRIS",
+        "total_revenue": "$710.418.871",
+        "profit": "$55.065.718",
+        "profit_margin_pct": "7,8%",
+        "total_quantity": "27.003",
+        "transactions": "763"
+      },
+      {
+        "category_path": "HIERRO > HIERRO",
+        "total_revenue": "$549.898.331",
+        "profit": "$41.283.247",
+        "profit_margin_pct": "7,5%",
+        "total_quantity": "55.287",
+        "transactions": "757"
+      },
+      {
+        "category_path": "ZINC > ZINC",
+        "total_revenue": "$391.605.029",
+        "profit": "$39.749.332",
+        "profit_margin_pct": "10,2%",
+        "total_quantity": "12.037",
+        "transactions": "555"
+      },
+      {
+        "category_path": "PRODUCTOS SIKA > PRODUCTOS SIKA",
+        "total_revenue": "$327.249.149",
+        "profit": "$51.475.885",
+        "profit_margin_pct": "15,7%",
+        "total_quantity": "8.474",
+        "transactions": "1.939"
+      },
+      {
+        "category_path": "OTROS > OTROS",
+        "total_revenue": "$320.137.681",
+        "profit": "$55.649.519",
+        "profit_margin_pct": "17,4%",
+        "total_quantity": "30.065",
+        "transactions": "2.162"
+      },
+      {
+        "category_path": "PERFIERIA > PERFIERIA",
+        "total_revenue": "$266.273.962",
+        "profit": "$27.477.430",
+        "profit_margin_pct": "10,3%",
+        "total_quantity": "14.668",
+        "transactions": "729"
+      },
+      {
+        "category_path": "TANQUES > TANQUES",
+        "total_revenue": "$235.303.346",
+        "profit": "$30.912.247",
+        "profit_margin_pct": "13,1%",
+        "total_quantity": "1.393",
+        "transactions": "492"
+      },
+      {
+        "category_path": "TUBERIA Y ACCE PVC > TUBERIA Y ACCE PVC",
+        "total_revenue": "$211.774.286",
+        "profit": "$36.323.515",
+        "profit_margin_pct": "17,1%",
+        "total_quantity": "68.743",
+        "transactions": "4.100"
+      },
+      {
+        "category_path": "CUBIERTA TRAPEZOIDAL > CUBIERTA TRAPEZOIDAL",
+        "total_revenue": "$169.759.629",
+        "profit": "$21.859.745",
+        "profit_margin_pct": "12,9%",
+        "total_quantity": "17.862",
+        "transactions": "284"
+      },
+      {
+        "category_path": "TEJAS DE FIBROCEMENTO > TEJAS DE FIBROCEMENTO",
+        "total_revenue": "$161.700.799",
+        "profit": "$13.765.849",
+        "profit_margin_pct": "8,5%",
+        "total_quantity": "3.088",
+        "transactions": "196"
+      },
+      {
+        "category_path": "ART LEY 788 > ART LEY 788",
+        "total_revenue": "$156.651.529",
+        "profit": "$31.851.562",
+        "profit_margin_pct": "20,3%",
+        "total_quantity": "5.251",
+        "transactions": "56"
+      },
+      {
+        "category_path": "ALAMBRES > ALAMBRES",
+        "total_revenue": "$152.608.747",
+        "profit": "$18.923.706",
+        "profit_margin_pct": "12,4%",
+        "total_quantity": "9.288",
+        "transactions": "762"
+      },
+      {
+        "category_path": "ALAMBRES Y MALLAS > ALAMBRES Y MALLAS",
+        "total_revenue": "$119.183.548",
+        "profit": "$10.683.888",
+        "profit_margin_pct": "9,0%",
+        "total_quantity": "22.814",
+        "transactions": "618"
+      },
+      {
+        "category_path": "ART Y HERRAM AGRICOLAS > ART Y HERRAM AGRICOLAS",
+        "total_revenue": "$106.468.521",
+        "profit": "$13.898.556",
+        "profit_margin_pct": "13,1%",
+        "total_quantity": "5.415",
+        "transactions": "816"
+      },
+      {
+        "category_path": "SANITARIOS > SANITARIOS",
+        "total_revenue": "$106.008.978",
+        "profit": "$15.145.548",
+        "profit_margin_pct": "14,3%",
+        "total_quantity": "567",
+        "transactions": "288"
+      },
+      {
+        "category_path": "EUROCERAMICA > EUROCERAMICA",
+        "total_revenue": "$103.346.575",
+        "profit": "$17.383.885",
+        "profit_margin_pct": "16,8%",
+        "total_quantity": "2.076",
+        "transactions": "254"
+      },
+      {
+        "category_path": "ART Y HERRAMIENTAS AGRICOLAS > ART Y HERRAMIENTAS AGRICOLAS",
+        "total_revenue": "$97.120.552",
+        "profit": "$10.515.933",
+        "profit_margin_pct": "10,8%",
+        "total_quantity": "4.418",
+        "transactions": "582"
+      },
+      {
+        "category_path": "GRIFERIAS > GRIFERIAS",
+        "total_revenue": "$82.417.544",
+        "profit": "$11.634.916",
+        "profit_margin_pct": "14,1%",
+        "total_quantity": "8.211",
+        "transactions": "1.570"
+      },
+      {
+        "category_path": "PRODUCTOS EXCLUIDOS > PRODUCTOS EXCLUIDOS",
+        "total_revenue": "$58.953.748",
+        "profit": "$5.078.705",
+        "profit_margin_pct": "8,6%",
+        "total_quantity": "10.959",
+        "transactions": "62"
+      },
+      {
+        "category_path": "OTRAS > OTRAS",
+        "total_revenue": "$56.643.793",
+        "profit": "$9.965.771",
+        "profit_margin_pct": "17,6%",
+        "total_quantity": "816",
+        "transactions": "297"
+      },
+      {
+        "category_path": "MANGUERAS  > MANGUERAS ",
+        "total_revenue": "$52.521.525",
+        "profit": "$13.977.217",
+        "profit_margin_pct": "26,6%",
+        "total_quantity": "672",
+        "transactions": "124"
+      },
+      {
+        "category_path": "TUBERIA Y ACCE GALVANIZADOS > TUBERIA Y ACCE GALVANIZADOS",
+        "total_revenue": "$52.080.348",
+        "profit": "$4.734.610",
+        "profit_margin_pct": "9,1%",
+        "total_quantity": "1.288",
+        "transactions": "185"
+      },
+      {
+        "category_path": "CERAMICAS ALFA > CERAMICAS ALFA",
+        "total_revenue": "$51.787.037",
+        "profit": "$9.787.088",
+        "profit_margin_pct": "18,9%",
+        "total_quantity": "1.377",
+        "transactions": "180"
+      },
+      {
+        "category_path": "GRAPAS Y PUNTILLAS > GRAPAS Y PUNTILLAS",
+        "total_revenue": "$50.851.160",
+        "profit": "$6.591.409",
+        "profit_margin_pct": "13,0%",
+        "total_quantity": "16.168",
+        "transactions": "1.113"
+      },
+      {
+        "category_path": "LIMPIADORES Y SOLDADURAS > LIMPIADORES Y SOLDADURAS",
+        "total_revenue": "$43.100.175",
+        "profit": "$7.164.118",
+        "profit_margin_pct": "16,6%",
+        "total_quantity": "6.206",
+        "transactions": "701"
+      },
+      {
+        "category_path": "ACERO > ACERO",
+        "total_revenue": "$40.304.250",
+        "profit": "$4.141.514",
+        "profit_margin_pct": "10,3%",
+        "total_quantity": "1.770",
+        "transactions": "134"
+      },
+      {
+        "category_path": "LAVAPLATOS > LAVAPLATOS",
+        "total_revenue": "$37.415.707",
+        "profit": "$5.379.742",
+        "profit_margin_pct": "14,4%",
+        "total_quantity": "1.052",
+        "transactions": "369"
+      },
+      {
+        "category_path": "MATERIALES EMO > MATERIALES EMO",
+        "total_revenue": "$37.292.369",
+        "profit": "$4.941.437",
+        "profit_margin_pct": "13,2%",
+        "total_quantity": "786",
+        "transactions": "80"
+      },
+      {
+        "category_path": "TEJA TRANSLUCIDA > TEJA TRANSLUCIDA",
+        "total_revenue": "$30.972.783",
+        "profit": "$6.402.849",
+        "profit_margin_pct": "20,7%",
+        "total_quantity": "780",
+        "transactions": "154"
+      },
+      {
+        "category_path": "REGISTROS > REGISTROS",
+        "total_revenue": "$28.712.802",
+        "profit": "$4.390.986",
+        "profit_margin_pct": "15,3%",
+        "total_quantity": "2.984",
+        "transactions": "507"
+      },
+      {
+        "category_path": "HERRAMIENTAS > HERRAMIENTAS",
+        "total_revenue": "$27.919.085",
+        "profit": "$4.574.756",
+        "profit_margin_pct": "16,4%",
+        "total_quantity": "4.327",
+        "transactions": "690"
+      },
+      {
+        "category_path": "CEMENTO BLANCO > CEMENTO BLANCO",
+        "total_revenue": "$25.113.288",
+        "profit": "$4.286.720",
+        "profit_margin_pct": "17,1%",
+        "total_quantity": "627",
+        "transactions": "128"
+      },
+      {
+        "category_path": "CUERDAS Y SOGAS > CUERDAS Y SOGAS",
+        "total_revenue": "$24.287.591",
+        "profit": "$3.263.485",
+        "profit_margin_pct": "13,4%",
+        "total_quantity": "1.426",
+        "transactions": "191"
+      },
+      {
+        "category_path": "MANGURAS > MANGURAS",
+        "total_revenue": "$22.094.858",
+        "profit": "$5.751.473",
+        "profit_margin_pct": "26,0%",
+        "total_quantity": "1.448",
+        "transactions": "79"
+      },
+      {
+        "category_path": "PRODUCTOS  ABRASIVOS > PRODUCTOS  ABRASIVOS",
+        "total_revenue": "$19.140.792",
+        "profit": "$3.757.362",
+        "profit_margin_pct": "19,6%",
+        "total_quantity": "9.554",
+        "transactions": "552"
+      },
+      {
+        "category_path": "SALA ENCHAPES > SALA ENCHAPES",
+        "total_revenue": "$18.712.502",
+        "profit": "$2.742.055",
+        "profit_margin_pct": "14,7%",
+        "total_quantity": "1.284",
+        "transactions": "202"
+      },
+      {
+        "category_path": "PAREDES Y PISOS > PAREDES Y PISOS",
+        "total_revenue": "$17.748.075",
+        "profit": "$1.845.892",
+        "profit_margin_pct": "10,4%",
+        "total_quantity": "521",
+        "transactions": "39"
+      },
+      {
+        "category_path": "PINTULAND > PINTULAND",
+        "total_revenue": "$16.405.534",
+        "profit": "$2.668.895",
+        "profit_margin_pct": "16,3%",
+        "total_quantity": "331",
+        "transactions": "143"
+      },
+      {
+        "category_path": "VINILTEX > VINILTEX",
+        "total_revenue": "$15.720.572",
+        "profit": "$2.499.984",
+        "profit_margin_pct": "15,9%",
+        "total_quantity": "95",
+        "transactions": "45"
+      },
+      {
+        "category_path": "BAJA ROTACION > BAJA ROTACION",
+        "total_revenue": "$13.995.210",
+        "profit": "$1.241.565",
+        "profit_margin_pct": "8,9%",
+        "total_quantity": "130",
+        "transactions": "5"
+      },
+      {
+        "category_path": "CHAPAS Y CANDADOS > CHAPAS Y CANDADOS",
+        "total_revenue": "$13.577.665",
+        "profit": "$1.481.616",
+        "profit_margin_pct": "10,9%",
+        "total_quantity": "896",
+        "transactions": "156"
+      },
+      {
+        "category_path": "KORAZA > KORAZA",
+        "total_revenue": "$13.215.010",
+        "profit": "$2.475.412",
+        "profit_margin_pct": "18,7%",
+        "total_quantity": "75",
+        "transactions": "41"
+      },
+      {
+        "category_path": "DOMESTICO > DOMESTICO",
+        "total_revenue": "$12.748.817",
+        "profit": "$2.116.326",
+        "profit_margin_pct": "16,6%",
+        "total_quantity": "302",
+        "transactions": "96"
+      },
+      {
+        "category_path": "PINTULUX > PINTULUX",
+        "total_revenue": "$11.886.106",
+        "profit": "$2.105.062",
+        "profit_margin_pct": "17,7%",
+        "total_quantity": "152",
+        "transactions": "66"
+      },
+      {
+        "category_path": "RODILLOS Y BROCHAS > RODILLOS Y BROCHAS",
+        "total_revenue": "$11.070.784",
+        "profit": "$1.634.669",
+        "profit_margin_pct": "14,8%",
+        "total_quantity": "2.739",
+        "transactions": "508"
+      },
+      {
+        "category_path": "MALLAS PLASTICAS > MALLAS PLASTICAS",
+        "total_revenue": "$10.173.940",
+        "profit": "$1.094.947",
+        "profit_margin_pct": "10,8%",
+        "total_quantity": "78",
+        "transactions": "58"
+      },
+      {
+        "category_path": "PROD HENKEL > PROD HENKEL",
+        "total_revenue": "$8.571.089",
+        "profit": "$1.214.972",
+        "profit_margin_pct": "14,2%",
+        "total_quantity": "1.838",
+        "transactions": "129"
+      },
+      {
+        "category_path": "LAVAMANOS > LAVAMANOS",
+        "total_revenue": "$8.341.601",
+        "profit": "$1.424.894",
+        "profit_margin_pct": "17,1%",
+        "total_quantity": "108",
+        "transactions": "75"
+      },
+      {
+        "category_path": "ARTIC PARA PINTURAS > ARTIC PARA PINTURAS",
+        "total_revenue": "$8.196.900",
+        "profit": "$1.080.327",
+        "profit_margin_pct": "13,2%",
+        "total_quantity": "417",
+        "transactions": "59"
+      },
+      {
+        "category_path": "PINTURAS VARIAS > PINTURAS VARIAS",
+        "total_revenue": "$7.794.747",
+        "profit": "$1.795.242",
+        "profit_margin_pct": "23,0%",
+        "total_quantity": "430",
+        "transactions": "130"
+      },
+      {
+        "category_path": "HERRAMIENTAS GRAV AL 5% > HERRAMIENTAS GRAV AL 5%",
+        "total_revenue": "$7.312.445",
+        "profit": "$846.940",
+        "profit_margin_pct": "11,6%",
+        "total_quantity": "410",
+        "transactions": "152"
+      },
+      {
+        "category_path": "REJILLAS > REJILLAS",
+        "total_revenue": "$6.932.461",
+        "profit": "$927.578",
+        "profit_margin_pct": "13,4%",
+        "total_quantity": "1.178",
+        "transactions": "191"
+      },
+      {
+        "category_path": "TRANSPORTE > TRANSPORTE",
+        "total_revenue": "$6.458.291",
+        "profit": "$6.458.105",
+        "profit_margin_pct": "100,0%",
+        "total_quantity": "93",
+        "transactions": "96"
+      },
+      {
+        "category_path": "BUJES > BUJES",
+        "total_revenue": "$4.244.275",
+        "profit": "$859.683",
+        "profit_margin_pct": "20,3%",
+        "total_quantity": "3.158",
+        "transactions": "332"
+      },
+      {
+        "category_path": "BASES Y CONCENTRADOS > BASES Y CONCENTRADOS",
+        "total_revenue": "$4.046.583",
+        "profit": "$1.068.582",
+        "profit_margin_pct": "26,4%",
+        "total_quantity": "38",
+        "transactions": "29"
+      },
+      {
+        "category_path": "HERRAMIENTAS ELECTRICAS > HERRAMIENTAS ELECTRICAS",
+        "total_revenue": "$2.558.527",
+        "profit": "$468.414",
+        "profit_margin_pct": "18,3%",
+        "total_quantity": "56",
+        "transactions": "6"
+      },
+      {
+        "category_path": "DECORADOS > DECORADOS",
+        "total_revenue": "$2.299.504",
+        "profit": "$581.334",
+        "profit_margin_pct": "25,3%",
+        "total_quantity": "382",
+        "transactions": "39"
+      },
+      {
+        "category_path": "ARTICULO0S PARA PINTURA > ARTICULO0S PARA PINTURA",
+        "total_revenue": "$2.242.864",
+        "profit": "$446.457",
+        "profit_margin_pct": "19,9%",
+        "total_quantity": "478",
+        "transactions": "89"
+      },
+      {
+        "category_path": "DESCONTINUADOS > DESCONTINUADOS",
+        "total_revenue": "$2.042.851",
+        "profit": "$355.434",
+        "profit_margin_pct": "17,4%",
+        "total_quantity": "47",
+        "transactions": "11"
+      },
+      {
+        "category_path": "ABRAZADERAS > ABRAZADERAS",
+        "total_revenue": "$1.665.610",
+        "profit": "$284.534",
+        "profit_margin_pct": "17,1%",
+        "total_quantity": "662",
+        "transactions": "72"
+      },
+      {
+        "category_path": "GALVANIZADOS > GALVANIZADOS",
+        "total_revenue": "$1.658.623",
+        "profit": "$415.903",
+        "profit_margin_pct": "25,1%",
+        "total_quantity": "790",
+        "transactions": "48"
+      },
+      {
+        "category_path": "MANGUERAS > MANGUERAS",
+        "total_revenue": "$1.461.520",
+        "profit": "$190.630",
+        "profit_margin_pct": "13,0%",
+        "total_quantity": "10",
+        "transactions": "6"
+      },
+      {
+        "category_path": "ACCESORIOS POLIETILENO > ACCESORIOS POLIETILENO",
+        "total_revenue": "$1.449.579",
+        "profit": "$460.300",
+        "profit_margin_pct": "31,8%",
+        "total_quantity": "1.370",
+        "transactions": "95"
+      },
+      {
+        "category_path": "SERV DE TRANSPORTE EXCLUIDOS > SERV DE TRANSPORTE EXCLUIDOS",
+        "total_revenue": "$969.405",
+        "profit": "$969.405",
+        "profit_margin_pct": "100,0%",
+        "total_quantity": "12",
+        "transactions": "12"
+      },
+      {
+        "category_path": "INTERVINIL > INTERVINIL",
+        "total_revenue": "$316.637",
+        "profit": "$89.109",
+        "profit_margin_pct": "28,1%",
+        "total_quantity": "2",
+        "transactions": "2"
+      },
+      {
+        "category_path": "ANDERSON > ABRAZADERAS",
+        "total_revenue": "$311.233",
+        "profit": "$53.091",
+        "profit_margin_pct": "17,1%",
+        "total_quantity": "231",
+        "transactions": "9"
+      },
+      {
+        "category_path": "SERVICIOS DE CORTE > SERVICIOS DE CORTE",
+        "total_revenue": "$189.090",
+        "profit": "$99.090",
+        "profit_margin_pct": "52,4%",
+        "total_quantity": "45",
+        "transactions": "18"
+      },
+      {
+        "category_path": "SALA DE EMCHAPES > SALA DE EMCHAPES",
+        "total_revenue": "$34.125",
+        "profit": "$1.625",
+        "profit_margin_pct": "4,8%",
+        "total_quantity": "1",
+        "transactions": "1"
+      },
+      {
+        "category_path": "OTROS SERV > OTROS SERV",
+        "total_revenue": "$0",
+        "profit": "$0",
+        "profit_margin_pct": "0,0%",
+        "total_quantity": "0",
+        "transactions": "2"
+      },
+      {
+        "category_path": "BOLSAS PLASTICAS > BOLSAS PLASTICAS",
+        "total_revenue": "$-33",
+        "profit": "$-66",
+        "profit_margin_pct": "197,9%",
+        "total_quantity": "326",
+        "transactions": "334"
+      }
+    ],
+    "daily_trend": [
+      {
+        "date": "2024-05-02",
+        "revenue_with_iva": "$410.840.101",
+        "revenue_without_iva": "$347.931.677",
+        "profit": "$38.115.697",
+        "profit_margin_pct": "10,9%",
+        "quantity": "25.784",
+        "orders": "1.438"
+      },
+      {
+        "date": "2024-05-03",
+        "revenue_with_iva": "$197.878.913",
+        "revenue_without_iva": "$167.485.358",
+        "profit": "$20.181.943",
+        "profit_margin_pct": "12,1%",
+        "quantity": "13.331",
+        "orders": "978"
+      },
+      {
+        "date": "2024-05-04",
+        "revenue_with_iva": "$195.619.043",
+        "revenue_without_iva": "$168.636.017",
+        "profit": "$20.901.360",
+        "profit_margin_pct": "12,4%",
+        "quantity": "10.827",
+        "orders": "594"
+      },
+      {
+        "date": "2024-05-06",
+        "revenue_with_iva": "$294.448.738",
+        "revenue_without_iva": "$248.352.429",
+        "profit": "$31.424.988",
+        "profit_margin_pct": "12,7%",
+        "quantity": "19.012",
+        "orders": "1.363"
+      },
+      {
+        "date": "2024-05-07",
+        "revenue_with_iva": "$284.460.358",
+        "revenue_without_iva": "$239.960.447",
+        "profit": "$29.776.247",
+        "profit_margin_pct": "12,4%",
+        "quantity": "18.595",
+        "orders": "1.224"
+      },
+      {
+        "date": "2024-05-08",
+        "revenue_with_iva": "$304.029.275",
+        "revenue_without_iva": "$259.761.302",
+        "profit": "$31.507.019",
+        "profit_margin_pct": "12,1%",
+        "quantity": "15.111",
+        "orders": "1.085"
+      },
+      {
+        "date": "2024-05-09",
+        "revenue_with_iva": "$305.927.996",
+        "revenue_without_iva": "$263.904.647",
+        "profit": "$27.855.377",
+        "profit_margin_pct": "10,6%",
+        "quantity": "17.620",
+        "orders": "935"
+      },
+      {
+        "date": "2024-05-10",
+        "revenue_with_iva": "$166.096.066",
+        "revenue_without_iva": "$140.556.966",
+        "profit": "$17.081.716",
+        "profit_margin_pct": "12,2%",
+        "quantity": "11.873",
+        "orders": "961"
+      },
+      {
+        "date": "2024-05-11",
+        "revenue_with_iva": "$118.613.873",
+        "revenue_without_iva": "$100.993.638",
+        "profit": "$12.250.684",
+        "profit_margin_pct": "12,1%",
+        "quantity": "8.901",
+        "orders": "613"
+      },
+      {
+        "date": "2024-05-14",
+        "revenue_with_iva": "$324.262.795",
+        "revenue_without_iva": "$281.250.146",
+        "profit": "$49.941.539",
+        "profit_margin_pct": "17,8%",
+        "quantity": "16.359",
+        "orders": "1.357"
+      },
+      {
+        "date": "2024-05-15",
+        "revenue_with_iva": "$319.978.527",
+        "revenue_without_iva": "$271.352.293",
+        "profit": "$32.430.581",
+        "profit_margin_pct": "11,9%",
+        "quantity": "20.930",
+        "orders": "1.319"
+      },
+      {
+        "date": "2024-05-16",
+        "revenue_with_iva": "$184.312.782",
+        "revenue_without_iva": "$155.544.723",
+        "profit": "$18.679.120",
+        "profit_margin_pct": "12,0%",
+        "quantity": "13.391",
+        "orders": "970"
+      },
+      {
+        "date": "2024-05-17",
+        "revenue_with_iva": "$327.357.006",
+        "revenue_without_iva": "$280.599.077",
+        "profit": "$33.123.506",
+        "profit_margin_pct": "11,8%",
+        "quantity": "19.732",
+        "orders": "1.105"
+      },
+      {
+        "date": "2024-05-18",
+        "revenue_with_iva": "$120.623.279",
+        "revenue_without_iva": "$102.875.867",
+        "profit": "$15.153.260",
+        "profit_margin_pct": "14,7%",
+        "quantity": "7.591",
+        "orders": "617"
+      },
+      {
+        "date": "2024-05-20",
+        "revenue_with_iva": "$304.915.057",
+        "revenue_without_iva": "$257.382.776",
+        "profit": "$29.848.010",
+        "profit_margin_pct": "11,6%",
+        "quantity": "15.139",
+        "orders": "1.057"
+      },
+      {
+        "date": "2024-05-21",
+        "revenue_with_iva": "$214.199.967",
+        "revenue_without_iva": "$181.142.718",
+        "profit": "$21.314.855",
+        "profit_margin_pct": "11,8%",
+        "quantity": "12.440",
+        "orders": "1.031"
+      },
+      {
+        "date": "2024-05-22",
+        "revenue_with_iva": "$301.171.547",
+        "revenue_without_iva": "$255.819.554",
+        "profit": "$30.001.983",
+        "profit_margin_pct": "11,7%",
+        "quantity": "20.105",
+        "orders": "1.350"
+      },
+      {
+        "date": "2024-05-23",
+        "revenue_with_iva": "$177.876.790",
+        "revenue_without_iva": "$150.637.198",
+        "profit": "$19.275.319",
+        "profit_margin_pct": "12,8%",
+        "quantity": "15.206",
+        "orders": "1.090"
+      },
+      {
+        "date": "2024-05-24",
+        "revenue_with_iva": "$224.367.787",
+        "revenue_without_iva": "$188.841.334",
+        "profit": "$23.186.041",
+        "profit_margin_pct": "12,3%",
+        "quantity": "13.833",
+        "orders": "973"
+      },
+      {
+        "date": "2024-05-25",
+        "revenue_with_iva": "$91.481.163",
+        "revenue_without_iva": "$77.548.883",
+        "profit": "$10.608.243",
+        "profit_margin_pct": "13,7%",
+        "quantity": "3.253",
+        "orders": "476"
+      },
+      {
+        "date": "2024-05-27",
+        "revenue_with_iva": "$284.697.170",
+        "revenue_without_iva": "$240.909.949",
+        "profit": "$28.441.539",
+        "profit_margin_pct": "11,8%",
+        "quantity": "17.498",
+        "orders": "1.105"
+      },
+      {
+        "date": "2024-05-28",
+        "revenue_with_iva": "$284.610.566",
+        "revenue_without_iva": "$241.990.551",
+        "profit": "$26.766.909",
+        "profit_margin_pct": "11,1%",
+        "quantity": "15.901",
+        "orders": "1.076"
+      },
+      {
+        "date": "2024-05-29",
+        "revenue_with_iva": "$213.685.572",
+        "revenue_without_iva": "$180.299.914",
+        "profit": "$21.018.859",
+        "profit_margin_pct": "11,7%",
+        "quantity": "14.389",
+        "orders": "913"
+      },
+      {
+        "date": "2024-05-30",
+        "revenue_with_iva": "$196.535.409",
+        "revenue_without_iva": "$165.869.017",
+        "profit": "$20.948.932",
+        "profit_margin_pct": "12,6%",
+        "quantity": "16.794",
+        "orders": "1.111"
+      },
+      {
+        "date": "2024-05-31",
+        "revenue_with_iva": "$227.455.659",
+        "revenue_without_iva": "$191.824.050",
+        "profit": "$39.954.001",
+        "profit_margin_pct": "20,8%",
+        "quantity": "13.970",
+        "orders": "1.024"
+      }
+    ]
+  }
+}

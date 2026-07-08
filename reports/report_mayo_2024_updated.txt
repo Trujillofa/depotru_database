@@ -1,0 +1,310 @@
+📊 Generando informe para 05/2024...
+✓ Datos cargados: 25,765 registros
+============================================================
+  INFORME DE VENTAS — MES: Mayo 2024
+============================================================
+  Período:      2024-05-01 a 2024-05-31
+  Registros:    25,765
+------------------------------------------------------------
+  Facturación (con IVA):    $6.075.445.441
+  Facturación (sin IVA):    $5.161.470.530
+  Costo Total:              $4.511.682.803
+  Ganancia Bruta:           $649.787.727
+  Margen Bruto:             12,6%
+------------------------------------------------------------
+  Unidades Vendidas:        377.585
+  N° de Transacciones:      25.765
+  Ticket Promedio:          $235.802
+  Ganancia por Pedido:      $25.220
+============================================================
+
+  🏭 VENTAS POR PROVEEDOR
+--------------------------------------------------------------------------------
+  #   Proveedor              Revenue        %        Margen     Pedidos 
+--------------------------------------------------------------------------------
+  1   CEMEX                  $757.117.124   16.9%    8,4%       991     
+  2   ACESCO                 $425.055.637   9.5%     9,6%       428     
+  3   SIKA                   $327.195.379   7.3%     15,7%      1.937   
+  4                          $279.867.938   6.2%     11,8%      722     
+  5   PAVCO                  $208.312.981   4.6%     16,6%      3.849   
+  6   TOPTEC                 $163.813.533   3.7%     8,6%       201     
+  7   POLINTER               $156.772.682   3.5%     13,6%      198     
+  8   F                      $133.578.151   3.0%     8,7%       302     
+  9   D                      $105.924.246   2.4%     8,0%       178     
+  10  PINTUCO                $89.883.010    2.0%     17,5%      700     
+  11  .                      $88.943.213    2.0%     12,7%      442     
+  12  EUROCERAMICA           $86.739.182    1.9%     17,2%      226     
+  13  C.A. MEJIA             $79.406.312    1.8%     15,0%      971     
+  14  HERRAGRO               $74.831.091    1.7%     12,7%      714     
+  15  S/I                    $69.483.458    1.6%     9,3%       14      
+--------------------------------------------------------------------------------
+
+  🏷️  VENTAS POR MARCA / LÍNEA
+--------------------------------------------------------------------------------
+  #   Marca/Línea            Revenue        %        Margen     Pedidos 
+--------------------------------------------------------------------------------
+  1   MATERIALES PARA CONS   $3.606.099.380 69.9%    11,0%      15.391  
+  2   HERRAMIENAS Y ARTICU   $545.286.554   10.6%    16,3%      5.514   
+  3   MATERIALES Y HERAMIE   $274.745.169   5.3%     12,5%      1.931   
+  4   PRODUCTOS EXCLUIDOS    $269.995.469   5.2%     19,1%      281     
+  5   REVESTIMIENTOS         $214.516.410   4.2%     16,3%      603     
+  6   PINTURAS LACAS         $114.577.518   2.2%     17,7%      576     
+  7   PRODUCTOS GRAVADOS A   $104.432.997   2.0%     10,9%      734     
+  8   PINTURAS Y LACAS       $24.200.281    0.5%     18,4%      273     
+  9   SERVICIOS DE TRANSPO   $6.458.291     0.1%     100,0%     96      
+  10  SERV TRANSPORTE EXCL   $969.405       0.0%     100,0%     12      
+  11  SERVICIOS VARIOS GRA   $189.090       0.0%     52,4%      20      
+  12  BOLSAS PLASTICAS       $-33           -0.0%    197,9%     334     
+--------------------------------------------------------------------------------
+
+  TOP 15 PRODUCTOS POR FACTURACIÓN
+--------------------------------------------------------------------------------
+  #    Producto                       Revenue        Qty      Margen    
+--------------------------------------------------------------------------------
+  1    CEMENTO GRIS USO GENERAL CEM   $710.246.743   26.932   7,8%      
+  2    BARRA CORRUGADA 1/2 X 6 MTS    $160.811.843   6.998    7,3%      
+  3    ZINC 0.23 CAL.33 3X10 ACESCO   $93.636.328    2.750    10,0%     
+  4    BARRA CORRUGADA 12MM X 6 MTS   $67.561.409    3.314    7,5%      
+  5    BARRA CORRUGADA 3/8 X 6 MTS    $63.066.334    4.851    7,3%      
+  6    TUBO RECTANGULAR.3X11/2 X 1.   $59.591.539    1.218    9,1%      
+  7    CEMENTO GRIS USO GENERAL CEM   $59.195.238    2.178    9,0%      
+  8    LADRILLO BLOQUELON SANTA FE    $55.248.200    10.902   7,5%      
+  9    ZINC 0.23 CAL.33 3X12 ACESCO   $46.472.247    1.130    10,4%     
+  10   BARRA CORRUGADA 9MM X 6 MTS    $46.309.801    3.903    6,9%      
+  11   BARRA CORRUGADA 11MM X 6 MTS   $44.640.572    2.567    7,7%      
+  12   BARRA CORRUGADA 5/8 X 6 MTS    $42.686.191    1.185    7,4%      
+  13   ZINC 0.20 CAL.34 3X10 ACESCO   $42.449.503    1.430    7,9%      
+  14   ALAMBRE NEGRO RECOCIDO X KIL   $41.957.511    10.007   9,2%      
+  15   MALLA ELECTROSOLDADA 4MM 2.3   $40.617.734    535      7,4%      
+--------------------------------------------------------------------------------
+
+  TOP 15 CLIENTES POR FACTURACIÓN (incluye ganancia)
+------------------------------------------------------------------------------------------
+  #    Cliente                        Revenue        Ganancia       Margen   Pedidos 
+------------------------------------------------------------------------------------------
+  1    FERRETERIA MAGRETH S A S       $247.438.254   $51.000.433    20,6%    360     
+  2    ONG FUNDACION GESTION SOCIAL   $107.374.218   $11.753.658    10,9%    50      
+  3    ANDALUCIA DISEÑO Y CONSTRUCC   $96.067.928    $22.541.803    23,5%    5       
+  4    GIL ANTONIO VARGAS  MERCHAN    $83.805.426    $20.772.122    24,8%    53      
+  5    COMERCIALIZADORA INTERNACION   $71.113.590    $24.842.539    34,9%    121     
+  6    CONSTRUCERAMICAS COLOMBIA SA   $69.686.626    $16.662.038    23,9%    4       
+  7    GRUPO MASISO SAS               $69.309.313    $15.374.292    22,2%    133     
+  8    AGROCENTRO RIVERA S.A.S        $67.571.813    $12.138.919    18,0%    72      
+  9    OSCAR ALBERTO PEREZ VILLAREA   $65.864.991    $15.875.320    24,1%    332     
+  10   JAVIER  BONILLA TAMAYO         $63.794.652    $14.024.364    22,0%    36      
+  11   HORAIDA  LAVADO GARAY          $62.284.546    $15.041.470    24,1%    216     
+  12   FERRETERIA LA GRAN REBAJA DE   $61.248.386    $15.225.400    24,9%    93      
+  13   FERRETERIA EL DIAMANTE ALGEC   $58.079.266    $13.515.123    23,3%    128     
+  14   JUDITH  PERDOMO ROJAS          $53.541.112    $12.867.099    24,0%    77      
+  15   CONSTRUCTORA SANTA LUCIA SAS   $50.771.635    $14.381.910    28,3%    59      
+------------------------------------------------------------------------------------------
+
+  DESGLOSE POR CATEGORÍA
+--------------------------------------------------------------------------------
+  Categoría                                Revenue        Margen    
+--------------------------------------------------------------------------------
+  CEMENTO GRIS > CEMENTO GRIS              $710.418.871   7,8%      
+  HIERRO > HIERRO                          $549.898.331   7,5%      
+  ZINC > ZINC                              $391.605.029   10,2%     
+  PRODUCTOS SIKA > PRODUCTOS SIKA          $327.249.149   15,7%     
+  OTROS > OTROS                            $320.137.681   17,4%     
+  PERFIERIA > PERFIERIA                    $266.273.962   10,3%     
+  TANQUES > TANQUES                        $235.303.346   13,1%     
+  TUBERIA Y ACCE PVC > TUBERIA Y ACCE PV   $211.774.286   17,1%     
+  CUBIERTA TRAPEZOIDAL > CUBIERTA TRAPEZ   $169.759.629   12,9%     
+  TEJAS DE FIBROCEMENTO > TEJAS DE FIBRO   $161.700.799   8,5%      
+--------------------------------------------------------------------------------
+
+  📋 PEDIDOS SUGERIDOS POR CLIENTE
+--------------------------------------------------------------------------------------------------------------
+  🏪 FERRETERIA MAGRETH S A S
+     Total sugerido: 28.352 unidades
+     ▶ LADRILLO BLOQUELON SANTA FE 23X80X8
+       Marca: PRODUCTOS EXCLUIDOS
+       Proveedor: SANTA FE
+       Stock: N/A    Promedio/mes: 3036.0   Sugerido: 4.554
+     ▶ ALAMBRE NEGRO RECOCIDO X KILO CONTI
+       Marca: MATERIALES PARA CONS
+       Proveedor: .
+       Stock: N/A    Promedio/mes: 1121.2   Sugerido: 1.681
+     ▶ BARRA CORRUGADA 1/2 X 6 MTS NTC 228
+       Marca: MATERIALES PARA CONS
+       Stock: N/A    Promedio/mes: 724.2    Sugerido: 1.086
+     ▶ BARRA CORRUGADA 8.5MM X 6 MTS NTC 2
+       Marca: MATERIALES PARA CONS
+       Stock: N/A    Promedio/mes: 679.6    Sugerido: 1.019
+     ▶ BARRA CORRUGADA 12MM X 6 MTS NTC 22
+       Marca: MATERIALES PARA CONS
+       Stock: N/A    Promedio/mes: 452.2    Sugerido: 678
+--------------------------------------------------------------------------------------------------------------
+  🏪 ONG FUNDACION GESTION SOCIAL DE COL
+     Total sugerido: 21.244 unidades
+     ▶ ROLLO CORRUGADO X KG 1/4" SR NTC 22
+       Marca: PRODUCTOS EXCLUIDOS
+       Proveedor: D
+       Stock: N/A    Promedio/mes: 2510.0   Sugerido: 3.765
+     ▶ BARRA CORRUGADA 3/8 X 6 MTS NTC 228
+       Marca: PRODUCTOS EXCLUIDOS
+       Proveedor: S/I
+       Stock: N/A    Promedio/mes: 1903.0   Sugerido: 2.854
+     ▶ ZINC 0.23 CAL.33 3X10 ACESCO  S/I
+       Marca: PRODUCTOS EXCLUIDOS
+       Proveedor: S/I
+       Stock: N/A    Promedio/mes: 1108.2   Sugerido: 1.662
+     ▶ BARRA CORRUGADA 1/2 X 6 MTS NTC 228
+       Marca: PRODUCTOS EXCLUIDOS
+       Proveedor: S.I
+       Stock: N/A    Promedio/mes: 976.8    Sugerido: 1.465
+     ▶ BARRA CORRUGADA 9MM X 6 MTS NTC 228
+       Marca: PRODUCTOS EXCLUIDOS
+       Proveedor: SIN IVA
+       Stock: N/A    Promedio/mes: 773.2    Sugerido: 1.159
+--------------------------------------------------------------------------------------------------------------
+  🏪 ANDALUCIA DISEÑO Y CONSTRUCCIONES S
+     Total sugerido: 1.674 unidades
+     ▶ ALAMBRE NEGRO RECOCIDO X KILO CONTI
+       Marca: MATERIALES PARA CONS
+       Proveedor: .
+       Stock: N/A    Promedio/mes: 225.0    Sugerido: 337
+     ▶ TEJA MAXITEC P.7 N°10
+       Marca: MATERIALES PARA CONS
+       Proveedor: TOPTEC
+       Stock: N/A    Promedio/mes: 128.0    Sugerido: 192
+     ▶ PUNTILLA C.A MEJIA 350GR 21/2"
+       Marca: HERRAMIENAS Y ARTICU
+       Proveedor: C.A. MEJIA
+       Stock: N/A    Promedio/mes: 117.2    Sugerido: 175
+     ▶ TEJA MAXITEC P.7 NO.12 P/48.01KG
+       Marca: MATERIALES PARA CONS
+       Proveedor: TOPTEC
+       Stock: N/A    Promedio/mes: 79.0     Sugerido: 118
+     ▶ PUNTILLA C.A MEJIA 350GR 3"
+       Marca: HERRAMIENAS Y ARTICU
+       Proveedor: C.A. MEJIA
+       Stock: N/A    Promedio/mes: 77.0     Sugerido: 115
+--------------------------------------------------------------------------------------------------------------
+  🏪 GIL ANTONIO VARGAS  MERCHAN
+     Total sugerido: 5.947 unidades
+     ▶ ZINC 0.23 CAL.33 3X10 ACESCO 
+       Marca: MATERIALES PARA CONS
+       Proveedor: ACESCO
+       Stock: N/A    Promedio/mes: 571.2    Sugerido: 856
+     ▶ ZINC 0.23 CAL.33 3X12 ACESCO 
+       Marca: MATERIALES PARA CONS
+       Proveedor: ACESCO
+       Stock: N/A    Promedio/mes: 405.0    Sugerido: 607
+     ▶ LADRILLO BLOQUELON SANTA FE 23X80X8
+       Marca: PRODUCTOS EXCLUIDOS
+       Proveedor: SANTA FE
+       Stock: N/A    Promedio/mes: 364.0    Sugerido: 546
+     ▶ ZINC 0.20 CAL.34 3X10 ACESCO 
+       Marca: MATERIALES PARA CONS
+       Proveedor: ACESCO
+       Stock: N/A    Promedio/mes: 336.0    Sugerido: 504
+     ▶ TORNILLO AUTOPERF 21/2" T/SOMBRILLA
+       Marca: MATERIALES PARA CONS
+       Proveedor: ECONOMI
+       Stock: N/A    Promedio/mes: 300.0    Sugerido: 450
+--------------------------------------------------------------------------------------------------------------
+  🏪 COMERCIALIZADORA INTERNACIONAL C.I 
+     Total sugerido: 4.862 unidades
+     ▶ TORNILLO AUTOPERF 11/2" T/SOMBRILLA
+       Marca: MATERIALES PARA CONS
+       Proveedor: AJ
+       Stock: N/A    Promedio/mes: 530.0    Sugerido: 795
+     ▶ BARRA CORRUGADA 1/2 X 6 MTS NTC 228
+       Marca: MATERIALES PARA CONS
+       Stock: N/A    Promedio/mes: 200.0    Sugerido: 300
+     ▶ GRANIPLAS BLANCO X KG
+       Marca: PINTURAS Y LACAS
+       Proveedor: 1A
+       Stock: N/A    Promedio/mes: 192.0    Sugerido: 288
+     ▶ CAL VIVA MINERALES DEL SUR X 50KL
+       Marca: MATERIALES Y HERAMIE
+       Stock: N/A    Promedio/mes: 140.8    Sugerido: 211
+     ▶ LADRILLO N°5
+       Marca: PRODUCTOS EXCLUIDOS
+       Stock: N/A    Promedio/mes: 140.0    Sugerido: 210
+--------------------------------------------------------------------------------------------------------------
+
+  🔗 RECOMENDACIONES DE COMPRA CRUZADA
+--------------------------------------------------------------------------------
+  📦 CEMENTO GRIS USO GENERAL CEMEX
+     Los compradores también llevan: ALAMBRE NEGRO RECOCIDO X , CODO PRESION 90 1/2 T/PES, PUNTILLA C.A MEJIA 350GR 
+  📦 BARRA CORRUGADA 1/2 X 6 MTS NT
+     Los compradores también llevan: ALAMBRE NEGRO RECOCIDO X , BARRA CORRUGADA 3/8 X 6 M, PUNTILLA C.A MEJIA 350GR 
+  📦 ZINC 0.23 CAL.33 3X10 ACESCO 
+     Los compradores también llevan: SOLDADURA SOLTRODE 6013X3, ZINC 0.23 CAL.33 3X7 ACES, ALAMBRE NEGRO RECOCIDO X 
+  📦 BARRA CORRUGADA 12MM X 6 MTS N
+     Los compradores también llevan: ALAMBRE NEGRO RECOCIDO X , BARRA CORRUGADA 9MM X 6 M, ROLLO CORRUGADO X KG 1/4"
+  📦 BARRA CORRUGADA 3/8 X 6 MTS NT
+     Los compradores también llevan: ALAMBRE NEGRO RECOCIDO X , PUNTILLA C.A MEJIA 350GR , TUBO PRESION PAVCO RDE 13
+--------------------------------------------------------------------------------
+
+  ⭐ PRODUCTOS DE ALTO MARGEN (recomendados para promocionar)
+--------------------------------------------------------------------------------
+  Producto                            Margen     Vendidos  
+--------------------------------------------------------------------------------
+  CURVA CONDUIT 90 1" T/PESADO        63,7%      17        
+  CINTA MICROPERFORADA P/LAMINA POL   58,7%      12        
+  TENSOR PARA CABLE 1/4-6MM           57,5%      40        
+  SURTIDOR PLASTICO 2 BOQUIL.3/4 HO   57,3%      12        
+  TORNILLO AUTOPERF FIJADOR ALA 11/   56,8%      10        
+  TEE SANITARIA 2 T/LIVIANO           54,6%      307       
+  UNION POLIETILENO 1"                54,5%      214       
+  RACOR PLASTICO P/MANGUERA           52,5%      257       
+--------------------------------------------------------------------------------
+
+  🔗 MIX CLIENTES-PROVEEDORES (Top)
+--------------------------------------------------------------------------------
+  🏪 FERRETERIA MAGRETH S A S — 37 proveedores. $178.321.672
+     Principales: CEMEX(53%), SIKA(8%), PAVCO(6%)
+  🏪 DEPOSITO TRUJILLO SAS — 36 proveedores. $119.159.403
+     Principales: TRUPER(24%), CEMEX(23%), CALIPSO(14%)
+  🏪 ONG FUNDACION GESTION SOCIAL D — 20 proveedores. $107.374.218
+     Principales: S/I(65%), SIN IVA(10%), S.I(9%)
+  🏪 ANDALUCIA DISEÑO Y CONSTRUCCIO — 2 proveedores. $80.737.015
+     Principales: TOPTEC(100%), (0%)
+  🏪 GIL ANTONIO VARGAS  MERCHAN — 15 proveedores. $67.092.488
+     Principales: ACESCO(72%), F(5%), M(5%)
+--------------------------------------------------------------------------------
+
+  🛒 PLAN DE COMPRAS / ABASTECIMIENTO POR PROVEEDOR
+------------------------------------------------------------------------------------------
+  🏭 SANTA FE | Unidades sugeridas: 14677 | Clientes afectados: 5
+     • LADRILLO BLOQUELON SANTA FE 23: 14677 uds (de 5 clientes)
+  🏭 Sin Proveedor | Unidades sugeridas: 12463 | Clientes afectados: 7
+     • BARRA CORRUGADA 1/2 X 6 MTS NT: 3140 uds (de 5 clientes)
+     • BARRA CORRUGADA 9MM X 6 MTS NT: 1862 uds (de 2 clientes)
+     • ROLLO CORRUGADO X KG 1/4" SR N: 1692 uds (de 4 clientes)
+  🏭 PAVCO | Unidades sugeridas: 6764 | Clientes afectados: 4
+     • CODO PRESION 90 1/2 T/PESADO: 3193 uds (de 4 clientes)
+     • ADAPTADOR HEMBRA 1/2" T/PESADO: 933 uds (de 1 clientes)
+     • SOLDADURA PAVCO PVC 28 GR (1/1: 918 uds (de 2 clientes)
+  🏭 S/I | Unidades sugeridas: 6220 | Clientes afectados: 1
+     • BARRA CORRUGADA 3/8 X 6 MTS NT: 2854 uds (de 1 clientes)
+     • ZINC 0.23 CAL.33 3X10 ACESCO  : 1662 uds (de 1 clientes)
+     • ALAMBRE NEGRO RECOCIDO SIN IVA: 1065 uds (de 1 clientes)
+  🏭 D | Unidades sugeridas: 5422 | Clientes afectados: 4
+     • ROLLO CORRUGADO X KG 1/4" SR N: 3765 uds (de 1 clientes)
+     • ROLLO CORRUGADO X KG 3/8" SR N: 1062 uds (de 1 clientes)
+     • BARRA CORRUGADA 3/8 X 6 MTS NT: 595 uds (de 2 clientes)
+  🏭 . | Unidades sugeridas: 3861 | Clientes afectados: 7
+     • ALAMBRE NEGRO RECOCIDO X KILO : 3861 uds (de 7 clientes)
+------------------------------------------------------------------------------------------
+
+  📊 ANÁLISIS ABC (80/15/5)
+--------------------------------------------------------------------------------
+  PRODUCTS:
+    A: 312 items, 80.0% revenue
+    B: 605 items, 15.0% revenue
+    C: 1601 items, 5.0% revenue
+  CUSTOMERS:
+    A: 308 items, 80.0% revenue
+    B: 547 items, 15.0% revenue
+    C: 1967 items, 5.0% revenue
+  VENDORS:
+    A: 25 items, 79.3% revenue
+    B: 38 items, 15.5% revenue
+    C: 127 items, 5.1% revenue
+--------------------------------------------------------------------------------

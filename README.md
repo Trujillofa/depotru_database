@@ -84,8 +84,8 @@ cp .env.example .env
 
 # Generate a monthly sales report (text, JSON, HTML, or PDF)
 depotru-report --year 2024 --month 5
-depotru-report --year 2024 --month 5 --format html --output report_mayo_2024.html
-depotru-report --year 2024 --month 5 --format pdf --output report_mayo_2024.pdf
+depotru-report --year 2024 --month 5 --format html --output reports/report_mayo_2024.html
+depotru-report --year 2024 --month 5 --format pdf --output reports/report_mayo_2024.pdf
 ```
 
 ### Option 3: MCP Database Server (for AI agents)
