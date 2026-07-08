@@ -28,6 +28,10 @@ from business_analyzer.ai.charts import (
     set_chart_query_context,
 )
 from business_analyzer.ai.formatting import coerce_chart_dataframe
+from business_analyzer.ai.recommended_reports import (
+    inject_recommended_reports_ui,
+    recommended_reports_payload,
+)
 
 _MANAGER_REPORT_JS_SNIPPET = (
     'if(n.type==="manager_report"){'
@@ -124,9 +128,11 @@ class SmartVannaFlaskApp(VannaFlaskApp):
 
     def _patch_plotly_cdn(self) -> None:
         """Use a maintained Plotly.js build instead of deprecated plotly-latest."""
-        patched_html = html_content.replace(
-            "https://cdn.plot.ly/plotly-latest.min.js",
-            "https://cdn.plot.ly/plotly-2.35.2.min.js",
+        patched_html = inject_recommended_reports_ui(
+            html_content.replace(
+                "https://cdn.plot.ly/plotly-latest.min.js",
+                "https://cdn.plot.ly/plotly-2.35.2.min.js",
+            )
         )
 
         @self.flask_app.route("/", defaults={"path": ""})
@@ -283,6 +289,10 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             if question:
                 cache.set(id=cache_id, field="question", value=question)
             return jsonify(manager_report_api_payload(result, cache_id))
+
+        @self.flask_app.route("/api/v0/recommended_reports", methods=["GET"])
+        def recommended_reports():
+            return jsonify(recommended_reports_payload())
 
         @self.flask_app.route("/reports/<path:filename>")
         def serve_manager_report(filename: str):
