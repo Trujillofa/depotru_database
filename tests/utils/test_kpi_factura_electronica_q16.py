@@ -27,11 +27,11 @@ def test_sql_pack_includes_q16_factura_electronica():
     assert "ES_ACEPTADA" in sql
 
 
-def test_load_query_blocks_requires_q1_through_q16():
+def test_load_query_blocks_requires_q1_through_q17():
     blocks = load_query_blocks(
         ROOT / "scripts" / "analysis" / "kpi_sql_pack.sql.template"
     )
-    assert set(blocks.keys()) >= {f"Q{i}" for i in range(1, 17)}
+    assert set(blocks.keys()) >= {f"Q{i}" for i in range(1, 18)}
 
 
 def test_compute_scorecard_includes_factura_electronica_from_q16():

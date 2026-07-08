@@ -70,6 +70,13 @@ try:
 except ImportError:
     factura_electronica_summary_from_documento_rows = None
 
+try:
+    from business_analyzer.core.j3system_contabilidad import (  # noqa: E402
+        pyg_summary_from_clase_rows,
+    )
+except ImportError:
+    pyg_summary_from_clase_rows = None
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SQL_PACK_PATH = ROOT_DIR / "scripts" / "analysis" / "kpi_sql_pack.sql.template"
 OUTPUT_DIR = ROOT_DIR / "reports"
@@ -158,7 +165,7 @@ def load_query_blocks(sql_path: Path) -> Dict[str, str]:
         sql = match.group("sql").strip()
         blocks[f"Q{number}"] = sql
 
-    required = {f"Q{i}" for i in range(1, 17)}
+    required = {f"Q{i}" for i in range(1, 18)}
     missing = sorted(required - set(blocks.keys()))
     if missing:
         raise ValueError(f"Missing query blocks in SQL pack: {', '.join(missing)}")
@@ -285,6 +292,14 @@ def generate_narrative(
         else:
             fe_aceptacion = 0.0
             fe_rechazo = 0.0
+        q17 = results.get("Q17", [])
+        if pyg_summary_from_clase_rows and q17:
+            cont = pyg_summary_from_clase_rows(q17)
+            margen_cont_pct = cont.get("Margen_Contable_Pct", 0.0)
+            ingresos_cont = cont.get("Ingresos_Creditos", 0.0)
+        else:
+            margen_cont_pct = 0.0
+            ingresos_cont = 0.0
         prompt = (
             f"Escribe un párrafo ejecutivo en español (máximo 150 palabras) "
             f"analizando el rendimiento semanal de la ferretería: "
@@ -302,6 +317,8 @@ def generate_narrative(
             f"(tasa validada {tasa_dev:.2f}%), "
             f"Aceptación factura electrónica {fe_aceptacion:.2f}% "
             f"(rechazo {fe_rechazo:.2f}%), "
+            f"Margen contable {margen_cont_pct:.2f}% "
+            f"(ingresos contables ${ingresos_cont:,.0f}), "
             f"Categoría top: {top_cat}, Marca real top: {top_marca}. "
             f"Incluye una recomendación comercial accionable."
         )
@@ -443,6 +460,20 @@ def compute_scorecard(
         current_fe_emitidas = 0.0
     fe_aceptacion_target = 99.5
     fe_rechazo_target = 0.5
+
+    q17 = results.get("Q17", [])
+    if pyg_summary_from_clase_rows and q17:
+        cont = pyg_summary_from_clase_rows(q17)
+        current_margen_contable = as_float(cont.get("Margen_Bruto_Contable"))
+        current_margen_contable_pct = as_float(cont.get("Margen_Contable_Pct"))
+        current_ingresos_contables = as_float(cont.get("Ingresos_Creditos"))
+        current_gastos_contables = as_float(cont.get("Gastos_Debitos"))
+    else:
+        current_margen_contable = 0.0
+        current_margen_contable_pct = 0.0
+        current_ingresos_contables = 0.0
+        current_gastos_contables = 0.0
+    margen_contable_target_pct = 15.0
 
     margin_target = baseline_margin + 1.0
     profit_target = baseline_profit * 1.05
@@ -634,6 +665,40 @@ def compute_scorecard(
             "status": "🟢",
             "delta_kind": "count",
         },
+        "margen_contable": {
+            "baseline": current_margen_contable,
+            "target": current_margen_contable,
+            "current": current_margen_contable,
+            "delta": 0.0,
+            "status": "🟢",
+            "delta_kind": "currency",
+        },
+        "margen_contable_pct": {
+            "baseline": current_margen_contable_pct,
+            "target": margen_contable_target_pct,
+            "current": current_margen_contable_pct,
+            "delta": current_margen_contable_pct - margen_contable_target_pct,
+            "status": status_higher_is_better(
+                current_margen_contable_pct, margen_contable_target_pct
+            ),
+            "delta_kind": "pp",
+        },
+        "ingresos_contables": {
+            "baseline": current_ingresos_contables,
+            "target": current_ingresos_contables,
+            "current": current_ingresos_contables,
+            "delta": 0.0,
+            "status": "🟢",
+            "delta_kind": "currency",
+        },
+        "gastos_contables": {
+            "baseline": current_gastos_contables,
+            "target": current_gastos_contables,
+            "current": current_gastos_contables,
+            "delta": 0.0,
+            "status": "🟢",
+            "delta_kind": "currency",
+        },
     }
 
 
@@ -660,6 +725,7 @@ def render_markdown(
     q14 = results.get("Q14", [])
     q15 = results.get("Q15", [])
     q16 = results.get("Q16", [])
+    q17 = results.get("Q17", [])
     inv_summary = (
         critical_inventory_summary_from_rows(q13)
         if critical_inventory_summary_from_rows and q13
@@ -679,6 +745,9 @@ def render_markdown(
         factura_electronica_summary_from_documento_rows(q16)
         if factura_electronica_summary_from_documento_rows and q16
         else {}
+    )
+    cont_summary = (
+        pyg_summary_from_clase_rows(q17) if pyg_summary_from_clase_rows and q17 else {}
     )
     funnel_summary = (
         funnel_summary_from_vendor_rows(q12)
@@ -844,6 +913,14 @@ def render_markdown(
         f"| {format_pct(scorecard['factura_electronica_rechazo']['current'])} "
         f"| {format_delta(scorecard['factura_electronica_rechazo']['delta'], 'pp')} "
         f"| {scorecard['factura_electronica_rechazo']['status']} |"
+    )
+    lines.append(
+        "| Margen Contable % | `(Ingresos 4 - Costos 6) / Ingresos` (PUC) "
+        f"| {format_pct(scorecard['margen_contable_pct']['baseline'])} "
+        f"| {format_pct(scorecard['margen_contable_pct']['target'])} "
+        f"| {format_pct(scorecard['margen_contable_pct']['current'])} "
+        f"| {format_delta(scorecard['margen_contable_pct']['delta'], 'pp')} "
+        f"| {scorecard['margen_contable_pct']['status']} |"
     )
 
     lines.append("")
@@ -1119,6 +1196,32 @@ def render_markdown(
         lines.append("- **Sin datos de factura electrónica (Q16 vacío).**")
 
     lines.append("")
+    lines.append("### 3.13 Contabilidad — PyG PUC")
+    if cont_summary:
+        lines.append(
+            f"- **Ingresos (créditos clase 4):** "
+            f"{format_currency(as_float(cont_summary.get('Ingresos_Creditos')))} | "
+            f"**Costos (débitos clase 6):** "
+            f"{format_currency(as_float(cont_summary.get('Costos_Debitos')))} | "
+            f"**Gastos (débitos clase 5):** "
+            f"{format_currency(as_float(cont_summary.get('Gastos_Debitos')))}"
+        )
+        lines.append(
+            f"- **Margen bruto contable:** "
+            f"{format_currency(as_float(cont_summary.get('Margen_Bruto_Contable')))} | "
+            f"**Margen %:** {format_pct(as_float(cont_summary.get('Margen_Contable_Pct')))}"
+        )
+        for row in q17:
+            lines.append(
+                f"  - Clase {row.get('Clase_Puc')} ({row.get('Tipo_Cuenta')}) | "
+                f"Créditos: {format_currency(as_float(row.get('Total_Creditos')))} | "
+                f"Débitos: {format_currency(as_float(row.get('Total_Debitos')))} | "
+                f"Saldo: {format_currency(as_float(row.get('Saldo_Neto')))}"
+            )
+    else:
+        lines.append("- **Sin datos contables (Q17 vacío).**")
+
+    lines.append("")
     lines.append("## 4) Weekly Action Plan (Execution)")
     lines.append("")
     lines.append(
@@ -1142,7 +1245,7 @@ def render_markdown(
 
     lines.append("## 5) SQL Blocks Used (Traceability)")
     lines.append("")
-    for q in range(1, 17):
+    for q in range(1, 18):
         lines.append(f"- [x] Q{q}")
 
     return "\n".join(lines) + "\n"
@@ -1167,7 +1270,7 @@ def generate_kpi_control_board(
     results: Dict[str, List[Dict[str, Any]]] = {}
     conn = get_connection()
     try:
-        for key in [f"Q{i}" for i in range(1, 17)]:
+        for key in [f"Q{i}" for i in range(1, 18)]:
             query = render_query(blocks[key], start_date, end_date)
             results[key] = execute_query(conn, query)
     finally:

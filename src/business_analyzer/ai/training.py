@@ -11,6 +11,9 @@ import os
 import re
 from typing import List, Optional, Tuple
 
+from business_analyzer.core.j3system_contabilidad import (
+    build_contabilidad_pyg_clase_sql,
+)
 from business_analyzer.core.j3system_cotizacion_funnel import (
     build_cotizacion_funnel_by_vendor_sql,
 )
@@ -527,6 +530,10 @@ def get_j3system_training_examples() -> List[Tuple[str, str]]:
         (
             "Tasa de aceptación de factura electrónica DIAN por tipo de documento",
             build_factura_electronica_by_documento_sql("2024-12-01", "2024-12-31"),
+        ),
+        (
+            "PyG contable por clase PUC (ingresos, gastos, costos) en J3System",
+            build_contabilidad_pyg_clase_sql("2024-12-01", "2024-12-31"),
         ),
     ]
 

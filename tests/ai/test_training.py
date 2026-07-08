@@ -309,6 +309,15 @@ class TestJ3SystemTraining:
         assert "Tasa_Aceptacion_Pct" in sql
         assert "Tasa_Rechazo_Pct" in sql
 
+    def test_j3system_examples_include_contabilidad_pyg(self):
+        examples = dict(get_j3system_training_examples())
+        sql = examples[
+            "PyG contable por clase PUC (ingresos, gastos, costos) en J3System"
+        ]
+        assert "ConMovimiento" in sql
+        assert "Clase_Puc" in sql
+        assert "Saldo_Neto" in sql
+
     def test_j3system_examples_cover_aggregate_and_one_per_sale(self):
         examples = dict(get_j3system_training_examples())
         assert (

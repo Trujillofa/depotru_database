@@ -1,4 +1,4 @@
-"""Live execution of KPI pack queries Q9–Q16 (requires MSSQL)."""
+"""Live execution of KPI pack queries Q9–Q17 (requires MSSQL)."""
 
 from __future__ import annotations
 
@@ -137,3 +137,15 @@ def test_q16_factura_electronica_columns(db_conn, query_blocks):
     assert "Tasa_Rechazo_Pct" in row
     emitidas_total = sum(float(r["Emitidas"]) for r in rows)
     assert emitidas_total == 9961.0
+
+
+@pytest.mark.requires_db
+@pytest.mark.integration
+def test_q17_contabilidad_pyg_columns(db_conn, query_blocks):
+    sql = render_query(query_blocks["Q17"], START_DATE, END_DATE)
+    rows = execute_query(db_conn, sql)
+    assert len(rows) == 3
+    classes = {row["Clase_Puc"] for row in rows}
+    assert classes == {"4", "5", "6"}
+    ingresos = next(r for r in rows if r["Clase_Puc"] == "4")
+    assert float(ingresos["Total_Creditos"]) > 8_000_000_000

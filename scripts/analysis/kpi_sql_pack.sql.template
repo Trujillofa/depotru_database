@@ -766,3 +766,48 @@ SELECT
 FROM fe_filtrada
 GROUP BY DocumentosCodigo
 ORDER BY Rechazadas DESC, Emitidas DESC;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q17) Contabilidad — PyG por clase PUC (ConMovimiento*)                     */
+/* Clase 4=Ingresos, 5=Gastos, 6=Costos; saldo con CuentasPucNaturaleza      */
+/* -------------------------------------------------------------------------- */
+WITH movimientos_filtrados AS (
+    SELECT
+        p.CuentasPucCodigo,
+        p.CuentasPucNaturaleza,
+        det.MovimientoDetalleTipo,
+        det.MovimientoDetalleValor,
+        CASE
+            WHEN p.CuentasPucNaturaleza = 'C' THEN
+                CASE WHEN det.MovimientoDetalleTipo = 'C' THEN det.MovimientoDetalleValor
+                     ELSE -det.MovimientoDetalleValor END
+            WHEN p.CuentasPucNaturaleza = 'D' THEN
+                CASE WHEN det.MovimientoDetalleTipo = 'D' THEN det.MovimientoDetalleValor
+                     ELSE -det.MovimientoDetalleValor END
+            ELSE 0
+        END AS Saldo_Firmado
+    FROM J3System.dbo.ConMovimiento m
+    JOIN J3System.dbo.ConMovimientoDetalle det ON det.MovimientoID = m.MovimientoID
+    JOIN J3System.dbo.AdmDocumentos dc ON dc.DocumentosID = m.DocumentosID
+    JOIN J3System.dbo.AdmCuentasPuc p ON p.CuentasPucID = det.CuentasPucID
+    WHERE m.MovimientoFecha BETWEEN @start_date AND @end_date
+      AND dc.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+)
+SELECT
+    LEFT(CuentasPucCodigo, 1) AS Clase_Puc,
+    CASE LEFT(CuentasPucCodigo, 1)
+        WHEN '4' THEN 'Ingresos'
+        WHEN '5' THEN 'Gastos'
+        WHEN '6' THEN 'Costos'
+        ELSE 'Otro'
+    END AS Tipo_Cuenta,
+    SUM(CASE WHEN MovimientoDetalleTipo = 'C' THEN MovimientoDetalleValor ELSE 0 END)
+        AS Total_Creditos,
+    SUM(CASE WHEN MovimientoDetalleTipo = 'D' THEN MovimientoDetalleValor ELSE 0 END)
+        AS Total_Debitos,
+    SUM(Saldo_Firmado) AS Saldo_Neto
+FROM movimientos_filtrados
+WHERE LEFT(CuentasPucCodigo, 1) IN ('4', '5', '6')
+GROUP BY LEFT(CuentasPucCodigo, 1)
+ORDER BY Clase_Puc;
