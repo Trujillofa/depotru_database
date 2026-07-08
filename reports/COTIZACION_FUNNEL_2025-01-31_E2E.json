@@ -1,0 +1,382 @@
+{
+  "period": {
+    "start": "2025-01-01",
+    "end": "2025-01-31"
+  },
+  "summary": {
+    "Fecha_Inicio": "2025-01-01",
+    "Fecha_Fin": "2025-01-31",
+    "Cotizaciones": 2327,
+    "Convertidas": 585,
+    "Perdidas": 1742,
+    "Tasa_Conversion_Pct": "25.139664804469",
+    "Dias_Promedio_Conversion": 1.029059829059829,
+    "Cotizaciones_Multifactura": 62
+  },
+  "by_vendor": [
+    {
+      "Vendedor_Codigo": "132",
+      "Vendedor_Nombre": "EDILBERTO ESQUIVEL RUBIO",
+      "Cotizaciones": 261,
+      "Convertidas": 61,
+      "Perdidas": 200,
+      "Tasa_Conversion_Pct": "23.371647509578",
+      "Dias_Promedio_Conversion": 0.16393442622950818
+    },
+    {
+      "Vendedor_Codigo": "003",
+      "Vendedor_Nombre": "CARLOS EFREY PASCUAS",
+      "Cotizaciones": 239,
+      "Convertidas": 34,
+      "Perdidas": 205,
+      "Tasa_Conversion_Pct": "14.225941422594",
+      "Dias_Promedio_Conversion": 0.14705882352941177
+    },
+    {
+      "Vendedor_Codigo": "126",
+      "Vendedor_Nombre": "AMELIA SOTELO NARVAEZ",
+      "Cotizaciones": 214,
+      "Convertidas": 83,
+      "Perdidas": 131,
+      "Tasa_Conversion_Pct": "38.785046728971",
+      "Dias_Promedio_Conversion": 0.9156626506024096
+    },
+    {
+      "Vendedor_Codigo": "057",
+      "Vendedor_Nombre": "ANDRES FELIPE VARGAS JOVEL",
+      "Cotizaciones": 197,
+      "Convertidas": 26,
+      "Perdidas": 171,
+      "Tasa_Conversion_Pct": "13.197969543147",
+      "Dias_Promedio_Conversion": 0.2692307692307692
+    },
+    {
+      "Vendedor_Codigo": "102",
+      "Vendedor_Nombre": "JULIAN ANDRES PINEDA",
+      "Cotizaciones": 195,
+      "Convertidas": 89,
+      "Perdidas": 106,
+      "Tasa_Conversion_Pct": "45.641025641025",
+      "Dias_Promedio_Conversion": 0.3258426966292135
+    },
+    {
+      "Vendedor_Codigo": "140",
+      "Vendedor_Nombre": "LUIS ESTEBAN MEDINA",
+      "Cotizaciones": 181,
+      "Convertidas": 58,
+      "Perdidas": 123,
+      "Tasa_Conversion_Pct": "32.044198895027",
+      "Dias_Promedio_Conversion": 2.706896551724138
+    },
+    {
+      "Vendedor_Codigo": "060",
+      "Vendedor_Nombre": "YULI ALEJANDRA HIGUERA",
+      "Cotizaciones": 144,
+      "Convertidas": 26,
+      "Perdidas": 118,
+      "Tasa_Conversion_Pct": "18.055555555555",
+      "Dias_Promedio_Conversion": 0.6538461538461539
+    },
+    {
+      "Vendedor_Codigo": "106",
+      "Vendedor_Nombre": "DIANA PATRICIA CULMA",
+      "Cotizaciones": 141,
+      "Convertidas": 57,
+      "Perdidas": 84,
+      "Tasa_Conversion_Pct": "40.425531914893",
+      "Dias_Promedio_Conversion": 0.8596491228070176
+    },
+    {
+      "Vendedor_Codigo": "095",
+      "Vendedor_Nombre": "DANIEL ENRIQUE CAICEDO",
+      "Cotizaciones": 131,
+      "Convertidas": 24,
+      "Perdidas": 107,
+      "Tasa_Conversion_Pct": "18.320610687022",
+      "Dias_Promedio_Conversion": 1.9166666666666667
+    },
+    {
+      "Vendedor_Codigo": "130",
+      "Vendedor_Nombre": "JAVIER ANDRES APACHE",
+      "Cotizaciones": 117,
+      "Convertidas": 3,
+      "Perdidas": 114,
+      "Tasa_Conversion_Pct": "2.564102564102",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "141",
+      "Vendedor_Nombre": "JOSE DAVID CORTES",
+      "Cotizaciones": 105,
+      "Convertidas": 6,
+      "Perdidas": 99,
+      "Tasa_Conversion_Pct": "5.714285714285",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "000",
+      "Vendedor_Nombre": "SIN COMISION",
+      "Cotizaciones": 100,
+      "Convertidas": 25,
+      "Perdidas": 75,
+      "Tasa_Conversion_Pct": "25.000000000000",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "044",
+      "Vendedor_Nombre": "HUBER SANTIAGO ENCISO",
+      "Cotizaciones": 76,
+      "Convertidas": 33,
+      "Perdidas": 43,
+      "Tasa_Conversion_Pct": "43.421052631578",
+      "Dias_Promedio_Conversion": 0.9696969696969697
+    },
+    {
+      "Vendedor_Codigo": "116",
+      "Vendedor_Nombre": "FELIPE RAMIREZ",
+      "Cotizaciones": 63,
+      "Convertidas": 2,
+      "Perdidas": 61,
+      "Tasa_Conversion_Pct": "3.174603174603",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "089",
+      "Vendedor_Nombre": "ANDRES MAURICIO CORTEZ CULMA",
+      "Cotizaciones": 62,
+      "Convertidas": 11,
+      "Perdidas": 51,
+      "Tasa_Conversion_Pct": "17.741935483870",
+      "Dias_Promedio_Conversion": 0.45454545454545453
+    },
+    {
+      "Vendedor_Codigo": "035",
+      "Vendedor_Nombre": "OSCAR IVAN POLANIA GARCIA",
+      "Cotizaciones": 52,
+      "Convertidas": 40,
+      "Perdidas": 12,
+      "Tasa_Conversion_Pct": "76.923076923076",
+      "Dias_Promedio_Conversion": 4.2
+    },
+    {
+      "Vendedor_Codigo": "131",
+      "Vendedor_Nombre": "OLGA LUCIA TORRES",
+      "Cotizaciones": 32,
+      "Convertidas": 2,
+      "Perdidas": 30,
+      "Tasa_Conversion_Pct": "6.250000000000",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "151",
+      "Vendedor_Nombre": "JULIET VIVIANA TOVAR DIAZ",
+      "Cotizaciones": 3,
+      "Convertidas": 1,
+      "Perdidas": 2,
+      "Tasa_Conversion_Pct": "33.333333333333",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "121",
+      "Vendedor_Nombre": "CALL CENTER",
+      "Cotizaciones": 3,
+      "Convertidas": 1,
+      "Perdidas": 2,
+      "Tasa_Conversion_Pct": "33.333333333333",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "125",
+      "Vendedor_Nombre": "NINI",
+      "Cotizaciones": 1,
+      "Convertidas": 0,
+      "Perdidas": 1,
+      "Tasa_Conversion_Pct": "0E-12",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "148",
+      "Vendedor_Nombre": "APRENDIZ",
+      "Cotizaciones": 1,
+      "Convertidas": 0,
+      "Perdidas": 1,
+      "Tasa_Conversion_Pct": "0E-12",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "043",
+      "Vendedor_Nombre": "SILVIA MARIA TORREZ YUNDA",
+      "Cotizaciones": 1,
+      "Convertidas": 0,
+      "Perdidas": 1,
+      "Tasa_Conversion_Pct": "0E-12",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "002",
+      "Vendedor_Nombre": "BLANCA CECILIA VALDERRAMA SAVALA",
+      "Cotizaciones": 1,
+      "Convertidas": 0,
+      "Perdidas": 1,
+      "Tasa_Conversion_Pct": "0E-12",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "127",
+      "Vendedor_Nombre": "APRENDIZ SENA",
+      "Cotizaciones": 1,
+      "Convertidas": 0,
+      "Perdidas": 1,
+      "Tasa_Conversion_Pct": "0E-12",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "147",
+      "Vendedor_Nombre": "AURA MARIA TOVAR",
+      "Cotizaciones": 1,
+      "Convertidas": 1,
+      "Perdidas": 0,
+      "Tasa_Conversion_Pct": "100.000000000000",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "083",
+      "Vendedor_Nombre": "DISTRIBUCIONES TRUJILLO",
+      "Cotizaciones": 1,
+      "Convertidas": 1,
+      "Perdidas": 0,
+      "Tasa_Conversion_Pct": "100.000000000000",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "012",
+      "Vendedor_Nombre": "OSCAR ALBERTO PEREZ V",
+      "Cotizaciones": 1,
+      "Convertidas": 1,
+      "Perdidas": 0,
+      "Tasa_Conversion_Pct": "100.000000000000",
+      "Dias_Promedio_Conversion": 1.0
+    },
+    {
+      "Vendedor_Codigo": "134",
+      "Vendedor_Nombre": "LEIDY QUIROGA",
+      "Cotizaciones": 1,
+      "Convertidas": 0,
+      "Perdidas": 1,
+      "Tasa_Conversion_Pct": "0E-12",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "007",
+      "Vendedor_Nombre": "EDINSON ELIAS PERDOMO",
+      "Cotizaciones": 1,
+      "Convertidas": 0,
+      "Perdidas": 1,
+      "Tasa_Conversion_Pct": "0E-12",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "110",
+      "Vendedor_Nombre": "JHON ANDERSON DUSSAN DIAZ",
+      "Cotizaciones": 1,
+      "Convertidas": 0,
+      "Perdidas": 1,
+      "Tasa_Conversion_Pct": "0E-12",
+      "Dias_Promedio_Conversion": 0.0
+    }
+  ],
+  "top_lost_vendors": [
+    {
+      "Vendedor_Codigo": "003",
+      "Vendedor_Nombre": "CARLOS EFREY PASCUAS",
+      "Cotizaciones": 239,
+      "Convertidas": 34,
+      "Perdidas": 205,
+      "Tasa_Conversion_Pct": "14.225941422594",
+      "Dias_Promedio_Conversion": 0.14705882352941177
+    },
+    {
+      "Vendedor_Codigo": "132",
+      "Vendedor_Nombre": "EDILBERTO ESQUIVEL RUBIO",
+      "Cotizaciones": 261,
+      "Convertidas": 61,
+      "Perdidas": 200,
+      "Tasa_Conversion_Pct": "23.371647509578",
+      "Dias_Promedio_Conversion": 0.16393442622950818
+    },
+    {
+      "Vendedor_Codigo": "057",
+      "Vendedor_Nombre": "ANDRES FELIPE VARGAS JOVEL",
+      "Cotizaciones": 197,
+      "Convertidas": 26,
+      "Perdidas": 171,
+      "Tasa_Conversion_Pct": "13.197969543147",
+      "Dias_Promedio_Conversion": 0.2692307692307692
+    },
+    {
+      "Vendedor_Codigo": "126",
+      "Vendedor_Nombre": "AMELIA SOTELO NARVAEZ",
+      "Cotizaciones": 214,
+      "Convertidas": 83,
+      "Perdidas": 131,
+      "Tasa_Conversion_Pct": "38.785046728971",
+      "Dias_Promedio_Conversion": 0.9156626506024096
+    },
+    {
+      "Vendedor_Codigo": "140",
+      "Vendedor_Nombre": "LUIS ESTEBAN MEDINA",
+      "Cotizaciones": 181,
+      "Convertidas": 58,
+      "Perdidas": 123,
+      "Tasa_Conversion_Pct": "32.044198895027",
+      "Dias_Promedio_Conversion": 2.706896551724138
+    }
+  ],
+  "low_conversion_vendors": [
+    {
+      "Vendedor_Codigo": "130",
+      "Vendedor_Nombre": "JAVIER ANDRES APACHE",
+      "Cotizaciones": 117,
+      "Convertidas": 3,
+      "Perdidas": 114,
+      "Tasa_Conversion_Pct": "2.564102564102",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "116",
+      "Vendedor_Nombre": "FELIPE RAMIREZ",
+      "Cotizaciones": 63,
+      "Convertidas": 2,
+      "Perdidas": 61,
+      "Tasa_Conversion_Pct": "3.174603174603",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "141",
+      "Vendedor_Nombre": "JOSE DAVID CORTES",
+      "Cotizaciones": 105,
+      "Convertidas": 6,
+      "Perdidas": 99,
+      "Tasa_Conversion_Pct": "5.714285714285",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "131",
+      "Vendedor_Nombre": "OLGA LUCIA TORRES",
+      "Cotizaciones": 32,
+      "Convertidas": 2,
+      "Perdidas": 30,
+      "Tasa_Conversion_Pct": "6.250000000000",
+      "Dias_Promedio_Conversion": 0.0
+    },
+    {
+      "Vendedor_Codigo": "057",
+      "Vendedor_Nombre": "ANDRES FELIPE VARGAS JOVEL",
+      "Cotizaciones": 197,
+      "Convertidas": 26,
+      "Perdidas": 171,
+      "Tasa_Conversion_Pct": "13.197969543147",
+      "Dias_Promedio_Conversion": 0.2692307692307692
+    }
+  ]
+}
