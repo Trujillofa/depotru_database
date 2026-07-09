@@ -455,6 +455,100 @@ def _row_float(value: object) -> float:
     return 0.0
 
 
+def compute_h2_twopot_metas(
+    *,
+    flat_metas: Mapping[Tuple[str, int], float],
+    h1_by_code: Mapping[str, float],
+    seasonality: Mapping[int, float],
+    active_codes: Sequence[str],
+    growth: float = DEFAULT_GROWTH,
+    floor_factor: float = DEFAULT_FLOOR_FACTOR,
+    min_mult: float = DEFAULT_META_MIN_MULT,
+    max_mult: float = DEFAULT_META_MAX_MULT,
+    h2_company_lock: str = "current",
+) -> Tuple[Dict[Tuple[str, int], float], Dict[Tuple[str, int], float], Optional[float]]:
+    """H2 vendor-month metas via H1-rebased base + two-pot+√.
+
+    Returns ``(h2_base, h2_twopot_metas, company_target_used)``.
+    ``company_target_used`` is None when lock=growth (internal base×(1+g)).
+    """
+    if h2_company_lock not in ("growth", "current"):
+        raise ValueError(
+            f"h2_company_lock must be 'growth' or 'current', got {h2_company_lock!r}"
+        )
+    h2_base = h2_base_from_h1_seasonality(h1_by_code, seasonality)
+    h2_target: Optional[float] = None
+    if h2_company_lock == "current":
+        h2_target = sum(v for (_c, m), v in flat_metas.items() if m in H2_MONTHS)
+    h2_twopot = apply_twopot_sqrt(
+        h2_base,
+        active_codes=active_codes,
+        growth=growth,
+        floor_factor=floor_factor,
+        min_mult=min_mult,
+        max_mult=max_mult,
+        company_target=h2_target,
+    )
+    return h2_base, h2_twopot, h2_target
+
+
+@dataclass
+class H2RevisionApplyResult:
+    """H2-only meta payload for Jul–Dec replace (H1 months never included)."""
+
+    h2_metas: Dict[Tuple[str, int], float]
+    vendor_rows: List[Dict[str, object]]
+    line_rows: List[Dict[str, object]]
+    compare_rows: List[Dict[str, object]]
+    summary: Dict[str, float]
+    h2_company_lock: str
+    months: Tuple[int, ...] = H2_MONTHS
+
+
+def build_h2_revision_for_apply(
+    *,
+    flat_metas: Mapping[Tuple[str, int], float],
+    h1_by_code: Mapping[str, float],
+    seasonality: Mapping[int, float],
+    active_codes: Sequence[str],
+    names: Mapping[str, str],
+    line_shares: Mapping[str, Sequence[Tuple[str, str, float]]],
+    growth: float = DEFAULT_GROWTH,
+    h2_company_lock: str = "current",
+    target_year: int = 2026,
+) -> H2RevisionApplyResult:
+    """Build H2-only vendor + line rows for DB replace (lock default: current)."""
+    compare_rows, summary = build_h2_revision_comparison(
+        flat_metas=flat_metas,
+        h1_by_code=h1_by_code,
+        seasonality=seasonality,
+        active_codes=active_codes,
+        names=names,
+        growth=growth,
+        h2_company_lock=h2_company_lock,
+    )
+    _base, h2_metas, _target = compute_h2_twopot_metas(
+        flat_metas=flat_metas,
+        h1_by_code=h1_by_code,
+        seasonality=seasonality,
+        active_codes=active_codes,
+        growth=growth,
+        h2_company_lock=h2_company_lock,
+    )
+    vendor_rows = metas_to_vendor_rows(h2_metas, names=names, target_year=target_year)
+    line_rows = allocate_lineas(h2_metas, line_shares, target_year=target_year)
+    # h2_metas only contains H2 months — payload never includes H1 periodos
+    return H2RevisionApplyResult(
+        h2_metas=dict(h2_metas),
+        vendor_rows=vendor_rows,
+        line_rows=line_rows,
+        compare_rows=compare_rows,
+        summary=summary,
+        h2_company_lock=h2_company_lock,
+        months=H2_MONTHS,
+    )
+
+
 def build_h2_revision_comparison(
     *,
     flat_metas: Mapping[Tuple[str, int], float],
@@ -479,27 +573,21 @@ def build_h2_revision_comparison(
 
     Returns (per-vendor rows, company summary dict).
     """
-    if h2_company_lock not in ("growth", "current"):
-        raise ValueError(
-            f"h2_company_lock must be 'growth' or 'current', got {h2_company_lock!r}"
-        )
-    h2_base = h2_base_from_h1_seasonality(h1_by_code, seasonality)
-    h2_flat_on_h1base = draft_metas_from_base(
-        h2_base, active_codes=active_codes, growth=growth
-    )
-    h2_base_company = sum(v for (c, m), v in h2_base.items() if c in set(active_codes))
-    h2_target: Optional[float] = None
-    if h2_company_lock == "current":
-        h2_target = sum(v for (c, m), v in flat_metas.items() if m in H2_MONTHS)
-    h2_twopot = apply_twopot_sqrt(
-        h2_base,
+    h2_base, h2_twopot, _h2_target = compute_h2_twopot_metas(
+        flat_metas=flat_metas,
+        h1_by_code=h1_by_code,
+        seasonality=seasonality,
         active_codes=active_codes,
         growth=growth,
         floor_factor=floor_factor,
         min_mult=min_mult,
         max_mult=max_mult,
-        company_target=h2_target,
+        h2_company_lock=h2_company_lock,
     )
+    h2_flat_on_h1base = draft_metas_from_base(
+        h2_base, active_codes=active_codes, growth=growth
+    )
+    h2_base_company = sum(v for (c, m), v in h2_base.items() if c in set(active_codes))
     hybrid = merge_h1_h2_metas(flat_metas, h2_twopot)
 
     h1_meta_flat = sum_code_months(flat_metas, H1_MONTHS)

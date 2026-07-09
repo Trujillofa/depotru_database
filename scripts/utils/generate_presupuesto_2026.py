@@ -8,6 +8,10 @@ Usage:
   python scripts/utils/generate_presupuesto_2026.py roster
   python scripts/utils/generate_presupuesto_2026.py generate
   python scripts/utils/generate_presupuesto_2026.py generate --apply
+  python scripts/utils/generate_presupuesto_2026.py compare --h2-company-lock current
+  python scripts/utils/generate_presupuesto_2026.py generate --method twopot --h2-rebase
+  python scripts/utils/generate_presupuesto_2026.py generate --method twopot --h2-rebase \\
+      --h2-company-lock current --apply
 """
 
 from __future__ import annotations
@@ -36,9 +40,12 @@ from business_analyzer.core.presupuesto_2026 import (  # noqa: E402
     DEFAULT_GROWTH,
     EXCLUDED_DOC_CODES,
     EXCLUDED_PRODUCT_NAMES,
+    H1_MONTHS,
+    H2_MONTHS,
     SIKA_DOC_CODE,
     apply_code_merge,
     build_h2_revision_comparison,
+    build_h2_revision_for_apply,
     build_presupuesto_2026,
     canonical_active_codes,
     last_complete_month,
@@ -347,6 +354,18 @@ def cmd_generate(args: argparse.Namespace) -> None:
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     growth = float(args.growth)
+    method = getattr(args, "method", "flat") or "flat"
+    h2_rebase = bool(getattr(args, "h2_rebase", False))
+    h2_lock = getattr(args, "h2_company_lock", "current") or "current"
+
+    if method == "twopot" and not h2_rebase:
+        raise SystemExit(
+            "generate --method twopot requires --h2-rebase "
+            "(H2-only Jul–Dec revision; full-year two-pot not implemented)."
+        )
+    if h2_rebase and method != "twopot":
+        raise SystemExit("generate --h2-rebase requires --method twopot")
+
     conn = get_connection()
     try:
         maxf = fetch_max_fecha(conn)
@@ -355,90 +374,213 @@ def cmd_generate(args: argparse.Namespace) -> None:
         names = fetch_primary_names(conn, ly, lm)
         sales_rows = fetch_sales_rows(conn, [2025, 2026])
         coded_names = fetch_coded_name_sales(conn, [2025, 2026])
-        h1 = fetch_h1_2026(conn)
+        h1_code_only = fetch_h1_2026(conn)
         line_shares = fetch_line_shares(conn)
 
-        result = build_presupuesto_2026(
+        flat = build_presupuesto_2026(
             active_raw_codes=raw,
             sales_rows=sales_rows,
             coded_name_sales=coded_names,
             line_shares=line_shares,
-            h1_2026_by_code=h1,
+            h1_2026_by_code=h1_code_only,
             primary_names=names,
             growth=growth,
         )
 
+        if method == "flat":
+            write_csv(
+                out_dir / "metas_vendedores_2026.csv",
+                flat.vendor_rows,
+                ["periodo", "vendedor_codigo", "vendedor_nombre", "valor"],
+            )
+            write_csv(
+                out_dir / "metas_lineas_2026.csv",
+                flat.line_rows,
+                ["periodo", "vendedor_codigo", "linea", "grupo", "valor"],
+            )
+            write_csv(
+                out_dir / "validation_h1_2026.csv",
+                flat.h1_report,
+                ["vendedor_codigo", "meta_h1", "actual_h1", "cumplimiento_pct"],
+            )
+
+            company_h1_meta = sum(
+                r["meta_h1"] for r in flat.h1_report if r.get("meta_h1")
+            )
+            company_h1_act = sum(
+                r["actual_h1"] for r in flat.h1_report if r.get("actual_h1")
+            )
+            cumpl = (
+                company_h1_act / company_h1_meta * 100.0 if company_h1_meta else None
+            )
+            md = out_dir / "validation_h1_2026.md"
+            md.write_text(
+                "\n".join(
+                    [
+                        "# Presupuesto 2026 — dry-run validation",
+                        "",
+                        f"- Generated: {datetime.now().isoformat(timespec='seconds')}",
+                        f"- Method: flat full-year",
+                        f"- Last complete month (active set): {ly:04d}-{lm:02d}",
+                        f"- Growth: {growth:.0%}",
+                        f"- Active codes: {', '.join(flat.active_codes)}",
+                        f"- Merges: {DEFAULT_CODE_MERGES}",
+                        f"- Company base 2025 (after pool): "
+                        f"${flat.company_base_2025:,.0f}",
+                        f"- Pool 2025 redistributed: ${flat.pool_total_2025:,.0f}",
+                        f"- Company meta 2026: ${flat.company_meta_2026:,.0f}",
+                        f"- H1 meta sum: ${company_h1_meta:,.0f}",
+                        f"- H1 actual sum: ${company_h1_act:,.0f}",
+                        f"- H1 cumplimiento: {cumpl:.1f}%"
+                        if cumpl is not None
+                        else "- H1 cumplimiento: n/a",
+                        "",
+                        "## Per-vendor H1",
+                        "",
+                        "| Code | Meta H1 | Actual H1 | Cumpl % |",
+                        "|---|---:|---:|---:|",
+                    ]
+                    + [
+                        f"| {r['vendedor_codigo']} | {r['meta_h1']:,.0f} | "
+                        f"{r['actual_h1']:,.0f} | "
+                        f"{r['cumplimiento_pct']:.1f} |"
+                        if r.get("cumplimiento_pct") is not None
+                        else (
+                            f"| {r['vendedor_codigo']} | {r['meta_h1']:,.0f} | "
+                            f"{r['actual_h1']:,.0f} | — |"
+                        )
+                        for r in flat.h1_report
+                    ]
+                    + ["", f"Artifacts in `{out_dir}`", ""],
+                ),
+                encoding="utf-8",
+            )
+            print(md.read_text(encoding="utf-8")[:2000])
+            print(f"\nWrote CSVs under {out_dir}")
+
+            if args.apply:
+                apply_to_db(
+                    conn,
+                    flat.vendor_rows,
+                    flat.line_rows,
+                    year=2026,
+                    months=tuple(range(1, 13)),
+                )
+                print(
+                    "Applied INSERT to presupuesto_vendedores / "
+                    "presupuesto_lineas (full 2026)."
+                )
+            else:
+                print("Dry-run only (pass --apply to write DB).")
+            return
+
+        # --- method twopot + h2-rebase: Jul–Dec only ---
+        h1_attr = {
+            r["vendedor_codigo"]: float(r["actual_h1"] or 0) for r in flat.h1_report
+        }
+        for c, s in h1_code_only.items():
+            if h1_attr.get(c, 0.0) <= 0 and s > 0:
+                h1_attr[c] = float(s)
+
+        rev = build_h2_revision_for_apply(
+            flat_metas=flat.vendor_month_metas,
+            h1_by_code=h1_attr,
+            seasonality=flat.seasonality,
+            active_codes=flat.active_codes,
+            names=flat.names,
+            line_shares=line_shares,
+            growth=growth,
+            h2_company_lock=h2_lock,
+        )
+
         write_csv(
-            out_dir / "metas_vendedores_2026.csv",
-            result.vendor_rows,
+            out_dir / "metas_vendedores_2026_h2_twopot.csv",
+            rev.vendor_rows,
             ["periodo", "vendedor_codigo", "vendedor_nombre", "valor"],
         )
         write_csv(
-            out_dir / "metas_lineas_2026.csv",
-            result.line_rows,
+            out_dir / "metas_lineas_2026_h2_twopot.csv",
+            rev.line_rows,
             ["periodo", "vendedor_codigo", "linea", "grupo", "valor"],
         )
         write_csv(
-            out_dir / "validation_h1_2026.csv",
-            result.h1_report,
-            ["vendedor_codigo", "meta_h1", "actual_h1", "cumplimiento_pct"],
+            out_dir / f"compare_h2_apply_{h2_lock}.csv",
+            rev.compare_rows,
+            [
+                "vendedor_codigo",
+                "vendedor_nombre",
+                "h1_actual",
+                "h1_meta_flat",
+                "h1_cumpl_pct",
+                "h2_base_from_h1",
+                "h2_meta_flat_2025",
+                "h2_meta_twopot_h1",
+                "h2_delta_twopot_vs_flat",
+                "h2_delta_pct",
+                "full_year_flat",
+                "full_year_hybrid",
+            ],
         )
+        notes = [
+            f"Method: twopot + h2-rebase; lock={h2_lock}",
+            "DB scope on --apply: REPLACE Jul–Dec 2026 only (H1 months untouched)",
+            f"H2 company two-pot: ${rev.summary.get('company_h2_meta_twopot', 0):,.0f}",
+            f"H2 company flat (lock target if current): "
+            f"${rev.summary.get('company_h2_meta_flat', 0):,.0f}",
+            f"Implied H2 growth vs H1 base: "
+            f"{rev.summary.get('implied_h2_growth_pct', 0):.1f}%",
+            f"Active set from last complete month {ly:04d}-{lm:02d}",
+            "Board decision: lock=current keeps full-year ~$108.97B",
+        ]
+        md_body = render_h2_revision_markdown(
+            rev.compare_rows,
+            rev.summary,
+            title=f"Presupuesto H2 apply package (lock={h2_lock})",
+            notes=notes,
+        )
+        out_md = out_dir / f"h2_twopot_apply_{h2_lock}.md"
+        out_md.write_text(md_body, encoding="utf-8")
+        reports_path = ROOT / "reports" / f"PRESUPUESTO_H2_APPLY_{h2_lock.upper()}.md"
+        try:
+            reports_path.write_text(md_body, encoding="utf-8")
+        except OSError:
+            reports_path = None  # type: ignore[assignment]
 
-        # methodology / summary markdown
-        company_h1_meta = sum(
-            r["meta_h1"] for r in result.h1_report if r.get("meta_h1")
+        print(md_body[:3500])
+        print(f"\nWrote {out_md}")
+        if reports_path:
+            print(f"Wrote {reports_path}")
+        print(
+            f"H2 vendor rows: {len(rev.vendor_rows)} | "
+            f"line rows: {len(rev.line_rows)} | months: {list(H2_MONTHS)}"
         )
-        company_h1_act = sum(
-            r["actual_h1"] for r in result.h1_report if r.get("actual_h1")
-        )
-        cumpl = company_h1_act / company_h1_meta * 100.0 if company_h1_meta else None
-        md = out_dir / "validation_h1_2026.md"
-        md.write_text(
-            "\n".join(
-                [
-                    "# Presupuesto 2026 — dry-run validation",
-                    "",
-                    f"- Generated: {datetime.now().isoformat(timespec='seconds')}",
-                    f"- Last complete month (active set): {ly:04d}-{lm:02d}",
-                    f"- Growth: {growth:.0%}",
-                    f"- Active codes: {', '.join(result.active_codes)}",
-                    f"- Merges: {DEFAULT_CODE_MERGES}",
-                    f"- Company base 2025 (after pool): ${result.company_base_2025:,.0f}",
-                    f"- Pool 2025 redistributed: ${result.pool_total_2025:,.0f}",
-                    f"- Company meta 2026: ${result.company_meta_2026:,.0f}",
-                    f"- H1 meta sum: ${company_h1_meta:,.0f}",
-                    f"- H1 actual sum: ${company_h1_act:,.0f}",
-                    f"- H1 cumplimiento: {cumpl:.1f}%"
-                    if cumpl is not None
-                    else "- H1 cumplimiento: n/a",
-                    "",
-                    "## Per-vendor H1",
-                    "",
-                    "| Code | Meta H1 | Actual H1 | Cumpl % |",
-                    "|---|---:|---:|---:|",
-                ]
-                + [
-                    f"| {r['vendedor_codigo']} | {r['meta_h1']:,.0f} | {r['actual_h1']:,.0f} | "
-                    f"{r['cumplimiento_pct']:.1f} |"
-                    if r.get("cumplimiento_pct") is not None
-                    else f"| {r['vendedor_codigo']} | {r['meta_h1']:,.0f} | {r['actual_h1']:,.0f} | — |"
-                    for r in result.h1_report
-                ]
-                + ["", f"Artifacts in `{out_dir}`", ""],
-            ),
-            encoding="utf-8",
-        )
-
-        print(md.read_text(encoding="utf-8")[:2000])
-        print(f"\nWrote CSVs under {out_dir}")
 
         if args.apply:
-            apply_to_db(conn, result.vendor_rows, result.line_rows)
+            # Guard: refuse if any H1 periodo sneaks in
+            bad = [
+                r
+                for r in rev.vendor_rows
+                if int(r["periodo"])
+                in {year_month_to_periodo(2026, m) for m in H1_MONTHS}
+            ]
+            if bad:
+                raise SystemExit(
+                    f"Refuse apply: {len(bad)} H1 rows in H2 payload (bug)."
+                )
+            apply_to_db(
+                conn,
+                rev.vendor_rows,
+                rev.line_rows,
+                year=2026,
+                months=H2_MONTHS,
+            )
             print(
-                "Applied INSERT to presupuesto_vendedores / presupuesto_lineas (2026)."
+                "Applied H2-only REPLACE to presupuesto_vendedores / "
+                f"presupuesto_lineas (2026 months {list(H2_MONTHS)}; "
+                f"lock={h2_lock}). H1 periods left unchanged."
             )
         else:
-            print("Dry-run only (pass --apply to write DB).")
+            print("Dry-run only (pass --apply to write H2 months to DB).")
     finally:
         conn.close()
 
@@ -553,11 +695,37 @@ def cmd_compare(args: argparse.Namespace) -> None:
         conn.close()
 
 
-def apply_to_db(conn, vendor_rows: Sequence[Dict], line_rows: Sequence[Dict]) -> None:
-    """Replace 2026 periodos only."""
+def apply_to_db(
+    conn,
+    vendor_rows: Sequence[Dict],
+    line_rows: Sequence[Dict],
+    *,
+    year: int = 2026,
+    months: Sequence[int] = tuple(range(1, 13)),
+) -> None:
+    """Replace presupuesto rows for the given year/months only.
+
+    Default months=1..12 (full year). H2 revision passes months=7..12 so
+    January–June are never deleted.
+    """
+    month_list = list(months)
+    if not month_list:
+        raise ValueError("apply_to_db requires at least one month")
+    for m in month_list:
+        if m not in range(1, 13):
+            raise ValueError(f"Invalid month {m}")
+
+    periodos = [year_month_to_periodo(year, m) for m in month_list]
+    allowed = set(periodos)
+    # Refuse payload months outside the delete scope
+    for r in list(vendor_rows) + list(line_rows):
+        p = int(r["periodo"])
+        if p not in allowed:
+            raise ValueError(
+                f"Row periodo {p} not in apply scope {sorted(allowed)} — abort"
+            )
+
     cur = conn.cursor()
-    # All 2026 period encodings
-    periodos = [year_month_to_periodo(2026, m) for m in range(1, 13)]
     ph = ",".join(["%s"] * len(periodos))
     cur.execute(
         f"DELETE FROM presupuesto_vendedores WHERE periodo IN ({ph})",
@@ -607,7 +775,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["roster", "generate", "compare"],
         help=(
             "roster: list last-month actives; "
-            "generate: build metas (flat); "
+            "generate: build metas; "
             "compare: H2 rebased two-pot vs flat dry-run"
         ),
     )
@@ -620,20 +788,32 @@ def build_parser() -> argparse.ArgumentParser:
         "--growth",
         type=float,
         default=DEFAULT_GROWTH,
-        help="Company stretch growth (default 0.25)",
+        help="Company stretch growth for flat path / growth-lock (default 0.25)",
+    )
+    p.add_argument(
+        "--method",
+        choices=["flat", "twopot"],
+        default="flat",
+        help="flat = full-year 2025×growth; twopot = requires --h2-rebase",
+    )
+    p.add_argument(
+        "--h2-rebase",
+        action="store_true",
+        help="With --method twopot: rebuild Jul–Dec from H1 signal + two-pot",
     )
     p.add_argument(
         "--apply",
         action="store_true",
-        help="Write 2026 rows to DB (generate only; compare never applies)",
+        help="Write DB (generate only; compare never applies)",
     )
     p.add_argument(
         "--h2-company-lock",
         choices=["growth", "current"],
-        default="growth",
+        default="current",
         help=(
-            "compare only: H2 company total = H2 base × (1+growth), or "
-            "'current' to lock Σ to today's flat H2 metas (reshape only)"
+            "For compare and generate --method twopot --h2-rebase: "
+            "growth = H2 base×(1+g); current = lock Σ to flat H2 (reshape only). "
+            "Default current (board decision)."
         ),
     )
     return p

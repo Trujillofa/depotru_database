@@ -11,10 +11,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from business_analyzer.core.presupuesto_2026 import (  # noqa: E402
     DEFAULT_CODE_MERGES,
+    H1_MONTHS,
+    H2_MONTHS,
     apply_code_merge,
     apply_twopot_sqrt,
     attribute_sale,
     build_h2_revision_comparison,
+    build_h2_revision_for_apply,
     build_name_to_code_map,
     build_presupuesto_2026,
     canonical_active_codes,
@@ -23,6 +26,7 @@ from business_analyzer.core.presupuesto_2026 import (  # noqa: E402
     last_complete_month,
     merge_h1_h2_metas,
     parse_asignado_code,
+    periodo_calendar_parts,
     redistribute_pool,
     year_month_to_periodo,
 )
@@ -288,3 +292,38 @@ def test_compare_h2_company_lock_invalid():
             names={},
             h2_company_lock="bogus",
         )
+
+
+def test_build_h2_revision_for_apply_h2_only_lock_current():
+    flat = {(c, m): 10.0 for c in ("095", "131") for m in range(1, 13)}
+    seasonality = {m: 1.0 / 12.0 for m in range(1, 13)}
+    line_shares = {
+        "095": [("001", "017", 1.0)],
+        "131": [("001", "017", 1.0)],
+        "__COMPANY__": [("001", "017", 1.0)],
+    }
+    rev = build_h2_revision_for_apply(
+        flat_metas=flat,
+        h1_by_code={"095": 60.0, "131": 12.0},
+        seasonality=seasonality,
+        active_codes=["095", "131"],
+        names={"095": "DANIEL", "131": "OLGA"},
+        line_shares=line_shares,
+        growth=0.25,
+        h2_company_lock="current",
+    )
+    assert rev.h2_company_lock == "current"
+    assert rev.months == H2_MONTHS
+    # All vendor rows are H2 periodos only
+    for r in rev.vendor_rows:
+        _y, m = periodo_calendar_parts(int(r["periodo"]))
+        assert m in H2_MONTHS
+        assert m not in H1_MONTHS
+    for r in rev.line_rows:
+        _y, m = periodo_calendar_parts(int(r["periodo"]))
+        assert m in H2_MONTHS
+    # Company H2 locked to flat H2
+    assert abs(sum(rev.h2_metas.values()) - 2 * 6 * 10.0) < 1e-6
+    assert abs(rev.summary["company_h2_meta_twopot"] - 120.0) < 1e-6
+    # No H1 months in h2_metas keys
+    assert all(m in H2_MONTHS for (_c, m) in rev.h2_metas)
