@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Platform Phase 0 skeleton** for multi-module scale (Magento assistant, CRM, WMS, catalog):
+  - `depotru_kernel` — document exclusions, COP formatting, unified attribution wrapper, audience/scopes
+  - `depotru_tools` — capability registry + builtins (`platform.health`, `info.branches`, `attribution.resolve_seller`, `catalog.related_for_sku`, `inventory.sellable_qty`)
+  - `depotru_integrations` — Magento REST client (MSI sellable qty + SafetyStock policy), affinity CSV contract **v1.0.0**
+  - `modules/{bi,assistant,crm,wms,catalog}` scaffolds; assistant BFF tool-routing stub
+  - FastAPI **`/v1`** routes: health, tools list/call, assistant chat, affinity contract
+  - Docs: `docs/PLATFORM.md`, rewritten `docs/ROADMAP.md`
+  - Auth: `PLATFORM_API_KEYS=key:audience` map + `X-Audience` header
+
 ## [2.1.0] - 2026-07-09
 
 ### Added

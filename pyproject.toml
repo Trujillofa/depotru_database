@@ -149,10 +149,10 @@ depotru-db-mcp = "business_analyzer.mcp.database_server:main"
 depotru-enrich-celular = "business_analyzer.analysis.cotizaciones_celular_cli:main"
 
 [project.urls]
-Homepage = "https://github.com/Trujillofa/coding_omarchy"
-Documentation = "https://github.com/Trujillofa/coding_omarchy/blob/main/docs/START_HERE.md"
-Repository = "https://github.com/Trujillofa/coding_omarchy"
-"Bug Tracker" = "https://github.com/Trujillofa/coding_omarchy/issues"
+Homepage = "https://github.com/Trujillofa/depotru_database"
+Documentation = "https://github.com/Trujillofa/depotru_database/blob/main/README.md"
+Repository = "https://github.com/Trujillofa/depotru_database"
+"Bug Tracker" = "https://github.com/Trujillofa/depotru_database/issues"
 
 # ============================================================================
 # Setuptools Configuration
@@ -163,7 +163,19 @@ py-modules = ["vanna_grok", "api", "config"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["business_analyzer*"]
+include = [
+    "business_analyzer*",
+    "depotru_kernel*",
+    "depotru_tools*",
+    "depotru_integrations*",
+    "modules*",
+    "apps*",
+    "analytics*",
+    "contracts*",
+    "data_access*",
+    "reporting*",
+    "vanna_integration*",
+]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
@@ -198,6 +210,10 @@ markers = [
     "slow: Slow running tests",
     "requires_db: Tests that require database connection",
     "requires_api: Tests that require API keys",
+    "module_assistant: Assistant / storefront AI module",
+    "module_crm: CRM module",
+    "module_wms: WMS module",
+    "module_catalog: Catalog / affinity module",
 ]
 
 # ============================================================================

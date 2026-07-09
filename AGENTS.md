@@ -6,11 +6,13 @@
 
 ## Project Essence
 
-**Business Intelligence platform for Colombian hardware store operations.**
+**Business Intelligence + multi-module platform** for Colombian hardware store operations.
 - AI natural language → SQL (Vanna AI with Grok/OpenAI/Claude/Ollama)
 - Colombian number formatting: `$1.234.567,89` and `45,6%`
 - Database: SmartBusiness MSSQL (`banco_datos` table)
-- **CRITICAL**: Always exclude test docs in SQL: `WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')`
+- **CRITICAL**: Always exclude test docs in SQL: `WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')` (canonical: `depotru_kernel.documents`)
+- **Platform spine** (Phase 0): `depotru_kernel` / `depotru_tools` / `depotru_integrations` + `modules/*` + FastAPI `/v1` — see `docs/PLATFORM.md`
+- Sibling storefront: `depositotrujillo.co` (Magento); stock feed via b2c.smart-business — not the same as MSSQL BI
 
 ---
 

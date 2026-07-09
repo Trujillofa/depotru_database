@@ -2,6 +2,7 @@
 REST API for Business Data Analyzer.
 
 Provides endpoints for programmatic access to business metrics.
+Also mounts platform ``/v1`` (tools, assistant, affinity contract).
 """
 
 # pyright: reportMissingImports=false, reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnusedImport=false, reportDeprecated=false, reportImplicitRelativeImport=false, reportCallInDefaultInitializer=false, reportUntypedFunctionDecorator=false, reportArgumentType=false, reportExplicitAny=false
@@ -13,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
+from apps.api.v1 import router as platform_v1_router
 from business_analyzer.ai.circuit_breaker import breakers
 from business_analyzer.analysis import UnifiedAnalyzer
 from business_analyzer.analysis.predictive import forecast_demand, get_top_products
@@ -22,9 +24,11 @@ from config import Config
 
 app = FastAPI(
     title="Business Data Analyzer API",
-    description="Programmatic access to hardware store BI metrics",
-    version="1.1.0",
+    description="Programmatic access to hardware store BI metrics + platform v1",
+    version="1.2.0",
 )
+
+app.include_router(platform_v1_router)
 
 _auth = [Depends(require_api_key)]
 

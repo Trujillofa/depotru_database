@@ -335,16 +335,30 @@ def write_crosssell_batch(
     if manifest_path is not None:
         manifest_path = Path(manifest_path)
         checksum = hashlib.sha256(batch_path.read_bytes()).hexdigest()
-        manifest = {
-            "batch_id": batch_id,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "batch_checksum": checksum,
-            "sku_count": len(rows),
-            "import_columns": fieldnames,
-            "note": note,
-            "policy": CROSSSELL_POLICY,
-            "source": "hybrid_affinity+brand_peer",
-        }
+        try:
+            from depotru_integrations.affinity.contract import build_manifest
+
+            manifest = build_manifest(
+                batch_id=batch_id,
+                generated_at=datetime.now(timezone.utc).isoformat(),
+                batch_checksum=checksum,
+                sku_count=len(rows),
+                import_columns=fieldnames,
+                note=note,
+                policy=CROSSSELL_POLICY,
+                source="hybrid_affinity+brand_peer",
+            )
+        except ImportError:
+            manifest = {
+                "batch_id": batch_id,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "batch_checksum": checksum,
+                "sku_count": len(rows),
+                "import_columns": fieldnames,
+                "note": note,
+                "policy": CROSSSELL_POLICY,
+                "source": "hybrid_affinity+brand_peer",
+            }
         manifest_path.write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
         )
