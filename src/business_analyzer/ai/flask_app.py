@@ -75,6 +75,56 @@ def manager_report_download_path(file_path: Optional[str]) -> Optional[str]:
     return f"/reports/{Path(file_path).name}"
 
 
+def manager_report_status_text(result: Dict[str, Any]) -> str:
+    """One-line sidebar status; full narrative stays in ``text`` for the chat."""
+    from business_analyzer.ai.recommended_reports import MONTH_NAMES_ES
+
+    year = result.get("year")
+    month = result.get("month")
+    fmt = str(result.get("format") or "html").upper()
+    month_name = MONTH_NAMES_ES.get(month, str(month))
+    filename = Path(result["path"]).name if result.get("path") else None
+    if filename:
+        return f"✓ Informe {fmt} listo — {month_name} {year} ({filename})"
+    return f"✓ Informe {fmt} — {month_name} {year}"
+
+
+def kpi_board_status_text(result: Dict[str, Any]) -> str:
+    iso_year = result.get("iso_year")
+    iso_week = result.get("iso_week")
+    start_date = result.get("start_date")
+    end_date = result.get("end_date")
+    filename = Path(result["path"]).name if result.get("path") else None
+    if filename:
+        return (
+            f"✓ KPI board listo — semana {iso_week} {iso_year} "
+            f"({start_date} a {end_date}, {filename})"
+        )
+    return f"✓ KPI board — semana {iso_week} {iso_year}"
+
+
+def kpi_board_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
+    status = result.get("status")
+    if status == "error":
+        return {
+            "type": "error",
+            "id": cache_id,
+            "error": result.get("message", "Error generando KPI board"),
+        }
+    return {
+        "type": "kpi_board",
+        "id": cache_id,
+        "text": result.get("message", ""),
+        "status_text": kpi_board_status_text(result),
+        "download_url": manager_report_download_path(result.get("path")),
+        "format": result.get("format", "markdown"),
+        "iso_year": result.get("iso_year"),
+        "iso_week": result.get("iso_week"),
+        "start_date": result.get("start_date"),
+        "end_date": result.get("end_date"),
+    }
+
+
 def manager_report_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
     """Serialize a manager report routing result for the Vanna web UI."""
     status = result.get("status")
@@ -95,6 +145,7 @@ def manager_report_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[st
         "type": "manager_report",
         "id": cache_id,
         "text": result.get("message", ""),
+        "status_text": manager_report_status_text(result),
         "download_url": manager_report_download_path(result.get("path")),
         "format": result.get("format"),
         "year": result.get("year"),
@@ -235,6 +286,12 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                 fmt = body.get("format", fmt)
                 branch = body.get("branch", branch)
 
+            if year is not None:
+                year = int(year)
+            if month is not None:
+                month = int(month)
+            fmt = str(fmt or "html").strip().lower()
+
             cache_id = cache.generate_id(
                 question=question, year=year, month=month, format=fmt
             )
@@ -292,6 +349,51 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                 cache.set(id=cache_id, field="question", value=question)
             return jsonify(manager_report_api_payload(result, cache_id))
 
+        @requires_auth
+        def generate_kpi_board(user):
+            iso_year = flask.request.args.get("iso_year", type=int)
+            iso_week = flask.request.args.get("iso_week", type=int)
+
+            if flask.request.method == "POST":
+                body = flask.request.get_json(silent=True) or {}
+                iso_year = body.get("iso_year", iso_year)
+                iso_week = body.get("iso_week", iso_week)
+
+            if iso_year is None or iso_week is None:
+                return jsonify(
+                    {
+                        "type": "error",
+                        "error": "Indica iso_year e iso_week para el tablero KPI.",
+                    }
+                )
+
+            iso_year = int(iso_year)
+            iso_week = int(iso_week)
+            cache_id = cache.generate_id(iso_year=iso_year, iso_week=iso_week)
+
+            try:
+                from business_analyzer.reports.kpi_control_board import (
+                    build_kpi_board_result,
+                )
+
+                result = build_kpi_board_result(
+                    iso_year=iso_year,
+                    iso_week=iso_week,
+                )
+            except ValueError as exc:
+                result = {"status": "error", "message": str(exc)}
+            except Exception as exc:
+                result = {
+                    "status": "error",
+                    "message": f"Error generando KPI control board: {exc}",
+                }
+
+            if result.get("status") == "error":
+                return jsonify(kpi_board_api_payload(result, cache_id))
+
+            cache.set(id=cache_id, field="kpi_board", value=result)
+            return jsonify(kpi_board_api_payload(result, cache_id))
+
         @self.flask_app.route("/api/v0/recommended_reports", methods=["GET"])
         def recommended_reports():
             return jsonify(recommended_reports_payload())
@@ -314,6 +416,12 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             "/api/v0/generate_report",
             endpoint="smart_generate_report",
             view_func=generate_report,
+            methods=["GET", "POST"],
+        )
+        self.flask_app.add_url_rule(
+            "/api/v0/generate_kpi_board",
+            endpoint="smart_generate_kpi_board",
+            view_func=generate_kpi_board,
             methods=["GET", "POST"],
         )
         self._patch_assets_js()

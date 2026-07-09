@@ -5,6 +5,11 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Dict, List, Optional
 
+from business_analyzer.reports.kpi_control_board import (
+    iso_weeks_in_year,
+    last_completed_iso_week,
+)
+
 MONTH_NAMES_ES: Dict[int, str] = {
     1: "Enero",
     2: "Febrero",
@@ -29,7 +34,7 @@ def previous_calendar_month(*, today: Optional[date] = None) -> tuple[int, int]:
     return ref.year, ref.month - 1
 
 
-def _manager_action(
+def build_manager_action(
     *,
     year: int,
     month: int,
@@ -59,56 +64,109 @@ def _manager_action(
     return action
 
 
-def get_recommended_reports(*, today: Optional[date] = None) -> List[Dict[str, Any]]:
-    """Declarative catalog shared by API, UI, and tests."""
-    prev_year, prev_month = previous_calendar_month(today=today)
-    prev_label = MONTH_NAMES_ES[prev_month]
+FORMAT_OPTIONS: List[Dict[str, str]] = [
+    {"value": "html", "label": "HTML"},
+    {"value": "pdf", "label": "PDF"},
+    {"value": "json", "label": "JSON"},
+]
 
+
+def get_recommended_report_templates() -> List[Dict[str, Any]]:
+    """Declarative catalog; period and output format are chosen in the UI."""
     return [
         {
-            "id": "manager-prev-month-html",
-            "title": f"Informe gerencial — {prev_label} {prev_year}",
+            "id": "manager",
+            "title": "Informe gerencial",
             "description": (
-                "Ventas consolidadas del mes anterior con KPIs, gráficos y "
-                "contabilidad ERP (HTML)."
+                "Ventas consolidadas con KPIs, gráficos y contabilidad ERP."
             ),
-            "action": _manager_action(year=prev_year, month=prev_month, fmt="html"),
+            "template": {},
         },
         {
-            "id": "manager-prev-month-pdf",
-            "title": f"Informe gerencial PDF — {prev_label} {prev_year}",
-            "description": "Mismo informe gerencial en formato PDF para gerencia.",
-            "action": _manager_action(year=prev_year, month=prev_month, fmt="pdf"),
-        },
-        {
-            "id": "manager-dic-2024-html",
-            "title": "Informe gerencial — Diciembre 2024",
+            "id": "manager-ai",
+            "title": "Informe gerencial con IA",
             "description": (
-                "Cierre 2024: facturación, márgenes, clientes y ecuación contable."
+                "Informe mensual con narrativa de insights generados por IA."
             ),
-            "action": _manager_action(year=2024, month=12, fmt="html"),
+            "template": {"with_ai": True},
         },
         {
-            "id": "manager-mayo-2024-ai",
-            "title": "Informe gerencial con IA — Mayo 2024",
+            "id": "manager-sika-center",
+            "title": "Informe Sika Center",
+            "description": "Ventas de la sede Sika Center (FEF) para el periodo elegido.",
+            "template": {"branch": "sika_center"},
+        },
+        {
+            "id": "manager-calle-5",
+            "title": "Informe Calle 5",
+            "description": "Ventas de la sede Calle 5 (FET) para el periodo elegido.",
+            "template": {"branch": "calle_5"},
+        },
+        {
+            "id": "manager-almacen-principal",
+            "title": "Informe Almacén Principal",
             "description": (
-                "Informe de mayo 2024 con narrativa de insights generados por IA."
+                "Ventas del almacén principal (FED) para el periodo elegido."
             ),
-            "action": _manager_action(year=2024, month=5, fmt="html", with_ai=True),
+            "template": {"branch": "almacen_principal"},
         },
         {
-            "id": "manager-sika-dic-2024",
-            "title": "Informe Sika Center — Diciembre 2024",
-            "description": "Ventas de la sede Sika Center (FEF) en diciembre 2024.",
-            "action": _manager_action(
-                year=2024, month=12, fmt="html", branch="sika_center"
+            "id": "kpi-control-board",
+            "title": "KPI Control Board",
+            "description": (
+                "Tablero semanal (lun–dom): scorecard Q1–Q17, cartera, OTIF "
+                "y contabilidad ERP."
             ),
+            "period_type": "week",
+            "template": {"report_kind": "kpi_control_board"},
         },
     ]
 
 
+def get_recommended_reports(*, today: Optional[date] = None) -> List[Dict[str, Any]]:
+    """Catalog entries with default-period actions for API consumers."""
+    default_year, default_month = previous_calendar_month(today=today)
+    reports: List[Dict[str, Any]] = []
+    default_iso_year, default_iso_week = last_completed_iso_week(today=today)
+    for entry in get_recommended_report_templates():
+        if entry.get("period_type") == "week":
+            reports.append(
+                {
+                    **entry,
+                    "action": {
+                        "type": "generate_kpi_board",
+                        "iso_year": default_iso_year,
+                        "iso_week": default_iso_week,
+                    },
+                }
+            )
+            continue
+        template = entry["template"]
+        action = build_manager_action(
+            year=default_year,
+            month=default_month,
+            fmt=template.get("format", "html"),
+            branch=template.get("branch"),
+            with_ai=template.get("with_ai", False),
+        )
+        reports.append({**entry, "action": action})
+    return reports
+
+
 def recommended_reports_payload(*, today: Optional[date] = None) -> Dict[str, Any]:
-    return {"reports": get_recommended_reports(today=today)}
+    default_year, default_month = previous_calendar_month(today=today)
+    default_iso_year, default_iso_week = last_completed_iso_week(today=today)
+    return {
+        "reports": get_recommended_reports(today=today),
+        "default_year": default_year,
+        "default_month": default_month,
+        "default_iso_year": default_iso_year,
+        "default_iso_week": default_iso_week,
+        "max_iso_week": iso_weeks_in_year(default_iso_year),
+        "default_format": "html",
+        "format_options": FORMAT_OPTIONS,
+        "month_names": {str(k): v for k, v in MONTH_NAMES_ES.items()},
+    }
 
 
 RECOMMENDED_REPORTS_CSS = """
@@ -156,17 +214,15 @@ body.dark #informes-recomendados {
   border-radius: 0.65rem;
   background: #ffffff;
   padding: 0.65rem 0.75rem;
-  cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .informe-card:hover {
   border-color: #2563eb;
   box-shadow: 0 6px 18px rgba(37, 99, 235, 0.12);
-  transform: translateY(-1px);
 }
-.informe-card:disabled {
+.informe-card.is-busy {
   opacity: 0.65;
-  cursor: wait;
+  pointer-events: none;
 }
 .dark .informe-card {
   background: #1e293b;
@@ -186,13 +242,63 @@ body.dark #informes-recomendados {
   font-size: 0.74rem;
   color: #64748b;
   line-height: 1.35;
+  margin-bottom: 0.55rem;
 }
 .dark .informe-card-desc { color: #94a3b8; }
+.informe-period {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+.informe-month,
+.informe-year,
+.informe-week,
+.informe-format {
+  font-size: 0.78rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.4rem;
+  padding: 0.3rem 0.45rem;
+  background: #f8fafc;
+  color: #1e293b;
+}
+.informe-month { flex: 1 1 6.5rem; min-width: 0; }
+.informe-year { width: 4.5rem; }
+.informe-week { width: 4.5rem; }
+.informe-format { flex: 1 1 4.5rem; min-width: 0; }
+.dark .informe-month,
+.dark .informe-year,
+.dark .informe-week,
+.dark .informe-format {
+  background: #0f172a;
+  border-color: #475569;
+  color: #e2e8f0;
+}
+.informe-generate-btn {
+  flex: 1 1 100%;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  background: #2563eb;
+  color: #ffffff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.informe-generate-btn:hover { background: #1d4ed8; }
+.informe-generate-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
 .informes-recomendados-status {
   margin: 0.85rem 0 0;
   font-size: 0.75rem;
   color: #166534;
   min-height: 1.1rem;
+  line-height: 1.35;
+  word-break: break-word;
 }
 .informes-recomendados-status.is-error { color: #b91c1c; }
 body.informes-layout {
@@ -221,7 +327,7 @@ body.informes-layout #app {
 RECOMMENDED_REPORTS_PANEL_HTML = """
 <aside id="informes-recomendados" class="informes-recomendados" aria-label="Informes recomendados">
   <h2>Informes recomendados</h2>
-  <p class="informes-subtitle">Accesos directos al informe gerencial mensual (depotru-report).</p>
+  <p class="informes-subtitle">Informes mensuales (mes/año/formato) o KPI semanal (año/semana ISO).</p>
   <div id="informes-recomendados-list" class="informes-recomendados-list" role="list"></div>
   <p id="informes-recomendados-status" class="informes-recomendados-status" aria-live="polite"></p>
 </aside>
@@ -240,6 +346,31 @@ RECOMMENDED_REPORTS_JS = """
     statusEl.classList.toggle("is-error", Boolean(isError));
   }
 
+  function buildAction(template, year, month, fmt, monthNames) {
+    const monthName = (monthNames[String(month)] || "").toLowerCase();
+    let question = "Genera el informe gerencial de " + monthName + " " + year;
+    if (fmt === "pdf") question += " en PDF";
+    else if (fmt === "json") question += " en JSON";
+    if (template && template.with_ai) question += " con análisis de IA";
+    const branch = template && template.branch;
+    if (branch) question += " para " + String(branch).replace(/_/g, " ");
+    const action = {
+      type: "generate_report",
+      year: year,
+      month: month,
+      format: fmt,
+      question: question,
+    };
+    if (branch) action.branch = branch;
+    return action;
+  }
+
+  function shortStatus(result) {
+    if (result.status_text) return result.status_text;
+    const fmt = String(result.format || "html").toUpperCase();
+    return "✓ Informe " + fmt + " listo.";
+  }
+
   async function triggerReport(action) {
     const payload = {
       year: action.year,
@@ -256,49 +387,224 @@ RECOMMENDED_REPORTS_JS = """
     return response.json();
   }
 
-  function renderCard(report) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "informe-card";
-    button.setAttribute("role", "listitem");
-    button.dataset.reportId = report.id;
-    button.innerHTML =
-      '<span class="informe-card-title"></span><span class="informe-card-desc"></span>';
-    button.querySelector(".informe-card-title").textContent = report.title;
-    button.querySelector(".informe-card-desc").textContent = report.description;
-    button.addEventListener("click", async () => {
-      button.disabled = true;
-      setStatus("Generando informe…", false);
+  async function triggerKpiBoard(isoYear, isoWeek) {
+    const response = await fetch("/api/v0/generate_kpi_board", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ iso_year: isoYear, iso_week: isoWeek }),
+    });
+    return response.json();
+  }
+
+  function handleGenerateResult(result) {
+    if (result.type === "manager_report" || result.type === "kpi_board") {
+      setStatus(shortStatus(result), false);
+      if (result.download_url) window.open(result.download_url, "_blank");
+      return;
+    }
+    if (result.type === "error") {
+      setStatus(result.error || "Error generando el informe.", true);
+      return;
+    }
+    if (result.type === "text") {
+      setStatus(result.text || "Indica el periodo del informe.", false);
+      return;
+    }
+    setStatus("Respuesta inesperada del servidor.", true);
+  }
+
+  function renderWeekCard(report, defaults) {
+    const card = document.createElement("div");
+    card.className = "informe-card";
+    card.setAttribute("role", "listitem");
+    card.dataset.reportId = report.id;
+
+    const title = document.createElement("span");
+    title.className = "informe-card-title";
+    title.textContent = report.title;
+
+    const desc = document.createElement("span");
+    desc.className = "informe-card-desc";
+    desc.textContent = report.description;
+
+    const period = document.createElement("div");
+    period.className = "informe-period";
+
+    const yearInput = document.createElement("input");
+    yearInput.type = "number";
+    yearInput.className = "informe-year";
+    yearInput.min = "2015";
+    yearInput.max = "2035";
+    yearInput.value = String(defaults.iso_year);
+    yearInput.setAttribute("aria-label", "Año ISO del tablero");
+
+    const weekInput = document.createElement("input");
+    weekInput.type = "number";
+    weekInput.className = "informe-week";
+    weekInput.min = "1";
+    weekInput.max = String(defaults.max_iso_week || 53);
+    weekInput.value = String(defaults.iso_week);
+    weekInput.setAttribute("aria-label", "Semana ISO");
+
+    const generateBtn = document.createElement("button");
+    generateBtn.type = "button";
+    generateBtn.className = "informe-generate-btn";
+    generateBtn.textContent = "Generar tablero";
+
+    period.appendChild(yearInput);
+    period.appendChild(weekInput);
+    period.appendChild(generateBtn);
+
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(period);
+    listEl.appendChild(card);
+
+    generateBtn.addEventListener("click", async () => {
+      const isoYear = parseInt(yearInput.value, 10);
+      const isoWeek = parseInt(weekInput.value, 10);
+      if (!isoYear || !isoWeek || isoWeek < 1 || isoWeek > 53) {
+        setStatus("Indica un año y semana ISO válidos.", true);
+        return;
+      }
+      card.classList.add("is-busy");
+      generateBtn.disabled = true;
+      setStatus("Generando tablero KPI…", false);
       try {
-        const result = await triggerReport(report.action || {});
-        if (result.type === "manager_report") {
-          setStatus(result.text || "Informe listo.", false);
-          if (result.download_url) window.open(result.download_url, "_blank");
-        } else if (result.type === "error") {
-          setStatus(result.error || "Error generando el informe.", true);
-        } else if (result.type === "text") {
-          setStatus(result.text || "Indica el periodo del informe.", false);
-        } else {
-          setStatus("Respuesta inesperada del servidor.", true);
-        }
+        const result = await triggerKpiBoard(isoYear, isoWeek);
+        handleGenerateResult(result);
       } catch (err) {
         setStatus("No se pudo contactar el servidor.", true);
       } finally {
-        button.disabled = false;
+        card.classList.remove("is-busy");
+        generateBtn.disabled = false;
       }
     });
-    listEl.appendChild(button);
+  }
+
+  function renderCard(report, defaults, monthNames, formatOptions) {
+    if (report.period_type === "week") {
+      renderWeekCard(report, defaults);
+      return;
+    }
+    const card = document.createElement("div");
+    card.className = "informe-card";
+    card.setAttribute("role", "listitem");
+    card.dataset.reportId = report.id;
+
+    const title = document.createElement("span");
+    title.className = "informe-card-title";
+    title.textContent = report.title;
+
+    const desc = document.createElement("span");
+    desc.className = "informe-card-desc";
+    desc.textContent = report.description;
+
+    const period = document.createElement("div");
+    period.className = "informe-period";
+
+    const monthSelect = document.createElement("select");
+    monthSelect.className = "informe-month";
+    monthSelect.setAttribute("aria-label", "Mes del informe");
+    Object.keys(monthNames)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .forEach((m) => {
+        const opt = document.createElement("option");
+        opt.value = String(m);
+        opt.textContent = monthNames[String(m)];
+        if (m === defaults.month) opt.selected = true;
+        monthSelect.appendChild(opt);
+      });
+
+    const yearInput = document.createElement("input");
+    yearInput.type = "number";
+    yearInput.className = "informe-year";
+    yearInput.min = "2015";
+    yearInput.max = "2035";
+    yearInput.value = String(defaults.year);
+    yearInput.setAttribute("aria-label", "Año del informe");
+
+    const formatSelect = document.createElement("select");
+    formatSelect.className = "informe-format";
+    formatSelect.setAttribute("aria-label", "Formato del informe");
+    formatOptions.forEach((opt) => {
+      const option = document.createElement("option");
+      option.value = opt.value;
+      option.textContent = opt.label;
+      if (opt.value === defaults.format) option.selected = true;
+      formatSelect.appendChild(option);
+    });
+
+    const generateBtn = document.createElement("button");
+    generateBtn.type = "button";
+    generateBtn.className = "informe-generate-btn";
+    generateBtn.textContent = "Generar informe";
+
+    period.appendChild(monthSelect);
+    period.appendChild(yearInput);
+    period.appendChild(formatSelect);
+    period.appendChild(generateBtn);
+
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(period);
+    listEl.appendChild(card);
+
+    generateBtn.addEventListener("click", async () => {
+      const year = parseInt(yearInput.value, 10);
+      const month = parseInt(monthSelect.value, 10);
+      if (!year || !month || month < 1 || month > 12) {
+        setStatus("Indica un año y mes válidos.", true);
+        return;
+      }
+      card.classList.add("is-busy");
+      generateBtn.disabled = true;
+      setStatus("Generando informe…", false);
+      try {
+        const fmt = formatSelect.value || "html";
+        const action = buildAction(
+          report.template || {},
+          year,
+          month,
+          fmt,
+          monthNames
+        );
+        const result = await triggerReport(action);
+        handleGenerateResult(result);
+      } catch (err) {
+        setStatus("No se pudo contactar el servidor.", true);
+      } finally {
+        card.classList.remove("is-busy");
+        generateBtn.disabled = false;
+      }
+    });
   }
 
   fetch("/api/v0/recommended_reports")
     .then((r) => r.json())
     .then((data) => {
       const reports = (data && data.reports) || [];
+      const monthNames = (data && data.month_names) || {};
+      const formatOptions = (data && data.format_options) || [
+        { value: "html", label: "HTML" },
+        { value: "pdf", label: "PDF" },
+      ];
+      const defaults = {
+        year: (data && data.default_year) || new Date().getFullYear(),
+        month: (data && data.default_month) || new Date().getMonth() || 12,
+        format: (data && data.default_format) || "html",
+        iso_year: (data && data.default_iso_year) || new Date().getFullYear(),
+        iso_week: (data && data.default_iso_week) || 1,
+        max_iso_week: (data && data.max_iso_week) || 53,
+      };
       if (!reports.length) {
         setStatus("No hay informes recomendados configurados.", true);
         return;
       }
-      reports.forEach(renderCard);
+      reports.forEach((report) =>
+        renderCard(report, defaults, monthNames, formatOptions)
+      );
     })
     .catch(() => setStatus("No se pudo cargar la lista de informes.", true));
 })();

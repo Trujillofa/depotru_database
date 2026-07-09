@@ -16,6 +16,7 @@ import pandas as pd
 from business_analyzer.ai.flask_app import SmartVannaFlaskApp
 from business_analyzer.ai.formatting import format_dataframe
 from business_analyzer.ai.recommended_reports import (
+    build_manager_action,
     get_recommended_reports,
     inject_recommended_reports_ui,
     previous_calendar_month,
@@ -65,9 +66,10 @@ class TestRecommendedReportsCatalog:
         reports = get_recommended_reports(today=date(2026, 7, 8))
         assert len(reports) >= 1
         entry = reports[0]
-        assert entry["id"] == "manager-prev-month-html"
+        assert entry["id"] == "manager"
         assert entry["title"]
         assert entry["description"]
+        assert "template" in entry
         action = entry["action"]
         assert action["type"] == "generate_report"
         assert action["year"] == 2026
@@ -75,23 +77,50 @@ class TestRecommendedReportsCatalog:
         assert action["format"] == "html"
         assert "question" in action
 
-    def test_payload_wraps_reports(self):
+    def test_payload_includes_period_defaults_and_month_names(self):
         payload = recommended_reports_payload(today=date(2024, 12, 15))
         assert "reports" in payload
-        assert len(payload["reports"]) >= 3
+        assert len(payload["reports"]) == 6
+        assert payload["default_year"] == 2024
+        assert payload["default_month"] == 11
+        assert payload["month_names"]["12"] == "Diciembre"
 
-    def test_pdf_catalog_action_includes_pdf_in_question(self):
-        reports = get_recommended_reports(today=date(2026, 7, 8))
-        pdf_entry = next(r for r in reports if r["id"] == "manager-prev-month-pdf")
-        assert pdf_entry["action"]["format"] == "pdf"
-        assert "en PDF" in pdf_entry["action"]["question"]
+    def test_build_manager_action_pdf_question(self):
+        action = build_manager_action(year=2024, month=12, fmt="pdf")
+        assert action["format"] == "pdf"
+        assert "en PDF" in action["question"]
 
-    def test_inject_recommended_reports_ui_adds_panel(self):
+    def test_format_options_include_json(self):
+        payload = recommended_reports_payload(today=date(2026, 7, 8))
+        values = {opt["value"] for opt in payload["format_options"]}
+        assert values == {"html", "pdf", "json"}
+
+    def test_build_manager_action_with_ai_and_branch(self):
+        action = build_manager_action(
+            year=2024,
+            month=5,
+            fmt="html",
+            with_ai=True,
+            branch="sika_center",
+        )
+        assert "mayo 2024" in action["question"]
+        assert "con análisis de IA" in action["question"]
+        assert "sika center" in action["question"]
+        assert action["branch"] == "sika_center"
+
+    def test_inject_recommended_reports_ui_adds_panel_and_period_controls(self):
         html = '<html><head></head><body class="bg-white dark:bg-slate-900"><div id="app"></div></body></html>'
         patched = inject_recommended_reports_ui(html)
         assert 'id="informes-recomendados"' in patched
         assert "Informes recomendados" in patched
         assert "informes-recomendados-loader" in patched
+        assert "informe-period" in patched
+        assert "informe-month" in patched
+        assert "informe-year" in patched
+        assert "informe-generate-btn" in patched
+        assert "informe-format" in patched
+        assert "informe-week" in patched
+        assert "generate_kpi_board" in patched
 
 
 @pytest.fixture
@@ -122,7 +151,22 @@ class TestRecommendedReportsFlaskRoutes:
         payload = response.get_json()
         assert len(payload["reports"]) >= 1
         first = payload["reports"][0]
-        assert {"id", "title", "description", "action"} <= set(first.keys())
+        assert {"id", "title", "description", "action", "template"} <= set(first.keys())
+        assert {
+            "default_year",
+            "default_month",
+            "default_iso_year",
+            "default_iso_week",
+            "max_iso_week",
+            "default_format",
+            "format_options",
+            "month_names",
+        } <= set(payload.keys())
+        kpi_entry = next(
+            r for r in payload["reports"] if r["id"] == "kpi-control-board"
+        )
+        assert kpi_entry["period_type"] == "week"
+        assert kpi_entry["action"]["type"] == "generate_kpi_board"
 
         evidence = tmp_path / "recommended-reports.json"
         evidence.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -139,14 +183,13 @@ class TestRecommendedReportsFlaskRoutes:
     def test_catalog_html_entry_triggers_manager_report(self, report_client, tmp_path):
         client, stub, success = report_client
         catalog = client.get("/api/v0/recommended_reports").get_json()
-        html_entry = next(
-            r for r in catalog["reports"] if r["id"] == "manager-prev-month-html"
-        )
+        html_entry = next(r for r in catalog["reports"] if r["id"] == "manager")
         response = client.post("/api/v0/generate_report", json=html_entry["action"])
         assert response.status_code == 200
         payload = response.get_json()
         assert payload["type"] == "manager_report"
         assert payload["text"]
+        assert payload["status_text"]
         assert payload["format"] == "html"
         assert stub.last_build["format"] == "html"
         assert payload["download_url"] == "/reports/report_2024_05.html"
@@ -157,13 +200,8 @@ class TestRecommendedReportsFlaskRoutes:
     def test_catalog_pdf_entry_uses_explicit_format(self, report_client, tmp_path):
         client, stub, success = report_client
         catalog = client.get("/api/v0/recommended_reports").get_json()
-        pdf_entry = next(
-            r for r in catalog["reports"] if r["id"] == "manager-prev-month-pdf"
-        )
-        assert pdf_entry["action"]["format"] == "pdf"
-        assert "en PDF" in pdf_entry["action"]["question"]
-
-        response = client.post("/api/v0/generate_report", json=pdf_entry["action"])
+        pdf_action = build_manager_action(year=2024, month=5, fmt="pdf")
+        response = client.post("/api/v0/generate_report", json=pdf_action)
         assert response.status_code == 200
         payload = response.get_json()
         assert payload["type"] == "manager_report"
@@ -173,3 +211,13 @@ class TestRecommendedReportsFlaskRoutes:
         (tmp_path / "report-trigger-pdf.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2)
         )
+
+    def test_catalog_json_entry_uses_explicit_format(self, report_client, tmp_path):
+        client, stub, _ = report_client
+        json_action = build_manager_action(year=2024, month=5, fmt="json")
+        response = client.post("/api/v0/generate_report", json=json_action)
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["type"] == "manager_report"
+        assert stub.last_build["format"] == "json"
+        assert payload["format"] == "json"

@@ -14,6 +14,7 @@ from business_analyzer.ai.flask_app import (
     SmartVannaFlaskApp,
     manager_report_api_payload,
     manager_report_download_path,
+    manager_report_status_text,
     patched_vanna_js_content,
 )
 from business_analyzer.ai.formatting import format_dataframe
@@ -102,6 +103,21 @@ class TestManagerReportHelpers:
         assert payload["type"] == "manager_report"
         assert payload["download_url"] == "/reports/report_2024_05.pdf"
         assert payload["id"] == "cache-1"
+        assert payload["status_text"]
+        assert "PDF" in payload["status_text"]
+
+    def test_manager_report_status_text(self):
+        text = manager_report_status_text(
+            {
+                "year": 2024,
+                "month": 5,
+                "format": "html",
+                "path": "/tmp/report_2024_05.html",
+            }
+        )
+        assert "Mayo 2024" in text
+        assert "HTML" in text
+        assert "report_2024_05.html" in text
 
     def test_patched_vanna_js_content(self):
         patched = patched_vanna_js_content()
