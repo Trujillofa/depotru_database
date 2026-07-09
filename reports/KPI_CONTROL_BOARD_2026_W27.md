@@ -17,12 +17,12 @@
 | Concentración Top-10 Clientes % | `Facturación Top10 / Facturación Total * 100` | — | 24,13% | 26,13% | +2,00 pp | 🔴 |
 | DSO (días) | `Cartera Total / (Ventas Netas / días periodo)` | — | 45 | 23 | -22 días | 🟢 |
 | Cartera vencida >90d % | `SUM(vencido_90+120+360+superior)/Cartera*100` | — | 12,00% | 12,59% | +0,59 pp | 🔴 |
-| Cumplimiento Presupuesto MTD % | `Ventas MTD / Meta prorrateada * 100` | — | 100,00% | 58,13% | -41,87 pp | 🔴 |
+| Cumplimiento Presupuesto MTD % | `Ventas MTD / Meta prorrateada * 100` | — | 100,00% | 45,18% | -54,82 pp | 🔴 |
 | Tasa Conversión Cotizaciones % | `Convertidas / Cotizaciones * 100` (J3System) | — | 30,00% | 34,66% | +4,66 pp | 🟢 |
 | Días Cotización → Factura | `AVG(DATEDIFF)` post-cotización (J3System) | — | 7.0 | 0.2 | -7 días | 🟢 |
 | SKUs Inventario Crítico | Top-N bajo umbral + alta rotación 90d | — | 25 | 25 | +0 | 🟢 |
 | Cobertura Inventario (días prom.) | `Saldo / venta_diaria` SKUs críticos | — | 7.0 | 0.0 | -7 días | 🔴 |
-| OTIF Entregas % | `A tiempo / total` (InvHistoricoEntregas) | — | 85,00% | 73,81% | -11,19 pp | 🔴 |
+| OTIF Entregas % | `A tiempo / total` (InvHistoricoEntregas) | — | 85,00% | 73,80% | -11,20 pp | 🔴 |
 | Lead Time Entrega (días prom.) | `AVG(FechaEntrega - FechaFactura)` | — | 3.0 | 0.5 | -3 días | 🟢 |
 | Conciliación Devoluciones % | `1 - |ERP-BI|/ERP` por unidades | — | 99,00% | 100,00% | +1,00 pp | 🟢 |
 | Aceptación Factura Electrónica % | `Aceptadas / Emitidas` (DIAN) | — | 99,50% | 100,00% | +0,50 pp | 🟢 |
@@ -89,21 +89,20 @@
 - **Clientes con saldo:** 3,004 | **Sobre cupo:** 122 | **Días vencidos prom. ponderado:** 43.4
 
 ### 3.6 Presupuesto vs Real (presupuesto_vendedores)
-- **Periodo ventas:** 20267 | **Periodo meta:** 20247 | **Origen meta:** proxy: mismo mes en el último año con meta cargada (periodo meta 20247)
-- **Cumplimiento consolidado MTD:** 58,13% (ventas $707.376.535 / meta prorr. $1.216.931.001)
-- **Nota:** no hay filas en `presupuesto_vendedores` para el periodo de ventas; se usa la meta del mismo mes calendario en el último año disponible, prorrateada al MTD actual. Cargar metas del periodo corriente para comparación exacta.
+- **Periodo ventas:** 20267 | **Periodo meta:** 20267 | **Origen meta:** meta del periodo de ventas
+- **Cumplimiento consolidado MTD:** 45,18% (ventas $707.376.535 / meta prorr. $1.565.530.442)
 - **Top 5 vendedores por meta mensual:**
-  - WILLIAM HERNANDO QUINTERO G (095) | MTD: $146.166.498 | Meta prorr.: $171.753.514 | Cumpl.: 85,10%
-  - HUBER SANTIAGO ENCISO (044) | MTD: $111.693.972 | Meta prorr.: $115.833.535 | Cumpl.: 96,43%
-  - HUBER SANTIAGO ENCISO (116) | MTD: $61.768.312 | Meta prorr.: $106.537.847 | Cumpl.: 57,98%
-  - 135 (135) | MTD: $0 | Meta prorr.: $94.015.059 | Cumpl.: 0,00%
-  - CARLOS EFREY PASCUAS (003) | MTD: $30.748.102 | Meta prorr.: $92.915.613 | Cumpl.: 33,09%
+  - DANIEL ENRIQUE CAICEDO (095) | MTD: $146.166.498 | Meta prorr.: $189.401.480 | Cumpl.: 77,17%
+  - OSCAR IVAN POLANIA GARCIA (035) | MTD: $45.627.919 | Meta prorr.: $178.484.005 | Cumpl.: 25,56%
+  - FELIPE RAMIREZ (116) | MTD: $61.768.312 | Meta prorr.: $169.297.456 | Cumpl.: 36,49%
+  - ANDRES FELIPE VARGAS JOVEL (057) | MTD: $76.111.278 | Meta prorr.: $141.896.939 | Cumpl.: 53,64%
+  - ANDRES MAURICIO CORTEZ CULMA (089) | MTD: $41.744.954 | Meta prorr.: $131.505.311 | Cumpl.: 31,74%
 - **Bajo 90% cumplimiento (acción comercial):**
-  - WILLIAM HERNANDO QUINTERO G — 85,10% (brecha $25.587.016)
-  - HUBER SANTIAGO ENCISO — 57,98% (brecha $44.769.535)
-  - 135 — 0,00% (brecha $94.015.059)
-  - CARLOS EFREY PASCUAS — 33,09% (brecha $62.167.511)
-  - OSCAR IVAN POLANIA GARCIA — 52,53% (brecha $41.236.154)
+  - DANIEL ENRIQUE CAICEDO — 77,17% (brecha $43.234.982)
+  - OSCAR IVAN POLANIA GARCIA — 25,56% (brecha $132.856.087)
+  - FELIPE RAMIREZ — 36,49% (brecha $107.529.143)
+  - ANDRES FELIPE VARGAS JOVEL — 53,64% (brecha $65.785.661)
+  - ANDRES MAURICIO CORTEZ CULMA — 31,74% (brecha $89.760.356)
 
 ### 3.7 Margen por marca real (productos_adicional)
 - **Top 5 marcas por ganancia bruta** (COALESCE producto_marca, banco_datos.marca):
@@ -134,21 +133,21 @@
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | ALM | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | CON | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | BDT | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
+  - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | EXH | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | CEN | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | B.ROT | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
-  - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | EXH | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | BOD | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | FLO | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020390061 | CODO PRESION 90 1/2 T/PESADO | SUR | Stock: 0 | Venta 90d: 66026 | Cobertura: 0.0d | QUIEBRE_INMINENTE
-  - 0020390061 | CODO PRESION 90 1/2 T/PESADO | EXH | Stock: 0 | Venta 90d: 66026 | Cobertura: 0.0d | QUIEBRE_INMINENTE
+  - 0020390061 | CODO PRESION 90 1/2 T/PESADO | BDT | Stock: 0 | Venta 90d: 66026 | Cobertura: 0.0d | QUIEBRE_INMINENTE
 
 ### 3.10 OTIF — cumplimiento de entregas (InvHistoricoEntregas)
-- **Total entregas:** 6,747 | **A tiempo:** 4,980 | **OTIF:** 73,81% | **Lead prom.:** 0.5d | **Fill rate:** 99,47%
+- **Total entregas:** 6,748 | **A tiempo:** 4,980 | **OTIF:** 73,80% | **Lead prom.:** 0.5d | **Fill rate:** 99,47%
 - **Bodegas con peor OTIF:**
   - BOD | OTIF: 10,78% | Entregas: 102 | Lead: 2.6d
   - SUR | OTIF: 29,13% | Entregas: 745 | Lead: 1.3d
   - BD6 | OTIF: 66,27% | Entregas: 845 | Lead: 0.5d
-  - DIS | OTIF: 75,27% | Entregas: 744 | Lead: 0.4d
+  - DIS | OTIF: 75,17% | Entregas: 745 | Lead: 0.4d
   - ALM | OTIF: 83,97% | Entregas: 4210 | Lead: 0.3d
 
 ### 3.11 Conciliación devoluciones ERP vs BI
@@ -190,7 +189,7 @@
 
 ## 6) AI Narrative Summary
 
-Durante la semana, la ferretería registró un margen bruto de 13,70% sobre una ganancia bruta de $220.946.578 y un ticket promedio de $270.908. La concentración en los 10 principales clientes alcanzó 26,13%, mientras que el DSO se mantuvo en 23 días y la cartera vencida mayor a 90 días representó 12,59%. El cumplimiento presupuestal MTD llegó a 58,13% y la tasa de conversión de cotizaciones fue 34,66% con un ciclo de 0,2 días. Se detectaron 25 SKUs en inventario crítico sin cobertura, y el OTIF de entregas fue 73,81% con lead time de 0,5 días. Las devoluciones se conciliaron al 100% y la facturación electrónica mantuvo 100% de aceptación. El margen contable cerró en 13,86% con ingresos de $1.636.912.906; ZINC y MULTIMARCA lideraron categorías y marcas. Se recomienda priorizar la reposición inmediata de los SKUs críticos y lanzar promociones dirigidas a los clientes top para elevar el ticket promedio y mejorar la liquidez.
+La ferretería registró una ganancia bruta de $220.946.578 con un margen del 13,70 % y un ticket promedio de $270.908. El Top-10 de clientes concentra el 26,13 % de las ventas, el DSO se ubica en 23 días y la cartera vencida mayor a 90 días representa el 12,59 % del total. El cumplimiento presupuestal MTD es apenas del 45,18 %, mientras que la tasa de conversión de cotizaciones es del 34,66 % con respuesta promedio de 0,2 días. Veinticinco SKUs críticos presentan cobertura de cero días y el OTIF de entregas es del 73,80 %. Como recomendación, priorizar la reposición inmediata de los SKUs críticos y lanzar una campaña de cross-selling dirigida al Top-10 para elevar la conversión y el ticket promedio.
 
 ## 5) SQL Blocks Used (Traceability)
 
