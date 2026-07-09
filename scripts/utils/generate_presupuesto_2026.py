@@ -166,8 +166,8 @@ def fetch_sika_sales_by_code(conn, year: int, month: int) -> Dict[str, float]:
 
 def fetch_sales_rows(
     conn, years: Sequence[int]
-) -> List[Tuple[Optional[str], Optional[str], int, int, float]]:
-    """(code, name, year, month, sales) including null codes."""
+) -> List[Tuple[Optional[str], Optional[str], Optional[str], int, int, float]]:
+    """(code, factura, asignado, year, month, sales) including null codes."""
     cur = conn.cursor()
     year_list = ", ".join(str(y) for y in years)
     cur.execute(
@@ -179,6 +179,7 @@ def fetch_sales_rows(
             ELSE LTRIM(RTRIM(vendedor_codigo))
           END,
           VendedorFactura,
+          VendedorAsignado,
           YEAR(Fecha),
           MONTH(Fecha),
           SUM(TotalSinIva)
@@ -193,12 +194,14 @@ def fetch_sales_rows(
             ELSE LTRIM(RTRIM(vendedor_codigo))
           END,
           VendedorFactura,
+          VendedorAsignado,
           YEAR(Fecha),
           MONTH(Fecha)
         """
     )
     rows = [
-        (r[0], r[1], int(r[2]), int(r[3]), float(r[4] or 0)) for r in cur.fetchall()
+        (r[0], r[1], r[2], int(r[3]), int(r[4]), float(r[5] or 0))
+        for r in cur.fetchall()
     ]
     cur.close()
     return rows

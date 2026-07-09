@@ -6,6 +6,7 @@ with explicit merges (William Quintero → 162). Company stretch default +25%.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import (
@@ -24,6 +25,26 @@ DEFAULT_CODE_MERGES: Dict[str, str] = {
     "123": "162",  # William Hernando Quintero (Sika)
     "133": "162",
 }
+
+# Commercial owners for budget when only VendedorFactura is available.
+# Priority for attribution: VendedorAsignado code > Factura owner map > vendedor_codigo.
+OFFICIAL_FACTURA_OWNERS: Dict[str, str] = {
+    "HUBER SANTIAGO ENCISO": "044",
+    "OLGA LUCIA TORRES": "131",
+    "WILLIAM HERNANDO QUINTERO G": "162",
+    "WILLIAM HERNANDO QUINTERO": "162",
+    "CRISTIAN GUSTAVO": "164",
+}
+
+# Preferred display names on presupuesto rows (overrides noisy Factura labels)
+OFFICIAL_CODE_NAMES: Dict[str, str] = {
+    "044": "HUBER SANTIAGO ENCISO",
+    "131": "OLGA LUCIA TORRES",
+    "162": "WILLIAM HERNANDO QUINTERO G",
+    "163": "BETSY GUZMAN",
+}
+
+_ASIGNADO_CODE_RE = re.compile(r"^\s*(\d+)\s*[-–]")
 
 DEFAULT_GROWTH = 0.25
 DEFAULT_NEWCOMER_GROWTH = 0.10
@@ -103,13 +124,39 @@ class SalesKey:
     month: int
 
 
+def parse_asignado_code(asignado: Optional[str]) -> Optional[str]:
+    """Extract leading code from values like ``044-HUBER SANTIAGO ENCISO``."""
+    if not asignado:
+        return None
+    m = _ASIGNADO_CODE_RE.match(str(asignado))
+    if not m:
+        return None
+    return normalize_code(m.group(1))
+
+
+def official_owner_for_factura(name: Optional[str]) -> Optional[str]:
+    """Commercial owner code from VendedorFactura (budget rule overrides)."""
+    n = normalize_name(name)
+    if not n:
+        return None
+    if n in OFFICIAL_FACTURA_OWNERS:
+        return OFFICIAL_FACTURA_OWNERS[n]
+    for key, code in OFFICIAL_FACTURA_OWNERS.items():
+        if key in n or n in key:
+            return code
+    return None
+
+
 def build_name_to_code_map(
     coded_name_sales: Sequence[Tuple[str, str, float]],
     *,
     allowed_codes: Optional[Sequence[str]] = None,
     merges: Mapping[str, str] = DEFAULT_CODE_MERGES,
 ) -> Dict[str, str]:
-    """Majority map normalize(name) → canonical code from (code, name, sales)."""
+    """Majority map normalize(name) → canonical code from (code, name, sales).
+
+    Official commercial owners always win over majority vote.
+    """
     allowed = set(allowed_codes) if allowed_codes is not None else None
     scores: Dict[str, Dict[str, float]] = {}
     for code, name, sales in coded_name_sales:
@@ -125,61 +172,91 @@ def build_name_to_code_map(
     mapping: Dict[str, str] = {}
     for n, by_code in scores.items():
         mapping[n] = max(by_code.items(), key=lambda kv: kv[1])[0]
-    # Force William name → 162 when present in map competition
-    for n, c in list(mapping.items()):
-        if "WILLIAM HERNANDO QUINTERO" in n:
-            mapping[n] = apply_code_merge("162", merges)
+    # Force commercial ownership
+    for n in list(mapping.keys()):
+        owner = official_owner_for_factura(n)
+        if owner:
+            mapping[n] = apply_code_merge(owner, merges)
     return mapping
 
 
 def attribute_sale(
     *,
-    code: Optional[str],
-    name: Optional[str],
+    code: Optional[str] = None,
+    name: Optional[str] = None,
+    asignado: Optional[str] = None,
     name_to_code: Mapping[str, str],
     active_codes: Sequence[str],
     merges: Mapping[str, str] = DEFAULT_CODE_MERGES,
     pool_key: str = "POOL",
 ) -> str:
-    """Return active canonical code or POOL."""
+    """Return active canonical code or POOL.
+
+    Priority (budget):
+      1) VendedorAsignado leading code
+      2) VendedorFactura official owner / name map
+      3) vendedor_codigo
+      4) POOL
+    """
     active = set(active_codes)
+
+    # 1) Asignado
+    ac = parse_asignado_code(asignado)
+    if ac:
+        ac = apply_code_merge(ac, merges)
+        if ac in active:
+            return ac
+        return pool_key
+
+    # 2) Factura — official owner then statistical map
+    n = normalize_name(name)
+    owner = official_owner_for_factura(n)
+    if owner:
+        owner = apply_code_merge(owner, merges)
+        if owner in active:
+            return owner
+    if n and n in name_to_code:
+        mapped = apply_code_merge(name_to_code[n], merges)
+        if mapped in active:
+            return mapped
+
+    # 3) Explicit codigo (same as Asignado when both present in ERP)
     c = normalize_code(code)
     if c:
         c = apply_code_merge(c, merges)
         if c in active:
             return c
-        # coded but inactive/leaver → pool
         return pool_key
-    n = normalize_name(name)
-    if n and n in name_to_code:
-        mapped = apply_code_merge(name_to_code[n], merges)
-        if mapped in active:
-            return mapped
-    if n and "WILLIAM HERNANDO QUINTERO" in n and "162" in active:
-        return "162"
-    if n and "CRISTIAN GUSTAVO" in n and "164" in active:
-        return "164"
+
     return pool_key
 
 
 def aggregate_attributed(
-    rows: Sequence[Tuple[Optional[str], Optional[str], int, int, float]],
+    rows: Sequence[Tuple],
     *,
     name_to_code: Mapping[str, str],
     active_codes: Sequence[str],
     merges: Mapping[str, str] = DEFAULT_CODE_MERGES,
 ) -> Dict[Tuple[str, int, int], float]:
-    """rows: (code, name, year, month, sales) → {(attr_code, year, month): sales}."""
+    """rows: (code, factura, year, month, sales) or
+    (code, factura, asignado, year, month, sales).
+    """
     out: Dict[Tuple[str, int, int], float] = {}
-    for code, name, year, month, sales in rows:
+    for row in rows:
+        if len(row) == 5:
+            code, name, year, month, sales = row
+            asignado = None
+        else:
+            code, name, asignado, year, month, sales = row
         attr = attribute_sale(
             code=code,
             name=name,
+            asignado=asignado,
             name_to_code=name_to_code,
             active_codes=active_codes,
             merges=merges,
         )
-        key = (attr, year, month)
+        key = (attr, int(year), int(month))
         out[key] = out.get(key, 0.0) + float(sales)
     return out
 
@@ -518,10 +595,11 @@ def build_presupuesto_2026(
 
     names: Dict[str, str] = {}
     for c in active:
+        if c in OFFICIAL_CODE_NAMES:
+            names[c] = OFFICIAL_CODE_NAMES[c]
+            continue
         raw = primary_names.get(c) or primary_names.get(apply_code_merge(c, merges))
         names[c] = str(raw) if raw else ""
-    if "162" in names:
-        names["162"] = "WILLIAM HERNANDO QUINTERO G"
 
     vendor_rows = metas_to_vendor_rows(metas, names=names, target_year=target_year)
     line_rows = allocate_lineas(metas, line_shares, target_year=target_year)
