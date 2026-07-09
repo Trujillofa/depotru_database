@@ -12,12 +12,16 @@ sys.path.insert(0, str(ROOT / "src"))
 from business_analyzer.core.presupuesto_2026 import (  # noqa: E402
     DEFAULT_CODE_MERGES,
     apply_code_merge,
+    apply_twopot_sqrt,
     attribute_sale,
+    build_h2_revision_comparison,
     build_name_to_code_map,
     build_presupuesto_2026,
     canonical_active_codes,
     draft_metas_from_base,
+    h2_base_from_h1_seasonality,
     last_complete_month,
+    merge_h1_h2_metas,
     parse_asignado_code,
     redistribute_pool,
     year_month_to_periodo,
@@ -191,3 +195,96 @@ def test_build_end_to_end_small_fixture():
     for r in result.vendor_rows:
         k = (r["periodo"], r["vendedor_codigo"])
         assert abs(by_period_vendor.get(k, 0.0) - float(r["valor"])) < 0.01
+
+
+def test_h2_base_from_h1_seasonality():
+    seasonality = {m: 1.0 / 12.0 for m in range(1, 13)}
+    h1 = {"095": 600.0, "131": 60.0}
+    h2 = h2_base_from_h1_seasonality(h1, seasonality)
+    # H1 share = 0.5; annual_095 = 1200; each H2 month = 100
+    assert abs(h2[("095", 7)] - 100.0) < 1e-6
+    assert abs(sum(v for (c, m), v in h2.items() if c == "095") - 600.0) < 1e-6
+    assert abs(sum(v for (c, m), v in h2.items() if c == "131") - 60.0) < 1e-6
+
+
+def test_twopot_sqrt_locks_and_excludes_000():
+    base = {
+        ("095", 7): 800.0,
+        ("060", 7): 200.0,
+        ("000", 7): 100.0,
+    }
+    active = ["095", "060", "000"]
+    metas = apply_twopot_sqrt(base, active_codes=active, growth=0.25)
+    assert abs(sum(metas.values()) - 1100.0 * 1.25) < 1e-6
+    # 000 gets no growth pot share beyond floor; after re-lock may move slightly
+    # but should not dominate; large code 095 still largest meta
+    assert metas[("095", 7)] > metas[("060", 7)] > 0
+    # √base gives 060 more than pure proportional would relative to gap
+    pure_prop_060 = 200 * 1.25
+    # with √ and re-lock, small sellers get relatively more of growth than size-prop
+    assert metas[("060", 7)] >= pure_prop_060 * 0.95
+
+
+def test_merge_and_compare_shapes():
+    flat = {(c, m): 10.0 for c in ("095", "131") for m in range(1, 13)}
+    h2 = {(c, m): 20.0 for c in ("095", "131") for m in range(7, 13)}
+    merged = merge_h1_h2_metas(flat, h2)
+    assert merged[("095", 1)] == 10.0
+    assert merged[("095", 7)] == 20.0
+    seasonality = {m: 1.0 / 12.0 for m in range(1, 13)}
+    rows, summary = build_h2_revision_comparison(
+        flat_metas=flat,
+        h1_by_code={"095": 60.0, "131": 12.0},
+        seasonality=seasonality,
+        active_codes=["095", "131"],
+        names={"095": "DANIEL", "131": "OLGA"},
+        growth=0.25,
+    )
+    assert len(rows) == 2
+    assert summary["company_h2_meta_twopot"] > 0
+    assert summary["company_full_hybrid"] > 0
+    assert summary["h2_lock_current"] == 0.0
+    # growth lock: Σ two-pot H2 = H2_base × 1.25 = (60+12) × 1.25
+    assert abs(summary["company_h2_meta_twopot"] - 72.0 * 1.25) < 1e-6
+
+
+def test_compare_h2_company_lock_current():
+    flat = {(c, m): 10.0 for c in ("095", "131") for m in range(1, 13)}
+    seasonality = {m: 1.0 / 12.0 for m in range(1, 13)}
+    rows, summary = build_h2_revision_comparison(
+        flat_metas=flat,
+        h1_by_code={"095": 60.0, "131": 12.0},
+        seasonality=seasonality,
+        active_codes=["095", "131"],
+        names={"095": "DANIEL", "131": "OLGA"},
+        growth=0.25,
+        h2_company_lock="current",
+    )
+    assert summary["h2_lock_current"] == 1.0
+    # Σ two-pot H2 locked to Σ current flat H2 = 2 codes × 6 months × 10
+    flat_h2_total = 2 * 6 * 10.0
+    assert abs(summary["company_h2_meta_twopot"] - flat_h2_total) < 1e-6
+    # reshape only: mislocated 131 still cut, 095 raised, within locked total
+    by_code = {r["vendedor_codigo"]: r for r in rows}
+    assert float(by_code["095"]["h2_meta_twopot_h1"]) > float(
+        by_code["095"]["h2_meta_flat_2025"]
+    )
+    assert float(by_code["131"]["h2_meta_twopot_h1"]) < float(
+        by_code["131"]["h2_meta_flat_2025"]
+    )
+    # implied growth reported vs H1-rebased base (72): 120/72 - 1 ≈ +66.7%
+    assert abs(summary["implied_h2_growth_pct"] - (120.0 / 72.0 - 1.0) * 100.0) < 1e-6
+
+
+def test_compare_h2_company_lock_invalid():
+    import pytest
+
+    with pytest.raises(ValueError):
+        build_h2_revision_comparison(
+            flat_metas={},
+            h1_by_code={},
+            seasonality={m: 1.0 / 12.0 for m in range(1, 13)},
+            active_codes=[],
+            names={},
+            h2_company_lock="bogus",
+        )

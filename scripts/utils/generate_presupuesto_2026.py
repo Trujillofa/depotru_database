@@ -38,11 +38,13 @@ from business_analyzer.core.presupuesto_2026 import (  # noqa: E402
     EXCLUDED_PRODUCT_NAMES,
     SIKA_DOC_CODE,
     apply_code_merge,
+    build_h2_revision_comparison,
     build_presupuesto_2026,
     canonical_active_codes,
     last_complete_month,
     normalize_code,
     normalize_name,
+    render_h2_revision_markdown,
     year_month_to_periodo,
 )
 
@@ -441,6 +443,116 @@ def cmd_generate(args: argparse.Namespace) -> None:
         conn.close()
 
 
+def cmd_compare(args: argparse.Namespace) -> None:
+    """Dry-run: flat ×growth vs H1-rebased H2 two-pot+√ (never writes DB)."""
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    growth = float(args.growth)
+    conn = get_connection()
+    try:
+        maxf = fetch_max_fecha(conn)
+        ly, lm = last_complete_month(maxf)
+        raw = fetch_active_codes(conn, ly, lm)
+        names = fetch_primary_names(conn, ly, lm)
+        sales_rows = fetch_sales_rows(conn, [2025, 2026])
+        coded_names = fetch_coded_name_sales(conn, [2025, 2026])
+        h1_code_only = fetch_h1_2026(conn)
+        line_shares = fetch_line_shares(conn)
+
+        result = build_presupuesto_2026(
+            active_raw_codes=raw,
+            sales_rows=sales_rows,
+            coded_name_sales=coded_names,
+            line_shares=line_shares,
+            h1_2026_by_code=h1_code_only,
+            primary_names=names,
+            growth=growth,
+        )
+
+        # Prefer attributed H1 from build (includes null-code + Asignado)
+        h1_attr = {
+            r["vendedor_codigo"]: float(r["actual_h1"] or 0) for r in result.h1_report
+        }
+        # Fill gaps from code-only fetch
+        for c, s in h1_code_only.items():
+            if h1_attr.get(c, 0.0) <= 0 and s > 0:
+                h1_attr[c] = float(s)
+
+        rows, summary = build_h2_revision_comparison(
+            flat_metas=result.vendor_month_metas,
+            h1_by_code=h1_attr,
+            seasonality=result.seasonality,
+            active_codes=result.active_codes,
+            names=result.names,
+            growth=growth,
+            h2_company_lock=args.h2_company_lock,
+        )
+        summary["pool_total_2025"] = result.pool_total_2025
+        summary["company_base_2025"] = result.company_base_2025
+        pool_pct = (
+            result.pool_total_2025 / result.company_base_2025 * 100.0
+            if result.company_base_2025
+            else 0.0
+        )
+
+        lock = args.h2_company_lock
+        notes = [
+            f"H2 company lock: {lock} "
+            + (
+                "(Σ H2 two-pot = Σ current flat H2; reshape only)"
+                if lock == "current"
+                else f"(H2 target = H2 base from H1 × {1.0 + growth:.2f})"
+            ),
+            f"Active set from last complete month {ly:04d}-{lm:02d}",
+            f"Pool 2025 redistributed ${result.pool_total_2025:,.0f} "
+            f"({pool_pct:.2f}% of company base) — small fairness lever",
+            "Attribution: Asignado > Factura owner > codigo (do not revert to raw screen base)",
+            "H2 re-base uses attributed H1 actuals + 2025 seasonality shape",
+            "No --apply on compare; generate --apply still uses flat full-year method only",
+            "Field: keep Carlos off 131 (purity); not a meta formula fix",
+        ]
+        md = render_h2_revision_markdown(rows, summary, notes=notes)
+        # Colombian-style thousands already in renderer for $; keep notes plain
+        suffix = "_lockcurrent" if lock == "current" else ""
+        out_md = out_dir / f"compare_h2_twopot_vs_flat{suffix}.md"
+        out_md.write_text(md, encoding="utf-8")
+        write_csv(
+            out_dir / f"compare_h2_twopot_vs_flat{suffix}.csv",
+            rows,
+            [
+                "vendedor_codigo",
+                "vendedor_nombre",
+                "h1_actual",
+                "h1_meta_flat",
+                "h1_cumpl_pct",
+                "h2_base_from_h1",
+                "h2_meta_flat_2025",
+                "h2_meta_twopot_h1",
+                "h2_delta_twopot_vs_flat",
+                "h2_delta_pct",
+                "full_year_flat",
+                "full_year_hybrid",
+            ],
+        )
+        # Also drop a copy under reports/ for easy browsing when default out_dir used
+        reports_path = (
+            ROOT / "reports" / f"PRESUPUESTO_H2_COMPARE_TWOPOT{suffix.upper()}.md"
+        )
+        reports: Optional[Path] = reports_path
+        try:
+            reports_path.write_text(md, encoding="utf-8")
+        except OSError:
+            reports = None
+
+        print(md[:3500])
+        print(f"\nWrote {out_md}")
+        if reports:
+            print(f"Wrote {reports}")
+        print("Dry-run only (no DB writes).")
+    finally:
+        conn.close()
+
+
 def apply_to_db(conn, vendor_rows: Sequence[Dict], line_rows: Sequence[Dict]) -> None:
     """Replace 2026 periodos only."""
     cur = conn.cursor()
@@ -492,8 +604,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "command",
-        choices=["roster", "generate"],
-        help="roster: list last-month actives; generate: build metas",
+        choices=["roster", "generate", "compare"],
+        help=(
+            "roster: list last-month actives; "
+            "generate: build metas (flat); "
+            "compare: H2 rebased two-pot vs flat dry-run"
+        ),
     )
     p.add_argument(
         "--output-dir",
@@ -509,7 +625,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--apply",
         action="store_true",
-        help="Write 2026 rows to DB (default dry-run)",
+        help="Write 2026 rows to DB (generate only; compare never applies)",
+    )
+    p.add_argument(
+        "--h2-company-lock",
+        choices=["growth", "current"],
+        default="growth",
+        help=(
+            "compare only: H2 company total = H2 base × (1+growth), or "
+            "'current' to lock Σ to today's flat H2 metas (reshape only)"
+        ),
     )
     return p
 
@@ -518,6 +643,8 @@ def main() -> None:
     args = build_parser().parse_args()
     if args.command == "roster":
         cmd_roster(args)
+    elif args.command == "compare":
+        cmd_compare(args)
     else:
         cmd_generate(args)
 

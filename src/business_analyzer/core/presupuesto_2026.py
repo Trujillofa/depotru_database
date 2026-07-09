@@ -6,6 +6,7 @@ with explicit merges (William Quintero → 162). Company stretch default +25%.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import date
 from typing import (
@@ -35,6 +36,12 @@ from business_analyzer.core.vendor_ownership import (
 DEFAULT_GROWTH = 0.25
 DEFAULT_NEWCOMER_GROWTH = 0.10
 DEFAULT_NEWCOMER_CAP_PCT = 0.01
+DEFAULT_FLOOR_FACTOR = 1.0
+DEFAULT_META_MIN_MULT = 0.95
+DEFAULT_META_MAX_MULT = 1.40
+GROWTH_POT_EXCLUDED_CODES = frozenset({"000"})
+H1_MONTHS: Tuple[int, ...] = (1, 2, 3, 4, 5, 6)
+H2_MONTHS: Tuple[int, ...] = (7, 8, 9, 10, 11, 12)
 SIKA_DOC_CODE = "FEF"
 EXCLUDED_DOC_CODES = ("XY", "AS", "TS")
 EXCLUDED_PRODUCT_NAMES = (
@@ -290,6 +297,7 @@ def draft_metas_from_base(
     growth: float = DEFAULT_GROWTH,
 ) -> Dict[Tuple[str, int], float]:
     """Meta_v,m = base_v,m * (1+growth); renormalize to sum(base)* (1+growth)."""
+    del target_year  # API compatibility; metas are month-keyed only
     draft: Dict[Tuple[str, int], float] = {}
     base_total = 0.0
     for (code, month), sales in base_vm.items():
@@ -304,6 +312,361 @@ def draft_metas_from_base(
         scale = target / draft_total
         draft = {k: v * scale for k, v in draft.items()}
     return draft
+
+
+def sum_code_months(
+    vm: Mapping[Tuple[str, int], float],
+    months: Sequence[int],
+) -> Dict[str, float]:
+    """Sum vendor-month values for the given calendar months."""
+    wanted = set(months)
+    out: Dict[str, float] = {}
+    for (code, month), sales in vm.items():
+        if month in wanted:
+            out[code] = out.get(code, 0.0) + float(sales)
+    return out
+
+
+def h2_base_from_h1_seasonality(
+    h1_by_code: Mapping[str, float],
+    seasonality: Mapping[int, float],
+    *,
+    h2_months: Sequence[int] = H2_MONTHS,
+    h1_months: Sequence[int] = H1_MONTHS,
+) -> Dict[Tuple[str, int], float]:
+    """H2 budget base from H1 actuals shaped by 2025 company seasonality.
+
+    annual_implied_i = h1_i / sum(seasonality[H1])
+    base_i,m = annual_implied_i * seasonality[m] for m in H2
+    """
+    h1_share = sum(float(seasonality.get(m, 0.0)) for m in h1_months)
+    if h1_share <= 0:
+        h1_share = 0.5
+    out: Dict[Tuple[str, int], float] = {}
+    for code, h1 in h1_by_code.items():
+        c = str(code).strip() if code is not None else ""
+        if not c or float(h1 or 0) <= 0:
+            continue
+        annual = float(h1) / h1_share
+        for m in h2_months:
+            out[(c, int(m))] = annual * float(seasonality.get(int(m), 0.0))
+    return out
+
+
+def apply_twopot_sqrt(
+    base_vm: Mapping[Tuple[str, int], float],
+    *,
+    active_codes: Sequence[str],
+    growth: float = DEFAULT_GROWTH,
+    floor_factor: float = DEFAULT_FLOOR_FACTOR,
+    min_mult: float = DEFAULT_META_MIN_MULT,
+    max_mult: float = DEFAULT_META_MAX_MULT,
+    exclude_from_growth: frozenset = GROWTH_POT_EXCLUDED_CODES,
+    company_target: Optional[float] = None,
+) -> Dict[Tuple[str, int], float]:
+    """Two-pot growth: floor = factor×base; growth pot ∝ √base; cap; re-lock.
+
+    Codes in ``exclude_from_growth`` (default ``000``) keep floor only and do
+    not receive a share of the growth pot (their unused stretch stays in pot).
+    ``company_target`` overrides base × (1+growth) — used to lock the company
+    total to an externally fixed number (reshape-only mode).
+    """
+    active = set(active_codes)
+    base_by_code: Dict[str, float] = {}
+    for (code, _month), sales in base_vm.items():
+        if code not in active:
+            continue
+        base_by_code[code] = base_by_code.get(code, 0.0) + float(sales)
+
+    company_base = sum(base_by_code.values())
+    if company_base <= 0:
+        return {}
+
+    if company_target is None:
+        company_target = company_base * (1.0 + growth)
+    floors = {c: b * floor_factor for c, b in base_by_code.items()}
+    floor_sum = sum(floors.values())
+    growth_pot = company_target - floor_sum
+
+    if growth_pot < 0 and floor_sum > 0:
+        scale_f = company_target / floor_sum
+        floors = {c: v * scale_f for c, v in floors.items()}
+        growth_pot = 0.0
+
+    eligible = [
+        c
+        for c in active_codes
+        if c in base_by_code and c not in exclude_from_growth and base_by_code[c] > 0
+    ]
+    weights = {c: math.sqrt(base_by_code[c]) for c in eligible}
+    wsum = sum(weights.values()) or 1.0
+    growth_alloc = {
+        c: (growth_pot * weights[c] / wsum if growth_pot > 0 else 0.0) for c in eligible
+    }
+
+    annual_meta: Dict[str, float] = {}
+    for c, b in base_by_code.items():
+        raw = floors.get(c, 0.0) + growth_alloc.get(c, 0.0)
+        lo = b * min_mult
+        hi = b * max_mult
+        annual_meta[c] = max(lo, min(hi, raw))
+
+    tot = sum(annual_meta.values())
+    if tot > 0:
+        scale = company_target / tot
+        annual_meta = {c: v * scale for c, v in annual_meta.items()}
+
+    # Spread back to months using each code's base month mix
+    month_bases: Dict[str, Dict[int, float]] = {}
+    for (code, month), sales in base_vm.items():
+        if code not in annual_meta:
+            continue
+        month_bases.setdefault(code, {})
+        month_bases[code][month] = month_bases[code].get(month, 0.0) + float(sales)
+
+    out: Dict[Tuple[str, int], float] = {}
+    for code, meta in annual_meta.items():
+        mb = month_bases.get(code) or {}
+        bsum = sum(mb.values()) or 1.0
+        for month, bv in mb.items():
+            out[(code, month)] = meta * (bv / bsum)
+    return out
+
+
+def merge_h1_h2_metas(
+    h1_metas: Mapping[Tuple[str, int], float],
+    h2_metas: Mapping[Tuple[str, int], float],
+) -> Dict[Tuple[str, int], float]:
+    """Combine H1 months from one method with H2 months from another."""
+    out: Dict[Tuple[str, int], float] = {}
+    for (c, m), v in h1_metas.items():
+        if m in H1_MONTHS:
+            out[(c, m)] = float(v)
+    for (c, m), v in h2_metas.items():
+        if m in H2_MONTHS:
+            out[(c, m)] = float(v)
+    return out
+
+
+def _row_float(value: object) -> float:
+    """Coerce a comparison-row cell (float or None) to float for mypy."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    return 0.0
+
+
+def build_h2_revision_comparison(
+    *,
+    flat_metas: Mapping[Tuple[str, int], float],
+    h1_by_code: Mapping[str, float],
+    seasonality: Mapping[int, float],
+    active_codes: Sequence[str],
+    names: Mapping[str, str],
+    growth: float = DEFAULT_GROWTH,
+    floor_factor: float = DEFAULT_FLOOR_FACTOR,
+    min_mult: float = DEFAULT_META_MIN_MULT,
+    max_mult: float = DEFAULT_META_MAX_MULT,
+    h2_company_lock: str = "growth",
+) -> Tuple[List[Dict[str, object]], Dict[str, float]]:
+    """Compare current flat×growth full-year vs H2 rebased two-pot+√.
+
+    Hybrid year = H1 months from flat_metas + H2 months from two-pot on
+    H1-seasonality base. No DB side effects.
+
+    ``h2_company_lock``:
+      - ``"growth"`` (default): H2 target = H2_base(H1) × (1+growth)
+      - ``"current"``: H2 target = Σ current flat H2 metas (reshape only)
+
+    Returns (per-vendor rows, company summary dict).
+    """
+    if h2_company_lock not in ("growth", "current"):
+        raise ValueError(
+            f"h2_company_lock must be 'growth' or 'current', got {h2_company_lock!r}"
+        )
+    h2_base = h2_base_from_h1_seasonality(h1_by_code, seasonality)
+    h2_flat_on_h1base = draft_metas_from_base(
+        h2_base, active_codes=active_codes, growth=growth
+    )
+    h2_base_company = sum(v for (c, m), v in h2_base.items() if c in set(active_codes))
+    h2_target: Optional[float] = None
+    if h2_company_lock == "current":
+        h2_target = sum(v for (c, m), v in flat_metas.items() if m in H2_MONTHS)
+    h2_twopot = apply_twopot_sqrt(
+        h2_base,
+        active_codes=active_codes,
+        growth=growth,
+        floor_factor=floor_factor,
+        min_mult=min_mult,
+        max_mult=max_mult,
+        company_target=h2_target,
+    )
+    hybrid = merge_h1_h2_metas(flat_metas, h2_twopot)
+
+    h1_meta_flat = sum_code_months(flat_metas, H1_MONTHS)
+    h2_meta_flat = sum_code_months(flat_metas, H2_MONTHS)
+    h2_meta_twopot = sum_code_months(h2_twopot, H2_MONTHS)
+    h2_base_tot = sum_code_months(h2_base, H2_MONTHS)
+    full_flat = sum_code_months(flat_metas, list(H1_MONTHS) + list(H2_MONTHS))
+    full_hybrid = sum_code_months(hybrid, list(H1_MONTHS) + list(H2_MONTHS))
+
+    codes = sorted(
+        set(active_codes)
+        | set(h1_by_code)
+        | set(h1_meta_flat)
+        | set(h2_meta_flat)
+        | set(h2_meta_twopot)
+    )
+    rows: List[Dict[str, object]] = []
+    for code in codes:
+        h1_act = float(h1_by_code.get(code, 0.0) or 0.0)
+        h1_m = float(h1_meta_flat.get(code, 0.0) or 0.0)
+        h2_b = float(h2_base_tot.get(code, 0.0) or 0.0)
+        h2_f = float(h2_meta_flat.get(code, 0.0) or 0.0)
+        h2_t = float(h2_meta_twopot.get(code, 0.0) or 0.0)
+        cumpl = (h1_act / h1_m * 100.0) if h1_m > 0 else None
+        delta_h2 = h2_t - h2_f
+        rows.append(
+            {
+                "vendedor_codigo": code,
+                "vendedor_nombre": names.get(code) or OFFICIAL_CODE_NAMES.get(code, ""),
+                "h1_actual": h1_act,
+                "h1_meta_flat": h1_m,
+                "h1_cumpl_pct": cumpl,
+                "h2_base_from_h1": h2_b,
+                "h2_meta_flat_2025": h2_f,
+                "h2_meta_twopot_h1": h2_t,
+                "h2_delta_twopot_vs_flat": delta_h2,
+                "h2_delta_pct": (delta_h2 / h2_f * 100.0) if h2_f > 0 else None,
+                "full_year_flat": float(full_flat.get(code, 0.0) or 0.0),
+                "full_year_hybrid": float(full_hybrid.get(code, 0.0) or 0.0),
+            }
+        )
+
+    rows.sort(key=lambda r: _row_float(r.get("h1_meta_flat")), reverse=True)
+
+    company_h1_meta = sum(_row_float(r["h1_meta_flat"]) for r in rows)
+    company_h1_act = sum(_row_float(r["h1_actual"]) for r in rows)
+    summary: Dict[str, float] = {
+        "growth": float(growth),
+        "pool_note": 0.0,  # placeholder; filled by caller if needed
+        "company_h1_meta_flat": company_h1_meta,
+        "company_h1_actual": company_h1_act,
+        "company_h1_cumpl_pct": (
+            company_h1_act / company_h1_meta * 100.0 if company_h1_meta else 0.0
+        ),
+        "company_h2_meta_flat": sum(_row_float(r["h2_meta_flat_2025"]) for r in rows),
+        "company_h2_base_from_h1": sum(_row_float(r["h2_base_from_h1"]) for r in rows),
+        "company_h2_meta_twopot": sum(_row_float(r["h2_meta_twopot_h1"]) for r in rows),
+        "company_full_flat": sum(_row_float(r["full_year_flat"]) for r in rows),
+        "company_full_hybrid": sum(_row_float(r["full_year_hybrid"]) for r in rows),
+        "company_h2_flat_on_h1base": sum(h2_flat_on_h1base.values()),
+        "h2_lock_current": 1.0 if h2_company_lock == "current" else 0.0,
+    }
+    company_h2_twopot = summary["company_h2_meta_twopot"]
+    if h2_base_company > 0:
+        summary["implied_h2_growth_pct"] = (
+            company_h2_twopot / h2_base_company - 1.0
+        ) * 100.0
+    return rows, summary
+
+
+def render_h2_revision_markdown(
+    rows: Sequence[Mapping[str, object]],
+    summary: Mapping[str, float],
+    *,
+    title: str = "Presupuesto H2 revision dry-run",
+    notes: Sequence[str] = (),
+) -> str:
+    """Markdown table: flat ×1.25 vs H1-rebased two-pot+√ (no DB writes)."""
+    lines: List[str] = [
+        f"# {title}",
+        "",
+        "## Method",
+        "",
+        "1. **Flat (current):** 2025 attributed base × company growth (after pool + newcomers).",
+        "2. **H2 rebased two-pot+√:** H2 base = H1 actual annualized via 2025 seasonality; "
+        "meta = 1.00× floor + growth pot by √base; `000` excluded from growth pot; "
+        "caps 0.95×–1.40× base; re-lock to the H2 company target (see lock line below).",
+        "3. **Hybrid full year:** H1 months keep flat metas; H2 months use two-pot.",
+        "",
+        "## Company summary",
+        "",
+        f"- Growth: {summary.get('growth', DEFAULT_GROWTH):.0%}",
+        f"- H1 meta (flat): ${summary.get('company_h1_meta_flat', 0):,.0f}".replace(
+            ",", "."
+        ),
+        f"- H1 actual: ${summary.get('company_h1_actual', 0):,.0f}".replace(",", "."),
+        f"- H1 cumplimiento: {summary.get('company_h1_cumpl_pct', 0):.1f}%",
+        f"- H2 meta flat (from 2025 path): "
+        f"${summary.get('company_h2_meta_flat', 0):,.0f}".replace(",", "."),
+        f"- H2 base from H1 signal: "
+        f"${summary.get('company_h2_base_from_h1', 0):,.0f}".replace(",", "."),
+        f"- H2 meta two-pot on H1 base: "
+        f"${summary.get('company_h2_meta_twopot', 0):,.0f}".replace(",", "."),
+        "- H2 company lock: "
+        + (
+            "**current** (Σ = current flat H2; reshape only)"
+            if summary.get("h2_lock_current")
+            else f"**growth** (H2 base × {summary.get('growth', DEFAULT_GROWTH) + 1.0:.2f})"
+        ),
+        f"- Implied H2 growth vs H1-rebased base: "
+        f"{summary.get('implied_h2_growth_pct', 0):+.1f}%",
+        f"- Full-year flat: ${summary.get('company_full_flat', 0):,.0f}".replace(
+            ",", "."
+        ),
+        f"- Full-year hybrid (H1 flat + H2 two-pot): "
+        f"${summary.get('company_full_hybrid', 0):,.0f}".replace(",", "."),
+        "",
+        "## Per vendor",
+        "",
+        "| Code | Name | H1 actual | H1 meta flat | H1 % | "
+        "H2 base(H1) | H2 meta flat | H2 meta 2pot | Δ H2 | Δ% |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in rows:
+        cumpl = r.get("h1_cumpl_pct")
+        cumpl_s = f"{_row_float(cumpl):.1f}" if cumpl is not None else "—"
+        dp = r.get("h2_delta_pct")
+        dp_s = f"{_row_float(dp):+.1f}%" if dp is not None else "—"
+        lines.append(
+            "| {code} | {name} | ${h1a:,.0f} | ${h1m:,.0f} | {cumpl} | "
+            "${h2b:,.0f} | ${h2f:,.0f} | ${h2t:,.0f} | ${d:,.0f} | {dp} |".format(
+                code=r.get("vendedor_codigo"),
+                name=(str(r.get("vendedor_nombre") or "")[:28]),
+                h1a=_row_float(r.get("h1_actual")),
+                h1m=_row_float(r.get("h1_meta_flat")),
+                cumpl=cumpl_s,
+                h2b=_row_float(r.get("h2_base_from_h1")),
+                h2f=_row_float(r.get("h2_meta_flat_2025")),
+                h2t=_row_float(r.get("h2_meta_twopot_h1")),
+                d=_row_float(r.get("h2_delta_twopot_vs_flat")),
+                dp=dp_s,
+            ).replace(",", ".")
+        )
+    lines.append("")
+    if notes:
+        lines.append("## Notes")
+        lines.append("")
+        for n in notes:
+            lines.append(f"- {n}")
+        lines.append("")
+    lines.extend(
+        [
+            "## Interpretation",
+            "",
+            "- Large **negative Δ H2** on a code = current flat meta over-located vs H1 run-rate "
+            "(e.g. 131 if Olga book is small).",
+            "- Large **positive Δ H2** = under-located vs H1 (e.g. 044 if residual book is larger).",
+            "- Two-pot vs flat-on-same-H1-base only reshapes **growth**; H2 re-base is the big "
+            "mislocation fix.",
+            "- Company +25% on an H1-rebased H2 pie may still be aggressive if H1 run-rate is "
+            "below the original stretch path — board decision.",
+            "",
+            "*Dry-run only — no DB writes.*",
+            "",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def inject_newcomers(
