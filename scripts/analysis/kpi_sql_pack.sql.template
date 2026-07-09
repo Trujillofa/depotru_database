@@ -339,6 +339,10 @@ CROSS JOIN ventas_periodo v;
 
 /* -------------------------------------------------------------------------- */
 /* Q10) Presupuesto vs Real — cumplimiento por vendedor (mes de @end_date)     */
+/* Metas from presupuesto_vendedores for the sales period. If that period has  */
+/* no rows (metas often lag), fall back to the latest prior year with the     */
+/* same calendar month so the board is not a false 0% vs empty metas.         */
+/* Periodo encoding: YYYY*10+M (Jan–Sep) or YYYY*100+M (Oct–Dec).             */
 /* -------------------------------------------------------------------------- */
 DECLARE @month_start DATE = DATEFROMPARTS(YEAR(@end_date), MONTH(@end_date), 1);
 DECLARE @periodo INT = CASE
@@ -347,6 +351,36 @@ DECLARE @periodo INT = CASE
 END;
 DECLARE @days_elapsed INT = DATEDIFF(DAY, @month_start, @end_date) + 1;
 DECLARE @days_in_month INT = DAY(EOMONTH(@end_date));
+DECLARE @periodo_meta INT = (
+    SELECT TOP 1 p.periodo
+    FROM (
+        SELECT pv.periodo, 0 AS preferencia
+        FROM presupuesto_vendedores pv
+        WHERE pv.periodo = @periodo
+        UNION ALL
+        SELECT pv.periodo, 1 AS preferencia
+        FROM presupuesto_vendedores pv
+        WHERE pv.periodo <> @periodo
+          AND (
+                CASE
+                    WHEN pv.periodo >= 100000 THEN pv.periodo % 100
+                    ELSE pv.periodo % 10
+                END
+              ) = MONTH(@end_date)
+          AND (
+                CASE
+                    WHEN pv.periodo >= 100000 THEN pv.periodo / 100
+                    ELSE pv.periodo / 10
+                END
+              ) < YEAR(@end_date)
+    ) p
+    ORDER BY p.preferencia ASC, p.periodo DESC
+);
+DECLARE @meta_origen VARCHAR(40) = CASE
+    WHEN @periodo_meta IS NULL THEN 'sin_meta'
+    WHEN @periodo_meta = @periodo THEN 'periodo_actual'
+    ELSE 'mismo_mes_historico'
+END;
 
 WITH actual_sales AS (
     SELECT
@@ -371,7 +405,8 @@ budget AS (
         SUM(pv.valor) AS meta_mensual,
         SUM(pv.valor) * @days_elapsed * 1.0 / NULLIF(@days_in_month, 0) AS meta_prorrateada
     FROM presupuesto_vendedores pv
-    WHERE pv.periodo = @periodo
+    WHERE @periodo_meta IS NOT NULL
+      AND pv.periodo = @periodo_meta
     GROUP BY LTRIM(RTRIM(pv.vendedor_codigo))
 )
 SELECT
@@ -382,17 +417,22 @@ SELECT
         COALESCE(b.vendedor_codigo, a.vendedor_codigo)
     ) AS Vendedor_Nombre,
     @periodo AS Periodo,
+    @periodo_meta AS Periodo_Meta,
+    @meta_origen AS Meta_Origen,
     ISNULL(b.meta_mensual, 0) AS Meta_Mensual,
     ISNULL(b.meta_prorrateada, 0) AS Meta_Prorrateada,
     ISNULL(a.ventas_reales_mtd, 0) AS Ventas_MTD,
     CASE
-        WHEN ISNULL(b.meta_prorrateada, 0) = 0 THEN 0
+        WHEN ISNULL(b.meta_prorrateada, 0) = 0 THEN NULL
         ELSE ISNULL(a.ventas_reales_mtd, 0) * 100.0 / b.meta_prorrateada
     END AS Cumplimiento_Prorrateado_Pct,
-    ISNULL(b.meta_prorrateada, 0) - ISNULL(a.ventas_reales_mtd, 0) AS Brecha_MTD
+    CASE
+        WHEN ISNULL(b.meta_prorrateada, 0) = 0 THEN NULL
+        ELSE ISNULL(b.meta_prorrateada, 0) - ISNULL(a.ventas_reales_mtd, 0)
+    END AS Brecha_MTD
 FROM budget b
 FULL OUTER JOIN actual_sales a ON a.vendedor_codigo = b.vendedor_codigo
-ORDER BY ISNULL(b.meta_mensual, 0) DESC;
+ORDER BY ISNULL(b.meta_mensual, 0) DESC, ISNULL(a.ventas_reales_mtd, 0) DESC;
 
 
 /* -------------------------------------------------------------------------- */

@@ -395,6 +395,55 @@ def estimated_return_margin_impact(
     return {"total": impact, "top": top_sorted}
 
 
+def presupuesto_summary_from_q10(
+    q10_rows: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Aggregate Q10 seller rows into consolidated MTD presupuesto metrics.
+
+    Returns cumplimiento_pct=None when no prorrated meta is available (do not
+    treat empty metas as 0% attainment).
+    """
+    if not q10_rows:
+        return {
+            "cumplimiento_pct": None,
+            "total_meta_prorrateada": 0.0,
+            "total_ventas_mtd": 0.0,
+            "meta_origen": "sin_meta",
+            "periodo": None,
+            "periodo_meta": None,
+            "available": False,
+        }
+
+    total_meta = sum(as_float(r.get("Meta_Prorrateada")) for r in q10_rows)
+    total_mtd = sum(as_float(r.get("Ventas_MTD")) for r in q10_rows)
+    first = q10_rows[0]
+    meta_origen = str(first.get("Meta_Origen") or "").strip() or (
+        "periodo_actual" if total_meta > 0 else "sin_meta"
+    )
+    if total_meta <= 0:
+        return {
+            "cumplimiento_pct": None,
+            "total_meta_prorrateada": 0.0,
+            "total_ventas_mtd": total_mtd,
+            "meta_origen": meta_origen
+            if meta_origen != "periodo_actual"
+            else "sin_meta",
+            "periodo": first.get("Periodo"),
+            "periodo_meta": first.get("Periodo_Meta"),
+            "available": False,
+        }
+
+    return {
+        "cumplimiento_pct": total_mtd / total_meta * 100.0,
+        "total_meta_prorrateada": total_meta,
+        "total_ventas_mtd": total_mtd,
+        "meta_origen": meta_origen,
+        "periodo": first.get("Periodo"),
+        "periodo_meta": first.get("Periodo_Meta"),
+        "available": True,
+    }
+
+
 def _metric(
     *,
     current: float,
@@ -443,7 +492,9 @@ def generate_narrative(
         concentration = scorecard.get("concentracion", {}).get("current", 0.0)
         dso = scorecard.get("dso", {}).get("current", 0.0)
         cartera_90 = scorecard.get("cartera_90", {}).get("current", 0.0)
-        presupuesto = scorecard.get("presupuesto", {}).get("current", 0.0)
+        presupuesto = scorecard.get("presupuesto", {}).get("current")
+        if presupuesto is None:
+            presupuesto = 0.0
         q2 = results.get("Q2", [])
         top_cat = q2[0].get("Categoria", "N/A") if q2 else "N/A"
         q11 = results.get("Q11", [])
@@ -589,12 +640,8 @@ def compute_scorecard(
     current_cartera_90 = as_float(q9_row.get("Cartera_Vencida_90_Plus_Pct"))
 
     q10 = results.get("Q10", [])
-    if q10:
-        total_meta = sum(as_float(r.get("Meta_Prorrateada")) for r in q10)
-        total_mtd = sum(as_float(r.get("Ventas_MTD")) for r in q10)
-        current_presupuesto = (total_mtd / total_meta * 100.0) if total_meta else 0.0
-    else:
-        current_presupuesto = 0.0
+    presupuesto_meta = presupuesto_summary_from_q10(q10)
+    current_presupuesto: Optional[float] = presupuesto_meta["cumplimiento_pct"]
 
     q12 = results.get("Q12", [])
     if funnel_summary_from_vendor_rows and q12:
@@ -716,13 +763,32 @@ def compute_scorecard(
             higher_is_better=False,
             delta_kind="pp",
         ),
-        "presupuesto": _metric(
-            current=current_presupuesto,
-            target=KPI_TARGETS["presupuesto_pct"],
-            baseline=None,
-            higher_is_better=True,
-            delta_kind="pp",
-        ),
+        "presupuesto": {
+            **(
+                _metric(
+                    current=current_presupuesto,
+                    target=KPI_TARGETS["presupuesto_pct"],
+                    baseline=None,
+                    higher_is_better=True,
+                    delta_kind="pp",
+                )
+                if current_presupuesto is not None
+                else {
+                    "baseline": None,
+                    "target": KPI_TARGETS["presupuesto_pct"],
+                    "current": None,
+                    "delta": None,
+                    "status": "⚪",
+                    "delta_kind": "pp",
+                }
+            ),
+            "available": bool(presupuesto_meta.get("available")),
+            "meta_origen": presupuesto_meta.get("meta_origen") or "sin_meta",
+            "periodo": presupuesto_meta.get("periodo"),
+            "periodo_meta": presupuesto_meta.get("periodo_meta"),
+            "total_meta_prorrateada": presupuesto_meta.get("total_meta_prorrateada"),
+            "total_ventas_mtd": presupuesto_meta.get("total_ventas_mtd"),
+        },
         "conversion_cotiza": _metric(
             current=current_conversion,
             target=KPI_TARGETS["conversion_pct"],
@@ -993,7 +1059,7 @@ def render_markdown(
         "| Cumplimiento Presupuesto MTD % | `Ventas MTD / Meta prorrateada * 100` "
         f"| {format_optional_pct(scorecard['presupuesto']['baseline'])} "
         f"| {format_pct(scorecard['presupuesto']['target'])} "
-        f"| {format_pct(scorecard['presupuesto']['current'])} "
+        f"| {format_optional_pct(scorecard['presupuesto']['current'])} "
         f"| {format_delta(scorecard['presupuesto']['delta'], 'pp')} "
         f"| {scorecard['presupuesto']['status']} |"
     )
@@ -1182,25 +1248,54 @@ def render_markdown(
 
     lines.append("")
     lines.append("### 3.6 Presupuesto vs Real (presupuesto_vendedores)")
-    if q10:
+    presup = scorecard.get("presupuesto") or {}
+    meta_origen = str(presup.get("meta_origen") or "sin_meta")
+    if q10 and presup.get("available"):
         under = [
             r
             for r in q10
             if as_float(r.get("Meta_Prorrateada")) > 0
+            and r.get("Cumplimiento_Prorrateado_Pct") is not None
             and as_float(r.get("Cumplimiento_Prorrateado_Pct")) < 90.0
         ]
+        origen_label = {
+            "periodo_actual": "meta del periodo de ventas",
+            "mismo_mes_historico": (
+                "proxy: mismo mes en el último año con meta cargada "
+                f"(periodo meta {presup.get('periodo_meta')})"
+            ),
+            "mismo_mes_anio_anterior": (
+                "proxy: mismo mes del año anterior "
+                f"(periodo meta {presup.get('periodo_meta')})"
+            ),
+            "sin_meta": "sin meta cargada",
+        }.get(meta_origen, meta_origen)
         lines.append(
-            f"- **Periodo:** {q10[0].get('Periodo', 'N/A')} | "
-            f"**Cumplimiento consolidado MTD:** "
-            f"{format_pct(scorecard['presupuesto']['current'])}"
+            f"- **Periodo ventas:** {presup.get('periodo', q10[0].get('Periodo', 'N/A'))} | "
+            f"**Periodo meta:** {presup.get('periodo_meta', 'N/A')} | "
+            f"**Origen meta:** {origen_label}"
         )
+        lines.append(
+            f"- **Cumplimiento consolidado MTD:** "
+            f"{format_optional_pct(presup.get('current'))} "
+            f"(ventas {format_currency(as_float(presup.get('total_ventas_mtd')))} / "
+            f"meta prorr. {format_currency(as_float(presup.get('total_meta_prorrateada')))})"
+        )
+        if meta_origen in {"mismo_mes_historico", "mismo_mes_anio_anterior"}:
+            lines.append(
+                "- **Nota:** no hay filas en `presupuesto_vendedores` para el periodo "
+                "de ventas; se usa la meta del mismo mes calendario en el último año "
+                "disponible, prorrateada al MTD actual. Cargar metas del periodo "
+                "corriente para comparación exacta."
+            )
         lines.append("- **Top 5 vendedores por meta mensual:**")
         for row in q10[:5]:
+            cumpl = row.get("Cumplimiento_Prorrateado_Pct")
             lines.append(
                 f"  - {row.get('Vendedor_Nombre')} ({row.get('Vendedor_Codigo')}) | "
                 f"MTD: {format_currency(as_float(row.get('Ventas_MTD')))} | "
                 f"Meta prorr.: {format_currency(as_float(row.get('Meta_Prorrateada')))} | "
-                f"Cumpl.: {format_pct(as_float(row.get('Cumplimiento_Prorrateado_Pct')))}"
+                f"Cumpl.: {format_optional_pct(None if cumpl is None else as_float(cumpl))}"
             )
         if under:
             lines.append("- **Bajo 90% cumplimiento (acción comercial):**")
@@ -1210,6 +1305,24 @@ def render_markdown(
                     f"{format_pct(as_float(row.get('Cumplimiento_Prorrateado_Pct')))} "
                     f"(brecha {format_currency(as_float(row.get('Brecha_MTD')))})"
                 )
+    elif q10:
+        lines.append(
+            f"- **Periodo ventas:** {q10[0].get('Periodo', 'N/A')} | "
+            f"**Meta:** no cargada en `presupuesto_vendedores` "
+            f"(origen: {meta_origen})."
+        )
+        lines.append(
+            "- **Cumplimiento consolidado MTD:** — (sin meta; no se reporta 0% falso)."
+        )
+        lines.append(
+            f"- **Ventas MTD consolidadas:** "
+            f"{format_currency(as_float(presup.get('total_ventas_mtd')))} "
+            "(solo referencia)."
+        )
+        lines.append(
+            "- **Acción:** cargar metas del periodo actual en "
+            "`presupuesto_vendedores` (último periodo con datos en DB: revisar carga)."
+        )
     else:
         lines.append("- **Sin datos de presupuesto (Q10 vacío).**")
 

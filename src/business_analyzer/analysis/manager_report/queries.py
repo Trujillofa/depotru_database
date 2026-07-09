@@ -34,10 +34,16 @@ class SalesQueryRunner:
         db_connection_type: ConnectionType = ConnectionType.DIRECT,
         conn_details: Optional[Dict[str, Any]] = None,
         branch_document_code: Optional[str] = None,
+        month: Optional[int] = None,
     ):
         self.start_date = start_date
         self.end_date = end_date
         self.year = year
+        # Prefer explicit month; else derive from start_date (YYYY-MM-DD).
+        if month is not None:
+            self.month = int(month)
+        else:
+            self.month = int(str(start_date).split("-")[1])
         self.db_connection_type = db_connection_type
         self.conn_details = conn_details or {}
         self.branch_document_code = (
@@ -665,16 +671,66 @@ class SalesQueryRunner:
         table_name = Database.validate_sql_identifier(Config.DB_TABLE, "table")
         excluded = Config.EXCLUDED_DOCUMENT_CODES
         placeholders = ", ".join(["%s"] * len(excluded))
-        params: Tuple[Any, ...] = (
-            periodo,
-            self.start_date,
-            self.end_date,
-            *excluded,
-            periodo,
-        )
-        params = params + tuple(name.upper() for name in EXCLUDED_PRODUCT_NAMES)
 
         with db:
+            # Prefer exact sales period; else latest prior year with same calendar month.
+            meta_period_rows = db.execute_query(
+                f"""
+                SELECT TOP 1 p.periodo
+                FROM (
+                    SELECT pv.periodo, 0 AS preferencia
+                    FROM [{db_name}].[dbo].[presupuesto_vendedores] pv
+                    WHERE pv.periodo = %s
+                    UNION ALL
+                    SELECT pv.periodo, 1 AS preferencia
+                    FROM [{db_name}].[dbo].[presupuesto_vendedores] pv
+                    WHERE pv.periodo <> %s
+                      AND (
+                            CASE
+                                WHEN pv.periodo >= 100000 THEN pv.periodo %% 100
+                                ELSE pv.periodo %% 10
+                            END
+                          ) = %s
+                      AND (
+                            CASE
+                                WHEN pv.periodo >= 100000 THEN pv.periodo / 100
+                                ELSE pv.periodo / 10
+                            END
+                          ) < %s
+                ) p
+                ORDER BY p.preferencia ASC, p.periodo DESC
+                """,  # nosec B608
+                (periodo, periodo, self.month, self.year),
+            )
+            periodo_meta = (
+                int(meta_period_rows[0]["periodo"]) if meta_period_rows else None
+            )
+            if periodo_meta is None:
+                return {
+                    "available": False,
+                    "note": (
+                        f"Sin metas en presupuesto_vendedores para periodo {periodo} "
+                        f"ni el mismo mes en años anteriores."
+                    ),
+                    "periodo": periodo,
+                    "periodo_meta": None,
+                    "meta_origen": "sin_meta",
+                    "sellers": [],
+                    "summary": {},
+                }
+
+            meta_origen = (
+                "periodo_actual" if periodo_meta == periodo else "mismo_mes_historico"
+            )
+            params: Tuple[Any, ...] = (
+                periodo,
+                self.start_date,
+                self.end_date,
+                *excluded,
+                periodo_meta,
+            )
+            params = params + tuple(name.upper() for name in EXCLUDED_PRODUCT_NAMES)
+
             sellers = db.execute_query(
                 f"""
                 WITH actual_sales AS (
@@ -714,10 +770,13 @@ class SalesQueryRunner:
                     ISNULL(a.facturacion_con_iva, 0) AS facturacion_con_iva,
                     ISNULL(a.transacciones, 0) AS transacciones,
                     CASE
-                        WHEN ISNULL(b.meta_presupuesto, 0) = 0 THEN 0
+                        WHEN ISNULL(b.meta_presupuesto, 0) = 0 THEN NULL
                         ELSE ISNULL(a.ventas_reales, 0) * 100.0 / b.meta_presupuesto
                     END AS cumplimiento_pct,
-                    ISNULL(b.meta_presupuesto, 0) - ISNULL(a.ventas_reales, 0) AS brecha
+                    CASE
+                        WHEN ISNULL(b.meta_presupuesto, 0) = 0 THEN NULL
+                        ELSE ISNULL(b.meta_presupuesto, 0) - ISNULL(a.ventas_reales, 0)
+                    END AS brecha
                 FROM budget b
                 FULL OUTER JOIN actual_sales a
                     ON a.vendedor_codigo = b.vendedor_codigo
@@ -745,10 +804,13 @@ class SalesQueryRunner:
                     b.meta_presupuesto AS presupuesto_total,
                     a.ventas_reales AS ventas_reales_total,
                     CASE
-                        WHEN ISNULL(b.meta_presupuesto, 0) = 0 THEN 0
+                        WHEN ISNULL(b.meta_presupuesto, 0) = 0 THEN NULL
                         ELSE ISNULL(a.ventas_reales, 0) * 100.0 / b.meta_presupuesto
                     END AS cumplimiento_pct,
-                    ISNULL(b.meta_presupuesto, 0) - ISNULL(a.ventas_reales, 0) AS brecha_total
+                    CASE
+                        WHEN ISNULL(b.meta_presupuesto, 0) = 0 THEN NULL
+                        ELSE ISNULL(b.meta_presupuesto, 0) - ISNULL(a.ventas_reales, 0)
+                    END AS brecha_total
                 FROM budget b
                 CROSS JOIN actual_sales a
                 """,  # nosec B608
@@ -761,14 +823,25 @@ class SalesQueryRunner:
                 "available": False,
                 "note": f"Sin metas en presupuesto_vendedores para periodo {periodo}.",
                 "periodo": periodo,
+                "periodo_meta": periodo_meta,
+                "meta_origen": meta_origen,
                 "sellers": [],
                 "summary": {},
             }
 
+        note = None
+        if meta_origen == "mismo_mes_historico":
+            note = (
+                f"Sin meta para periodo {periodo}; se usa meta histórica del mismo mes "
+                f"(periodo {periodo_meta})."
+            )
+
         return {
             "available": True,
-            "note": None,
+            "note": note,
             "periodo": periodo,
+            "periodo_meta": periodo_meta,
+            "meta_origen": meta_origen,
             "sellers": sellers,
             "summary": summary,
         }

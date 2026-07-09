@@ -204,6 +204,13 @@ def year_month_to_periodo(year: int, month: int) -> int:
     return year * 100 + month
 
 
+def periodo_calendar_parts(periodo: int) -> tuple[int, int]:
+    """Decode SmartBusiness periodo into (year, month)."""
+    if periodo >= 100000:
+        return periodo // 100, periodo % 100
+    return periodo // 10, periodo % 10
+
+
 def branch_display_name(document_code: Optional[str]) -> Optional[str]:
     if not document_code:
         return None

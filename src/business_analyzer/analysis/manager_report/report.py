@@ -71,6 +71,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             db_connection_type,
             conn_details,
             branch_document_code=self.branch_document_code,
+            month=month,
         )
 
         self._sales_data: List[Dict[str, Any]] = []
