@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-09
+
+### Added
+
+- **Mediano-plazo KPIs Q12–Q17** in the weekly KPI SQL pack and control board:
+  - Q12 cotización → factura funnel (J3System)
+  - Q13 critical inventory / coverage
+  - Q14 OTIF and delivery lead time
+  - Q15 devoluciones ERP vs BI reconciliation
+  - Q16 factura electrónica DIAN acceptance
+  - Q17 contabilidad PyG from `ConMovimiento*` (PUC classes)
+- **Contabilidad** in monthly manager report: PUC 1–3 balance sheet labels, economic PyG (cl.4 − cl.5 − cl.6)
+- **Vanna Informes recomendados**: catalog API, sidebar panel, period/format/branch pickers
+- **Weekly KPI Control Board** generation from the chat UI (`/api/v0/generate_kpi_board`) plus `make kpi-weekly` automation
+- **J3System warehouse-per-sale** routing in manager report queries
+- Sample KPI snapshots (e.g. `reports/KPI_CONTROL_BOARD_2026_W27.md`) and Dec/May 2024 manager/contabilidad reports
+
+### Fixed
+
+- Contabilidad equation gap explained via open PyG balances; economic result formula
+- Explicit format honored on catalog report clicks
+- Sika / brand warehouse SQL routing (document branch vs warehouse)
+- Flask/Vanna display fixes (duplicate SQL blocks, row limits, chart labels)
+- CI compatibility for MCP and DB/API-excluded tests
+
+### Changed
+
+- Recommended reports catalog is template-based (user chooses month/year/format or ISO week)
+- KPI scorecard: Q1 uses a 4-week lookback for north-star baselines when the board window is a single week; snapshot KPIs show baseline `—` (delta vs target) instead of faking baseline = current
+- KPI diagnostics: computable WoW margin drop (prior week Q2) and estimated returns margin impact
+
 ## [2.0.0] - 2026-02-12
 
 ### Added
@@ -220,5 +251,6 @@ This release represents the work of the Business Data Analyzer Team with contrib
 - Basic test suite
 - Initial documentation
 
+[2.1.0]: https://github.com/Trujillofa/depotru_database/releases/tag/v2.1.0
 [2.0.0]: https://github.com/Trujillofa/coding_omarchy/releases/tag/v2.0.0
 [1.0.0]: https://github.com/Trujillofa/coding_omarchy/releases/tag/v1.0.0

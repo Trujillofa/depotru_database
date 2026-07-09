@@ -9,25 +9,27 @@
 
 ## 2) North-Star KPI Scorecard
 
-| KPI | Formula | Baseline | Target | This Week | vs Baseline | Status |
+| KPI | Formula | Baseline | Target | This Week | vs Baseline* | Status |
 |---|---|---:|---:|---:|---:|---|
-| Margen Bruto % | `SUM(TotalSinIva-ValorCosto)/SUM(TotalSinIva)*100` | 13,70% | 14,70% | 13,70% | +0,00 pp | 🔴 |
-| Ganancia Bruta ($) | `SUM(TotalSinIva-ValorCosto)` | $220.946.578 | $231.993.907 | $220.946.578 | 0,00% | 🔴 |
-| Ticket Promedio ($) | `SUM(TotalMasIva)/COUNT(*)` | $270.908 | $284.453 | $270.908 | 0,00% | 🔴 |
-| Concentración Top-10 Clientes % | `Facturación Top10 / Facturación Total * 100` | 26,13% | 24,13% | 26,13% | +0,00 pp | 🔴 |
-| DSO (días) | `Cartera Total / (Ventas Netas / días periodo)` | 22 | 45 | 22 | -23 días | 🟢 |
-| Cartera vencida >90d % | `SUM(vencido_90+120+360+superior)/Cartera*100` | 12,39% | 12,00% | 12,39% | +0,39 pp | 🔴 |
-| Cumplimiento Presupuesto MTD % | `Ventas MTD / Meta prorrateada * 100` | 0,00% | 100,00% | 0,00% | -100,00 pp | 🔴 |
-| Tasa Conversión Cotizaciones % | `Convertidas / Cotizaciones * 100` (J3System) | 34,66% | 30,00% | 34,66% | +4,66 pp | 🟢 |
-| Días Cotización → Factura | `AVG(DATEDIFF)` post-cotización (J3System) | 0.2 | 7.0 | 0.2 | -7 días | 🟢 |
-| SKUs Inventario Crítico | Top-N bajo umbral + alta rotación 90d | 25 | 25 | 25 | +0 | 🟢 |
-| Cobertura Inventario (días prom.) | `Saldo / venta_diaria` SKUs críticos | 0.0 | 7.0 | 0.0 | -7 días | 🔴 |
-| OTIF Entregas % | `A tiempo / total` (InvHistoricoEntregas) | 73,88% | 85,00% | 73,88% | -11,12 pp | 🔴 |
-| Lead Time Entrega (días prom.) | `AVG(FechaEntrega - FechaFactura)` | 0.5 | 3.0 | 0.5 | -3 días | 🟢 |
-| Conciliación Devoluciones % | `1 - |ERP-BI|/ERP` por unidades | 100,00% | 99,00% | 100,00% | +1,00 pp | 🟢 |
-| Aceptación Factura Electrónica % | `Aceptadas / Emitidas` (DIAN) | 100,00% | 99,50% | 100,00% | +0,50 pp | 🟢 |
-| Rechazo Factura Electrónica % | `Rechazadas / Emitidas` (DIAN) | 0,00% | 0,50% | 0,00% | -0,50 pp | 🟢 |
-| Margen Contable % | `(Ingresos 4 - Costos 6) / Ingresos` (PUC) | 13,86% | 15,00% | 13,86% | -1,14 pp | 🔴 |
+| Margen Bruto % | `SUM(TotalSinIva-ValorCosto)/SUM(TotalSinIva)*100` | 14,44% | 15,44% | 13,70% | -0,75 pp | 🔴 |
+| Ganancia Bruta ($) | `SUM(TotalSinIva-ValorCosto)` | $209.792.753 | $220.282.391 | $220.946.578 | 5,32% | 🟢 |
+| Ticket Promedio ($) | `SUM(TotalMasIva)/COUNT(*)` | $247.859 | $260.251 | $270.908 | 9,30% | 🟢 |
+| Concentración Top-10 Clientes % | `Facturación Top10 / Facturación Total * 100` | — | 24,13% | 26,13% | +2,00 pp | 🔴 |
+| DSO (días) | `Cartera Total / (Ventas Netas / días periodo)` | — | 45 | 23 | -22 días | 🟢 |
+| Cartera vencida >90d % | `SUM(vencido_90+120+360+superior)/Cartera*100` | — | 12,00% | 12,59% | +0,59 pp | 🔴 |
+| Cumplimiento Presupuesto MTD % | `Ventas MTD / Meta prorrateada * 100` | — | 100,00% | 0,00% | -100,00 pp | 🔴 |
+| Tasa Conversión Cotizaciones % | `Convertidas / Cotizaciones * 100` (J3System) | — | 30,00% | 34,66% | +4,66 pp | 🟢 |
+| Días Cotización → Factura | `AVG(DATEDIFF)` post-cotización (J3System) | — | 7.0 | 0.2 | -7 días | 🟢 |
+| SKUs Inventario Crítico | Top-N bajo umbral + alta rotación 90d | — | 25 | 25 | +0 | 🟢 |
+| Cobertura Inventario (días prom.) | `Saldo / venta_diaria` SKUs críticos | — | 7.0 | 0.0 | -7 días | 🔴 |
+| OTIF Entregas % | `A tiempo / total` (InvHistoricoEntregas) | — | 85,00% | 73,84% | -11,16 pp | 🔴 |
+| Lead Time Entrega (días prom.) | `AVG(FechaEntrega - FechaFactura)` | — | 3.0 | 0.5 | -3 días | 🟢 |
+| Conciliación Devoluciones % | `1 - |ERP-BI|/ERP` por unidades | — | 99,00% | 100,00% | +1,00 pp | 🟢 |
+| Aceptación Factura Electrónica % | `Aceptadas / Emitidas` (DIAN) | — | 99,50% | 100,00% | +0,50 pp | 🟢 |
+| Rechazo Factura Electrónica % | `Rechazadas / Emitidas` (DIAN) | — | 0,50% | 0,00% | -0,50 pp | 🟢 |
+| Margen Contable % | `(Ingresos 4 - Costos 6) / Ingresos` (PUC) | — | 15,00% | 13,86% | -1,14 pp | 🔴 |
+
+*\* vs Baseline: for north-star sales KPIs with Q1 history, delta is vs prior-week average; when baseline is `—`, delta is vs target.*
 
 ## 3) Diagnostic Cut (Where we win/lose)
 
@@ -44,7 +46,7 @@
   - HIERRO / HIERRO | Margen: 9,33% | Ganancia: $9.908.328
   - ALAMBRES Y MALLAS / ALAMBRES Y MALLAS | Margen: 10,27% | Ganancia: $6.272.831
   - CHAPAS Y CANDADOS / CHAPAS Y CANDADOS | Margen: 10,74% | Ganancia: $504.450
-- **Biggest WoW drop in margen:** completar con comparación semana anterior.
+- **Biggest WoW drop in margen:** VINILTEX / VINILTEX | 23,38% → 18,02% (-5,35 pp) | Ventas: $2.838.580
 
 ### 3.2 SKU Focus (High Volume + Low Margin)
 - **Critical SKUs (ACCION_INMEDIATA / ACCION_ALTA):**
@@ -75,13 +77,16 @@
   - SALA ENCHAPES | Tasa devolución: 7,98% | Ganancia: $1.432.878
   - ABRAZADERAS | Tasa devolución: 6,76% | Ganancia: $101.635
   - PINTULAND | Tasa devolución: 6,67% | Ganancia: $393.509
-- **Estimated margin impact:** completar con análisis comercial.
+- **Estimated margin impact:** $11.294.868 (heurística: Σ tasa_devolución% × ganancia_bruta por categoría)
+  - CUBIERTA TRAPEZOIDAL | impacto: $7.471.159 | tasa: 75,04%
+  - PRODUCTOS SIKA | impacto: $892.071 | tasa: 5,33%
+  - OTROS | impacto: $501.192 | tasa: 4,28%
 
 ### 3.5 Cartera y Riesgo de Crédito (banco_cartera)
-- **Snapshot cartera:** 2026-07-07 19:01:45.023000
-- **Cartera total:** $5.125.716.438 | **Vencida:** 41,99% | **>90d:** 12,39%
-- **DSO:** 22 días | **Ventas netas periodo:** $1.613.260.509 | **Días periodo:** 7
-- **Clientes con saldo:** 2,946 | **Sobre cupo:** 117 | **Días vencidos prom. ponderado:** 44.5
+- **Snapshot cartera:** 2026-07-08 19:01:49.750000
+- **Cartera total:** $5.260.732.323 | **Vencida:** 39,27% | **>90d:** 12,59%
+- **DSO:** 23 días | **Ventas netas periodo:** $1.613.260.509 | **Días periodo:** 7
+- **Clientes con saldo:** 3,004 | **Sobre cupo:** 122 | **Días vencidos prom. ponderado:** 43.4
 
 ### 3.6 Presupuesto vs Real (presupuesto_vendedores)
 - **Periodo:** 20267 | **Cumplimiento consolidado MTD:** 0,00%
@@ -119,23 +124,23 @@
 - **SKUs críticos (top 25):** 25 | **Quiebre <7d:** 25 | **Stock ≤10:** 25 | **Cobertura prom.:** 0.0 días
 - **Top 10 SKUs por riesgo de quiebre (menor cobertura):**
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | ALM | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
-  - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | CON | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | BOD | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | EXH | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
-  - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | BDT | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
-  - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | FLO | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
+  - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | CON | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | CEN | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | B.ROT | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
+  - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | BDT | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
+  - 0020090002 | CEMENTO GRIS USO GENERAL CEMEX 50KG  | FLO | Stock: 0 | Venta 90d: 75371 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020390061 | CODO PRESION 90 1/2 T/PESADO | SUR | Stock: 0 | Venta 90d: 66026 | Cobertura: 0.0d | QUIEBRE_INMINENTE
   - 0020390061 | CODO PRESION 90 1/2 T/PESADO | EXH | Stock: 0 | Venta 90d: 66026 | Cobertura: 0.0d | QUIEBRE_INMINENTE
 
 ### 3.10 OTIF — cumplimiento de entregas (InvHistoricoEntregas)
-- **Total entregas:** 6,741 | **A tiempo:** 4,980 | **OTIF:** 73,88% | **Lead prom.:** 0.5d | **Fill rate:** 99,47%
+- **Total entregas:** 6,744 | **A tiempo:** 4,980 | **OTIF:** 73,84% | **Lead prom.:** 0.5d | **Fill rate:** 99,47%
 - **Bodegas con peor OTIF:**
   - BOD | OTIF: 10,78% | Entregas: 102 | Lead: 2.6d
   - SUR | OTIF: 29,21% | Entregas: 743 | Lead: 1.3d
   - BD6 | OTIF: 66,27% | Entregas: 845 | Lead: 0.5d
-  - DIS | OTIF: 75,57% | Entregas: 741 | Lead: 0.4d
+  - DIS | OTIF: 75,27% | Entregas: 744 | Lead: 0.4d
   - ALM | OTIF: 83,99% | Entregas: 4209 | Lead: 0.3d
 
 ### 3.11 Conciliación devoluciones ERP vs BI
@@ -177,7 +182,7 @@
 
 ## 6) AI Narrative Summary
 
-La ferretería cerró la semana con ingresos contables de $1.636.912.906 y margen contable de 13,86 %. La ganancia bruta alcanzó $220.946.578 (margen 13,70 %) impulsada por un ticket promedio de $270.908 y una tasa de conversión de cotizaciones del 34,66 %. La cartera presenta DSO de 22 días, pero 12,39 % de las cuentas vencidas superan 90 días, mientras que el cumplimiento presupuestal MTD es 0,00 %. El inventario muestra 25 SKUs críticos con cobertura de 0 días, y el OTIF de entregas es 73,88 %. Como acción inmediata se sugiere revisar el stock de la categoría ZINC, principal generadora de ventas, e implementar una promoción flash de 48 horas para elevar el ticket promedio y mejorar el flujo de caja, priorizando la rotación de los productos con cobertura nula.
+La semana registró una ganancia bruta de $220.946.578 (margen 13,70 %) con ticket promedio de $270.908. La concentración del 26,13 % en los 10 principales clientes y el DSO de 23 días evidencian riesgo de liquidez, agravado por el 12,59 % de cartera vencida >90 días. El OTIF del 73,84 % (lead time 0,5 días) y 25 SKUs críticos con cobertura de 0 días limitan el servicio. La tasa de conversión de cotizaciones (34,66 %) y el cumplimiento presupuestal 0 % reflejan baja ejecución comercial. Se recomienda activar una campaña de cobranza prioritaria sobre cuentas >90 días y un programa de reabastecimiento express para los SKUs críticos, priorizando la categoría ZINC y marcas MULTIMARCA, con seguimiento diario de OTIF y DSO para recuperar liquidez y servicio.
 
 ## 5) SQL Blocks Used (Traceability)
 

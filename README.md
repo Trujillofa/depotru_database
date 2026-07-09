@@ -120,8 +120,10 @@ python scripts/utils/run_weekly_kpi_board.py
 python scripts/utils/run_weekly_kpi_board.py --print-cron
 ```
 
+From the Vanna chat UI (`python src/vanna_grok.py` → http://localhost:8084), use **Informes recomendados** to pick a month/format for the manager report or an ISO week for the KPI Control Board.
+
 Output example:
-- `reports/KPI_CONTROL_BOARD_2026_W16.md`
+- `reports/KPI_CONTROL_BOARD_2026_W27.md`
 
 ---
 

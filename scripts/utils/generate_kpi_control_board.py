@@ -22,7 +22,7 @@ import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import pymssql
 
@@ -80,6 +80,29 @@ except ImportError:
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SQL_PACK_PATH = ROOT_DIR / "scripts" / "analysis" / "kpi_sql_pack.sql.template"
 OUTPUT_DIR = ROOT_DIR / "reports"
+
+# Extra history for Q1 trend baseline when the board window is a single ISO week.
+Q1_TREND_LOOKBACK_DAYS = 28
+
+# Fixed operational targets (tune in one place; do not invent new business goals ad hoc).
+KPI_TARGETS: Dict[str, float] = {
+    "dso_days": 45.0,
+    "cartera_90_pct": 12.0,
+    "presupuesto_pct": 100.0,
+    "conversion_pct": 30.0,
+    "conv_days": 7.0,
+    "skus_criticos": 25.0,
+    "cobertura_days": 7.0,
+    "quiebre_7d": 5.0,
+    "otif_pct": 85.0,
+    "lead_time_days": 3.0,
+    "fill_rate_pct": 95.0,
+    "conciliacion_pct": 99.0,
+    "fe_aceptacion_pct": 99.5,
+    "fe_rechazo_pct": 0.5,
+    "margen_contable_pct": 15.0,
+    "min_ventas_wow": 1_000_000.0,  # COP net sales floor for WoW category comparison
+}
 
 try:
     from dotenv import load_dotenv
@@ -224,7 +247,9 @@ def format_pct(value: float, decimals: int = 2) -> str:
     return f"{value:.{decimals}f}%".replace(".", ",")
 
 
-def format_delta(value: float, kind: str) -> str:
+def format_delta(value: Optional[float], kind: str) -> str:
+    if value is None:
+        return "—"
     if kind == "pp":
         return f"{value:+.2f} pp".replace(".", ",")
     if kind == "days":
@@ -232,6 +257,177 @@ def format_delta(value: float, kind: str) -> str:
     if kind == "count":
         return f"{value:+.0f}"
     return format_pct(value, 2) if value else "0,00%"
+
+
+def format_optional_pct(value: Optional[float], decimals: int = 2) -> str:
+    if value is None:
+        return "—"
+    return format_pct(value, decimals)
+
+
+def format_optional_currency(value: Optional[float], decimals: int = 0) -> str:
+    if value is None:
+        return "—"
+    return format_currency(value, decimals)
+
+
+def format_optional_number(value: Optional[float], decimals: int = 0) -> str:
+    if value is None:
+        return "—"
+    if decimals == 0:
+        return f"{value:.0f}"
+    return f"{value:.{decimals}f}".replace(".", ",")
+
+
+def trend_start_for(
+    board_start: str, *, lookback_days: int = Q1_TREND_LOOKBACK_DAYS
+) -> str:
+    """Start date for Q1 trend query (lookback before the board window)."""
+    start = date.fromisoformat(board_start)
+    return (start - timedelta(days=lookback_days)).isoformat()
+
+
+def previous_iso_week_range(board_start: str) -> Tuple[str, str]:
+    """Inclusive Mon–Sun window for the ISO week before ``board_start``."""
+    start = date.fromisoformat(board_start)
+    prev_end = start - timedelta(days=1)
+    prev_start = start - timedelta(days=7)
+    return prev_start.isoformat(), prev_end.isoformat()
+
+
+def pick_current_and_baseline_q1(
+    q1_rows: List[Dict[str, Any]],
+    *,
+    focus_end: Optional[str] = None,
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    """Return (current week row, up to 4 prior weekly rows for baseline)."""
+    q1 = sorted(
+        q1_rows,
+        key=lambda r: (as_float(r.get("Anio")), as_float(r.get("Semana_ISO"))),
+    )
+    if not q1:
+        raise ValueError("Q1 returned no data; cannot compute scorecard")
+
+    current_idx = len(q1) - 1
+    if focus_end:
+        end = date.fromisoformat(focus_end)
+        focus_year, focus_week, _ = end.isocalendar()
+        for i, row in enumerate(q1):
+            if (
+                int(as_float(row.get("Anio"))) == focus_year
+                and int(as_float(row.get("Semana_ISO"))) == focus_week
+            ):
+                current_idx = i
+                break
+
+    current = q1[current_idx]
+    prior = q1[:current_idx]
+    baseline_rows = prior[-4:] if prior else []
+    return current, baseline_rows
+
+
+def biggest_wow_margin_drop(
+    q2_current: List[Dict[str, Any]],
+    q2_prev: List[Dict[str, Any]],
+    *,
+    min_ventas: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
+    """Largest WoW margin pp drop among categories with enough sales both weeks."""
+    floor = min_ventas if min_ventas is not None else KPI_TARGETS["min_ventas_wow"]
+    prev_map: Dict[Tuple[Any, Any], Dict[str, Any]] = {}
+    for row in q2_prev:
+        key = (row.get("Categoria"), row.get("Subcategoria"))
+        prev_map[key] = row
+
+    best: Optional[Dict[str, Any]] = None
+    for row in q2_current:
+        key = (row.get("Categoria"), row.get("Subcategoria"))
+        prev = prev_map.get(key)
+        if not prev:
+            continue
+        ventas_cur = as_float(row.get("Ventas_Netas"))
+        ventas_prev = as_float(prev.get("Ventas_Netas"))
+        if ventas_cur < floor or ventas_prev < floor:
+            continue
+        margin_cur = as_float(row.get("Margen_Bruto_Pct"))
+        margin_prev = as_float(prev.get("Margen_Bruto_Pct"))
+        drop = margin_prev - margin_cur  # positive = worsened
+        if drop <= 0:
+            continue
+        candidate = {
+            "Categoria": row.get("Categoria"),
+            "Subcategoria": row.get("Subcategoria"),
+            "Margen_Prev": margin_prev,
+            "Margen_Actual": margin_cur,
+            "Drop_Pp": drop,
+            "Ventas_Netas": ventas_cur,
+        }
+        if best is None or candidate["Drop_Pp"] > best["Drop_Pp"]:
+            best = candidate
+    return best
+
+
+def estimated_return_margin_impact(
+    q7_rows: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Approximate margin $ at risk from returns: sum(tasa/100 * ganancia).
+
+    Heuristic only — uses category return rate applied to net ganancia in period.
+    """
+    impact = 0.0
+    top: List[Dict[str, Any]] = []
+    for row in q7_rows:
+        tasa = as_float(row.get("Tasa_Devolucion_Pct"))
+        ganancia = as_float(row.get("Ganancia_Bruta"))
+        # Only count erosion from categories with positive profit contribution
+        if tasa <= 0 or ganancia <= 0:
+            continue
+        cat_impact = (tasa / 100.0) * ganancia
+        impact += cat_impact
+        top.append(
+            {
+                "Categoria": row.get("Categoria"),
+                "Tasa_Devolucion_Pct": tasa,
+                "Impacto_Estimado": cat_impact,
+            }
+        )
+    top_sorted = sorted(top, key=lambda r: r["Impacto_Estimado"], reverse=True)[:3]
+    return {"total": impact, "top": top_sorted}
+
+
+def _metric(
+    *,
+    current: float,
+    target: float,
+    baseline: Optional[float] = None,
+    higher_is_better: bool = True,
+    delta_kind: str = "pp",
+    pct_delta_vs_baseline: bool = False,
+) -> Dict[str, Any]:
+    """Build a scorecard metric. ``baseline=None`` means no period baseline (show —)."""
+    if baseline is not None:
+        if pct_delta_vs_baseline:
+            delta: Optional[float] = (
+                ((current / baseline - 1) * 100) if baseline else 0.0
+            )
+        else:
+            delta = current - baseline
+    else:
+        # No honest prior period: report gap vs target in the delta column.
+        if pct_delta_vs_baseline:
+            delta = ((current / target - 1) * 100) if target else 0.0
+        else:
+            delta = current - target
+
+    status_fn = status_higher_is_better if higher_is_better else status_lower_is_better
+    return {
+        "baseline": baseline,
+        "target": target,
+        "current": current,
+        "delta": delta,
+        "status": status_fn(current, target),
+        "delta_kind": delta_kind,
+    }
 
 
 def generate_narrative(
@@ -354,24 +550,28 @@ def status_lower_is_better(current: float, target: float) -> str:
 
 def compute_scorecard(
     results: Dict[str, List[Dict[str, Any]]],
+    *,
+    focus_end: Optional[str] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    q1 = sorted(
-        results["Q1"],
-        key=lambda r: (as_float(r.get("Anio")), as_float(r.get("Semana_ISO"))),
+    current, baseline_rows = pick_current_and_baseline_q1(
+        results["Q1"], focus_end=focus_end
     )
-    q4 = results["Q4"]
+    q4 = results.get("Q4") or []
 
-    if not q1:
-        raise ValueError("Q1 returned no data; cannot compute scorecard")
-
-    current = q1[-1]
-    baseline_rows = q1[-5:-1] if len(q1) >= 5 else q1[:-1]
-    if not baseline_rows:
-        baseline_rows = q1
-
-    baseline_margin = mean([as_float(r.get("Margen_Bruto_Pct")) for r in baseline_rows])
-    baseline_profit = mean([as_float(r.get("Ganancia_Bruta")) for r in baseline_rows])
-    baseline_ticket = mean([as_float(r.get("Ticket_Promedio")) for r in baseline_rows])
+    if baseline_rows:
+        baseline_margin: Optional[float] = mean(
+            [as_float(r.get("Margen_Bruto_Pct")) for r in baseline_rows]
+        )
+        baseline_profit: Optional[float] = mean(
+            [as_float(r.get("Ganancia_Bruta")) for r in baseline_rows]
+        )
+        baseline_ticket: Optional[float] = mean(
+            [as_float(r.get("Ticket_Promedio")) for r in baseline_rows]
+        )
+    else:
+        baseline_margin = None
+        baseline_profit = None
+        baseline_ticket = None
 
     current_margin = as_float(current.get("Margen_Bruto_Pct"))
     current_profit = as_float(current.get("Ganancia_Bruta"))
@@ -380,14 +580,13 @@ def compute_scorecard(
     concentration_current = (
         as_float(q4[0].get("Concentracion_Top10_Pct")) if q4 else 0.0
     )
-    concentration_baseline = concentration_current
+    # No multi-period concentration series yet — do not fake baseline == current.
+    concentration_baseline: Optional[float] = None
 
     q9 = results.get("Q9", [])
     q9_row = q9[0] if q9 else {}
     current_dso = as_float(q9_row.get("DSO_Dias"))
     current_cartera_90 = as_float(q9_row.get("Cartera_Vencida_90_Plus_Pct"))
-    dso_target = 45.0
-    cartera_90_target = 12.0
 
     q10 = results.get("Q10", [])
     if q10:
@@ -396,7 +595,6 @@ def compute_scorecard(
         current_presupuesto = (total_mtd / total_meta * 100.0) if total_meta else 0.0
     else:
         current_presupuesto = 0.0
-    presupuesto_target = 100.0
 
     q12 = results.get("Q12", [])
     if funnel_summary_from_vendor_rows and q12:
@@ -406,8 +604,6 @@ def compute_scorecard(
     else:
         current_conversion = 0.0
         current_conv_days = 0.0
-    conversion_target = 30.0
-    conv_days_target = 7.0
 
     q13 = results.get("Q13", [])
     if critical_inventory_summary_from_rows and q13:
@@ -419,8 +615,6 @@ def compute_scorecard(
         current_skus_criticos = 0.0
         current_cobertura = 0.0
         current_quiebre_7d = 0.0
-    skus_criticos_target = 25.0
-    cobertura_target = 7.0
 
     q14 = results.get("Q14", [])
     if otif_summary_from_warehouse_rows and q14:
@@ -432,9 +626,6 @@ def compute_scorecard(
         current_otif = 0.0
         current_lead_time = 0.0
         current_fill_rate = 0.0
-    otif_target = 85.0
-    lead_time_target = 3.0
-    fill_rate_target = 95.0
 
     q15 = results.get("Q15", [])
     if conciliacion_summary_from_category_rows and q15:
@@ -446,7 +637,6 @@ def compute_scorecard(
         current_conciliacion = 0.0
         current_tasa_dev = 0.0
         current_gap_cats = 0.0
-    conciliacion_target = 99.0
 
     q16 = results.get("Q16", [])
     if factura_electronica_summary_from_documento_rows and q16:
@@ -458,8 +648,6 @@ def compute_scorecard(
         current_fe_aceptacion = 0.0
         current_fe_rechazo = 0.0
         current_fe_emitidas = 0.0
-    fe_aceptacion_target = 99.5
-    fe_rechazo_target = 0.5
 
     q17 = results.get("Q17", [])
     if pyg_summary_from_clase_rows and q17:
@@ -473,229 +661,196 @@ def compute_scorecard(
         current_margen_contable_pct = 0.0
         current_ingresos_contables = 0.0
         current_gastos_contables = 0.0
-    margen_contable_target_pct = 15.0
 
-    margin_target = baseline_margin + 1.0
-    profit_target = baseline_profit * 1.05
-    ticket_target = baseline_ticket * 1.05
-    concentration_target = max(concentration_baseline - 2.0, 0.0)
+    # Dynamic targets: vs multi-week baseline when available, else vs this week.
+    ref_margin = baseline_margin if baseline_margin is not None else current_margin
+    ref_profit = baseline_profit if baseline_profit is not None else current_profit
+    ref_ticket = baseline_ticket if baseline_ticket is not None else current_ticket
+    margin_target = ref_margin + 1.0
+    profit_target = ref_profit * 1.05 if ref_profit else current_profit * 1.05
+    ticket_target = ref_ticket * 1.05 if ref_ticket else current_ticket * 1.05
+    concentration_target = max(concentration_current - 2.0, 0.0)
 
     return {
-        "margen": {
-            "baseline": baseline_margin,
-            "target": margin_target,
-            "current": current_margin,
-            "delta": current_margin - baseline_margin,
-            "status": status_higher_is_better(current_margin, margin_target),
-            "delta_kind": "pp",
-        },
-        "ganancia": {
-            "baseline": baseline_profit,
-            "target": profit_target,
-            "current": current_profit,
-            "delta": (
-                ((current_profit / baseline_profit - 1) * 100)
-                if baseline_profit
-                else 0.0
-            ),
-            "status": status_higher_is_better(current_profit, profit_target),
-            "delta_kind": "pct",
-        },
-        "ticket": {
-            "baseline": baseline_ticket,
-            "target": ticket_target,
-            "current": current_ticket,
-            "delta": (
-                ((current_ticket / baseline_ticket - 1) * 100)
-                if baseline_ticket
-                else 0.0
-            ),
-            "status": status_higher_is_better(current_ticket, ticket_target),
-            "delta_kind": "pct",
-        },
-        "concentracion": {
-            "baseline": concentration_baseline,
-            "target": concentration_target,
-            "current": concentration_current,
-            "delta": concentration_current - concentration_baseline,
-            "status": status_lower_is_better(
-                concentration_current, concentration_target
-            ),
-            "delta_kind": "pp",
-        },
-        "dso": {
-            "baseline": current_dso,
-            "target": dso_target,
-            "current": current_dso,
-            "delta": current_dso - dso_target,
-            "status": status_lower_is_better(current_dso, dso_target),
-            "delta_kind": "days",
-        },
-        "cartera_90": {
-            "baseline": current_cartera_90,
-            "target": cartera_90_target,
-            "current": current_cartera_90,
-            "delta": current_cartera_90 - cartera_90_target,
-            "status": status_lower_is_better(current_cartera_90, cartera_90_target),
-            "delta_kind": "pp",
-        },
-        "presupuesto": {
-            "baseline": current_presupuesto,
-            "target": presupuesto_target,
-            "current": current_presupuesto,
-            "delta": current_presupuesto - presupuesto_target,
-            "status": status_higher_is_better(current_presupuesto, presupuesto_target),
-            "delta_kind": "pp",
-        },
-        "conversion_cotiza": {
-            "baseline": current_conversion,
-            "target": conversion_target,
-            "current": current_conversion,
-            "delta": current_conversion - conversion_target,
-            "status": status_higher_is_better(current_conversion, conversion_target),
-            "delta_kind": "pp",
-        },
-        "dias_conversion": {
-            "baseline": current_conv_days,
-            "target": conv_days_target,
-            "current": current_conv_days,
-            "delta": current_conv_days - conv_days_target,
-            "status": status_lower_is_better(current_conv_days, conv_days_target),
-            "delta_kind": "days",
-        },
-        "skus_criticos": {
-            "baseline": current_skus_criticos,
-            "target": skus_criticos_target,
-            "current": current_skus_criticos,
-            "delta": current_skus_criticos - skus_criticos_target,
-            "status": status_lower_is_better(
-                current_skus_criticos, skus_criticos_target
-            ),
-            "delta_kind": "count",
-        },
-        "cobertura_critica": {
-            "baseline": current_cobertura,
-            "target": cobertura_target,
-            "current": current_cobertura,
-            "delta": current_cobertura - cobertura_target,
-            "status": status_higher_is_better(current_cobertura, cobertura_target),
-            "delta_kind": "days",
-        },
-        "quiebre_7d": {
-            "baseline": current_quiebre_7d,
-            "target": 5.0,
-            "current": current_quiebre_7d,
-            "delta": current_quiebre_7d - 5.0,
-            "status": status_lower_is_better(current_quiebre_7d, 5.0),
-            "delta_kind": "count",
-        },
-        "otif": {
-            "baseline": current_otif,
-            "target": otif_target,
-            "current": current_otif,
-            "delta": current_otif - otif_target,
-            "status": status_higher_is_better(current_otif, otif_target),
-            "delta_kind": "pp",
-        },
-        "lead_time_entrega": {
-            "baseline": current_lead_time,
-            "target": lead_time_target,
-            "current": current_lead_time,
-            "delta": current_lead_time - lead_time_target,
-            "status": status_lower_is_better(current_lead_time, lead_time_target),
-            "delta_kind": "days",
-        },
-        "fill_rate": {
-            "baseline": current_fill_rate,
-            "target": fill_rate_target,
-            "current": current_fill_rate,
-            "delta": current_fill_rate - fill_rate_target,
-            "status": status_higher_is_better(current_fill_rate, fill_rate_target),
-            "delta_kind": "pp",
-        },
-        "conciliacion_devoluciones": {
-            "baseline": current_conciliacion,
-            "target": conciliacion_target,
-            "current": current_conciliacion,
-            "delta": current_conciliacion - conciliacion_target,
-            "status": status_higher_is_better(
-                current_conciliacion, conciliacion_target
-            ),
-            "delta_kind": "pp",
-        },
+        "margen": _metric(
+            current=current_margin,
+            target=margin_target,
+            baseline=baseline_margin,
+            higher_is_better=True,
+            delta_kind="pp",
+        ),
+        "ganancia": _metric(
+            current=current_profit,
+            target=profit_target,
+            baseline=baseline_profit,
+            higher_is_better=True,
+            delta_kind="pct",
+            pct_delta_vs_baseline=True,
+        ),
+        "ticket": _metric(
+            current=current_ticket,
+            target=ticket_target,
+            baseline=baseline_ticket,
+            higher_is_better=True,
+            delta_kind="pct",
+            pct_delta_vs_baseline=True,
+        ),
+        "concentracion": _metric(
+            current=concentration_current,
+            target=concentration_target,
+            baseline=concentration_baseline,
+            higher_is_better=False,
+            delta_kind="pp",
+        ),
+        "dso": _metric(
+            current=current_dso,
+            target=KPI_TARGETS["dso_days"],
+            baseline=None,
+            higher_is_better=False,
+            delta_kind="days",
+        ),
+        "cartera_90": _metric(
+            current=current_cartera_90,
+            target=KPI_TARGETS["cartera_90_pct"],
+            baseline=None,
+            higher_is_better=False,
+            delta_kind="pp",
+        ),
+        "presupuesto": _metric(
+            current=current_presupuesto,
+            target=KPI_TARGETS["presupuesto_pct"],
+            baseline=None,
+            higher_is_better=True,
+            delta_kind="pp",
+        ),
+        "conversion_cotiza": _metric(
+            current=current_conversion,
+            target=KPI_TARGETS["conversion_pct"],
+            baseline=None,
+            higher_is_better=True,
+            delta_kind="pp",
+        ),
+        "dias_conversion": _metric(
+            current=current_conv_days,
+            target=KPI_TARGETS["conv_days"],
+            baseline=None,
+            higher_is_better=False,
+            delta_kind="days",
+        ),
+        "skus_criticos": _metric(
+            current=current_skus_criticos,
+            target=KPI_TARGETS["skus_criticos"],
+            baseline=None,
+            higher_is_better=False,
+            delta_kind="count",
+        ),
+        "cobertura_critica": _metric(
+            current=current_cobertura,
+            target=KPI_TARGETS["cobertura_days"],
+            baseline=None,
+            higher_is_better=True,
+            delta_kind="days",
+        ),
+        "quiebre_7d": _metric(
+            current=current_quiebre_7d,
+            target=KPI_TARGETS["quiebre_7d"],
+            baseline=None,
+            higher_is_better=False,
+            delta_kind="count",
+        ),
+        "otif": _metric(
+            current=current_otif,
+            target=KPI_TARGETS["otif_pct"],
+            baseline=None,
+            higher_is_better=True,
+            delta_kind="pp",
+        ),
+        "lead_time_entrega": _metric(
+            current=current_lead_time,
+            target=KPI_TARGETS["lead_time_days"],
+            baseline=None,
+            higher_is_better=False,
+            delta_kind="days",
+        ),
+        "fill_rate": _metric(
+            current=current_fill_rate,
+            target=KPI_TARGETS["fill_rate_pct"],
+            baseline=None,
+            higher_is_better=True,
+            delta_kind="pp",
+        ),
+        "conciliacion_devoluciones": _metric(
+            current=current_conciliacion,
+            target=KPI_TARGETS["conciliacion_pct"],
+            baseline=None,
+            higher_is_better=True,
+            delta_kind="pp",
+        ),
         "tasa_devolucion_validada": {
-            "baseline": current_tasa_dev,
+            "baseline": None,
             "target": current_tasa_dev,
             "current": current_tasa_dev,
-            "delta": 0.0,
+            "delta": None,
             "status": "🟢",
             "delta_kind": "pp",
         },
-        "categorias_brecha_dev": {
-            "baseline": current_gap_cats,
-            "target": 0.0,
-            "current": current_gap_cats,
-            "delta": current_gap_cats,
-            "status": status_lower_is_better(current_gap_cats, 0.0),
-            "delta_kind": "count",
-        },
-        "factura_electronica_aceptacion": {
-            "baseline": current_fe_aceptacion,
-            "target": fe_aceptacion_target,
-            "current": current_fe_aceptacion,
-            "delta": current_fe_aceptacion - fe_aceptacion_target,
-            "status": status_higher_is_better(
-                current_fe_aceptacion, fe_aceptacion_target
-            ),
-            "delta_kind": "pp",
-        },
-        "factura_electronica_rechazo": {
-            "baseline": current_fe_rechazo,
-            "target": fe_rechazo_target,
-            "current": current_fe_rechazo,
-            "delta": current_fe_rechazo - fe_rechazo_target,
-            "status": status_lower_is_better(current_fe_rechazo, fe_rechazo_target),
-            "delta_kind": "pp",
-        },
+        "categorias_brecha_dev": _metric(
+            current=current_gap_cats,
+            target=0.0,
+            baseline=None,
+            higher_is_better=False,
+            delta_kind="count",
+        ),
+        "factura_electronica_aceptacion": _metric(
+            current=current_fe_aceptacion,
+            target=KPI_TARGETS["fe_aceptacion_pct"],
+            baseline=None,
+            higher_is_better=True,
+            delta_kind="pp",
+        ),
+        "factura_electronica_rechazo": _metric(
+            current=current_fe_rechazo,
+            target=KPI_TARGETS["fe_rechazo_pct"],
+            baseline=None,
+            higher_is_better=False,
+            delta_kind="pp",
+        ),
         "facturas_electronicas_emitidas": {
-            "baseline": current_fe_emitidas,
+            "baseline": None,
             "target": current_fe_emitidas,
             "current": current_fe_emitidas,
-            "delta": 0.0,
+            "delta": None,
             "status": "🟢",
             "delta_kind": "count",
         },
         "margen_contable": {
-            "baseline": current_margen_contable,
+            "baseline": None,
             "target": current_margen_contable,
             "current": current_margen_contable,
-            "delta": 0.0,
+            "delta": None,
             "status": "🟢",
             "delta_kind": "currency",
         },
-        "margen_contable_pct": {
-            "baseline": current_margen_contable_pct,
-            "target": margen_contable_target_pct,
-            "current": current_margen_contable_pct,
-            "delta": current_margen_contable_pct - margen_contable_target_pct,
-            "status": status_higher_is_better(
-                current_margen_contable_pct, margen_contable_target_pct
-            ),
-            "delta_kind": "pp",
-        },
+        "margen_contable_pct": _metric(
+            current=current_margen_contable_pct,
+            target=KPI_TARGETS["margen_contable_pct"],
+            baseline=None,
+            higher_is_better=True,
+            delta_kind="pp",
+        ),
         "ingresos_contables": {
-            "baseline": current_ingresos_contables,
+            "baseline": None,
             "target": current_ingresos_contables,
             "current": current_ingresos_contables,
-            "delta": 0.0,
+            "delta": None,
             "status": "🟢",
             "delta_kind": "currency",
         },
         "gastos_contables": {
-            "baseline": current_gastos_contables,
+            "baseline": None,
             "target": current_gastos_contables,
             "current": current_gastos_contables,
-            "delta": 0.0,
+            "delta": None,
             "status": "🟢",
             "delta_kind": "currency",
         },
@@ -783,12 +938,12 @@ def render_markdown(
     lines.append("## 2) North-Star KPI Scorecard")
     lines.append("")
     lines.append(
-        "| KPI | Formula | Baseline | Target | This Week | vs Baseline | Status |"
+        "| KPI | Formula | Baseline | Target | This Week | vs Baseline* | Status |"
     )
     lines.append("|---|---|---:|---:|---:|---:|---|")
     lines.append(
         "| Margen Bruto % | `SUM(TotalSinIva-ValorCosto)/SUM(TotalSinIva)*100` "
-        f"| {format_pct(scorecard['margen']['baseline'])} "
+        f"| {format_optional_pct(scorecard['margen']['baseline'])} "
         f"| {format_pct(scorecard['margen']['target'])} "
         f"| {format_pct(scorecard['margen']['current'])} "
         f"| {format_delta(scorecard['margen']['delta'], 'pp')} "
@@ -796,7 +951,7 @@ def render_markdown(
     )
     lines.append(
         "| Ganancia Bruta ($) | `SUM(TotalSinIva-ValorCosto)` "
-        f"| {format_currency(scorecard['ganancia']['baseline'])} "
+        f"| {format_optional_currency(scorecard['ganancia']['baseline'])} "
         f"| {format_currency(scorecard['ganancia']['target'])} "
         f"| {format_currency(scorecard['ganancia']['current'])} "
         f"| {format_delta(scorecard['ganancia']['delta'], 'pct')} "
@@ -804,7 +959,7 @@ def render_markdown(
     )
     lines.append(
         "| Ticket Promedio ($) | `SUM(TotalMasIva)/COUNT(*)` "
-        f"| {format_currency(scorecard['ticket']['baseline'])} "
+        f"| {format_optional_currency(scorecard['ticket']['baseline'])} "
         f"| {format_currency(scorecard['ticket']['target'])} "
         f"| {format_currency(scorecard['ticket']['current'])} "
         f"| {format_delta(scorecard['ticket']['delta'], 'pct')} "
@@ -812,7 +967,7 @@ def render_markdown(
     )
     lines.append(
         "| Concentración Top-10 Clientes % | `Facturación Top10 / Facturación Total * 100` "
-        f"| {format_pct(scorecard['concentracion']['baseline'])} "
+        f"| {format_optional_pct(scorecard['concentracion']['baseline'])} "
         f"| {format_pct(scorecard['concentracion']['target'])} "
         f"| {format_pct(scorecard['concentracion']['current'])} "
         f"| {format_delta(scorecard['concentracion']['delta'], 'pp')} "
@@ -820,7 +975,7 @@ def render_markdown(
     )
     lines.append(
         "| DSO (días) | `Cartera Total / (Ventas Netas / días periodo)` "
-        f"| {scorecard['dso']['baseline']:.0f} "
+        f"| {format_optional_number(scorecard['dso']['baseline'], 0)} "
         f"| {scorecard['dso']['target']:.0f} "
         f"| {scorecard['dso']['current']:.0f} "
         f"| {format_delta(scorecard['dso']['delta'], 'days')} "
@@ -828,7 +983,7 @@ def render_markdown(
     )
     lines.append(
         "| Cartera vencida >90d % | `SUM(vencido_90+120+360+superior)/Cartera*100` "
-        f"| {format_pct(scorecard['cartera_90']['baseline'])} "
+        f"| {format_optional_pct(scorecard['cartera_90']['baseline'])} "
         f"| {format_pct(scorecard['cartera_90']['target'])} "
         f"| {format_pct(scorecard['cartera_90']['current'])} "
         f"| {format_delta(scorecard['cartera_90']['delta'], 'pp')} "
@@ -836,7 +991,7 @@ def render_markdown(
     )
     lines.append(
         "| Cumplimiento Presupuesto MTD % | `Ventas MTD / Meta prorrateada * 100` "
-        f"| {format_pct(scorecard['presupuesto']['baseline'])} "
+        f"| {format_optional_pct(scorecard['presupuesto']['baseline'])} "
         f"| {format_pct(scorecard['presupuesto']['target'])} "
         f"| {format_pct(scorecard['presupuesto']['current'])} "
         f"| {format_delta(scorecard['presupuesto']['delta'], 'pp')} "
@@ -844,7 +999,7 @@ def render_markdown(
     )
     lines.append(
         "| Tasa Conversión Cotizaciones % | `Convertidas / Cotizaciones * 100` (J3System) "
-        f"| {format_pct(scorecard['conversion_cotiza']['baseline'])} "
+        f"| {format_optional_pct(scorecard['conversion_cotiza']['baseline'])} "
         f"| {format_pct(scorecard['conversion_cotiza']['target'])} "
         f"| {format_pct(scorecard['conversion_cotiza']['current'])} "
         f"| {format_delta(scorecard['conversion_cotiza']['delta'], 'pp')} "
@@ -852,7 +1007,7 @@ def render_markdown(
     )
     lines.append(
         "| Días Cotización → Factura | `AVG(DATEDIFF)` post-cotización (J3System) "
-        f"| {scorecard['dias_conversion']['baseline']:.1f} "
+        f"| {format_optional_number(scorecard['dias_conversion']['baseline'], 1)} "
         f"| {scorecard['dias_conversion']['target']:.1f} "
         f"| {scorecard['dias_conversion']['current']:.1f} "
         f"| {format_delta(scorecard['dias_conversion']['delta'], 'days')} "
@@ -860,7 +1015,7 @@ def render_markdown(
     )
     lines.append(
         "| SKUs Inventario Crítico | Top-N bajo umbral + alta rotación 90d "
-        f"| {scorecard['skus_criticos']['baseline']:.0f} "
+        f"| {format_optional_number(scorecard['skus_criticos']['baseline'], 0)} "
         f"| {scorecard['skus_criticos']['target']:.0f} "
         f"| {scorecard['skus_criticos']['current']:.0f} "
         f"| {format_delta(scorecard['skus_criticos']['delta'], 'count')} "
@@ -868,7 +1023,7 @@ def render_markdown(
     )
     lines.append(
         "| Cobertura Inventario (días prom.) | `Saldo / venta_diaria` SKUs críticos "
-        f"| {scorecard['cobertura_critica']['baseline']:.1f} "
+        f"| {format_optional_number(scorecard['cobertura_critica']['baseline'], 1)} "
         f"| {scorecard['cobertura_critica']['target']:.1f} "
         f"| {scorecard['cobertura_critica']['current']:.1f} "
         f"| {format_delta(scorecard['cobertura_critica']['delta'], 'days')} "
@@ -876,7 +1031,7 @@ def render_markdown(
     )
     lines.append(
         "| OTIF Entregas % | `A tiempo / total` (InvHistoricoEntregas) "
-        f"| {format_pct(scorecard['otif']['baseline'])} "
+        f"| {format_optional_pct(scorecard['otif']['baseline'])} "
         f"| {format_pct(scorecard['otif']['target'])} "
         f"| {format_pct(scorecard['otif']['current'])} "
         f"| {format_delta(scorecard['otif']['delta'], 'pp')} "
@@ -884,7 +1039,7 @@ def render_markdown(
     )
     lines.append(
         "| Lead Time Entrega (días prom.) | `AVG(FechaEntrega - FechaFactura)` "
-        f"| {scorecard['lead_time_entrega']['baseline']:.1f} "
+        f"| {format_optional_number(scorecard['lead_time_entrega']['baseline'], 1)} "
         f"| {scorecard['lead_time_entrega']['target']:.1f} "
         f"| {scorecard['lead_time_entrega']['current']:.1f} "
         f"| {format_delta(scorecard['lead_time_entrega']['delta'], 'days')} "
@@ -892,7 +1047,7 @@ def render_markdown(
     )
     lines.append(
         "| Conciliación Devoluciones % | `1 - |ERP-BI|/ERP` por unidades "
-        f"| {format_pct(scorecard['conciliacion_devoluciones']['baseline'])} "
+        f"| {format_optional_pct(scorecard['conciliacion_devoluciones']['baseline'])} "
         f"| {format_pct(scorecard['conciliacion_devoluciones']['target'])} "
         f"| {format_pct(scorecard['conciliacion_devoluciones']['current'])} "
         f"| {format_delta(scorecard['conciliacion_devoluciones']['delta'], 'pp')} "
@@ -900,7 +1055,7 @@ def render_markdown(
     )
     lines.append(
         "| Aceptación Factura Electrónica % | `Aceptadas / Emitidas` (DIAN) "
-        f"| {format_pct(scorecard['factura_electronica_aceptacion']['baseline'])} "
+        f"| {format_optional_pct(scorecard['factura_electronica_aceptacion']['baseline'])} "
         f"| {format_pct(scorecard['factura_electronica_aceptacion']['target'])} "
         f"| {format_pct(scorecard['factura_electronica_aceptacion']['current'])} "
         f"| {format_delta(scorecard['factura_electronica_aceptacion']['delta'], 'pp')} "
@@ -908,7 +1063,7 @@ def render_markdown(
     )
     lines.append(
         "| Rechazo Factura Electrónica % | `Rechazadas / Emitidas` (DIAN) "
-        f"| {format_pct(scorecard['factura_electronica_rechazo']['baseline'])} "
+        f"| {format_optional_pct(scorecard['factura_electronica_rechazo']['baseline'])} "
         f"| {format_pct(scorecard['factura_electronica_rechazo']['target'])} "
         f"| {format_pct(scorecard['factura_electronica_rechazo']['current'])} "
         f"| {format_delta(scorecard['factura_electronica_rechazo']['delta'], 'pp')} "
@@ -916,11 +1071,16 @@ def render_markdown(
     )
     lines.append(
         "| Margen Contable % | `(Ingresos 4 - Costos 6) / Ingresos` (PUC) "
-        f"| {format_pct(scorecard['margen_contable_pct']['baseline'])} "
+        f"| {format_optional_pct(scorecard['margen_contable_pct']['baseline'])} "
         f"| {format_pct(scorecard['margen_contable_pct']['target'])} "
         f"| {format_pct(scorecard['margen_contable_pct']['current'])} "
         f"| {format_delta(scorecard['margen_contable_pct']['delta'], 'pp')} "
         f"| {scorecard['margen_contable_pct']['status']} |"
+    )
+    lines.append("")
+    lines.append(
+        "*\\* vs Baseline: for north-star sales KPIs with Q1 history, delta is vs "
+        "prior-week average; when baseline is `—`, delta is vs target.*"
     )
 
     lines.append("")
@@ -941,9 +1101,20 @@ def render_markdown(
             f"Margen: {format_pct(as_float(row.get('Margen_Bruto_Pct')))} | "
             f"Ganancia: {format_currency(as_float(row.get('Ganancia_Bruta')))}"
         )
-    lines.append(
-        "- **Biggest WoW drop in margen:** completar con comparación semana anterior."
-    )
+    wow = biggest_wow_margin_drop(q2, results.get("Q2_prev") or [])
+    if wow:
+        lines.append(
+            f"- **Biggest WoW drop in margen:** {wow.get('Categoria')} / "
+            f"{wow.get('Subcategoria')} | "
+            f"{format_pct(wow['Margen_Prev'])} → {format_pct(wow['Margen_Actual'])} "
+            f"({format_delta(-wow['Drop_Pp'], 'pp')}) | "
+            f"Ventas: {format_currency(wow['Ventas_Netas'])}"
+        )
+    else:
+        lines.append(
+            "- **Biggest WoW drop in margen:** sin comparación (falta semana anterior "
+            "o sin categorías con ventas suficientes en ambas semanas)."
+        )
 
     lines.append("")
     lines.append("### 3.2 SKU Focus (High Volume + Low Margin)")
@@ -974,7 +1145,17 @@ def render_markdown(
             f"  - {row.get('Categoria')} | Tasa devolución: {format_pct(as_float(row.get('Tasa_Devolucion_Pct')))} | "
             f"Ganancia: {format_currency(as_float(row.get('Ganancia_Bruta')))}"
         )
-    lines.append("- **Estimated margin impact:** completar con análisis comercial.")
+    ret_impact = estimated_return_margin_impact(q7)
+    lines.append(
+        f"- **Estimated margin impact:** {format_currency(ret_impact['total'])} "
+        f"(heurística: Σ tasa_devolución% × ganancia_bruta por categoría)"
+    )
+    for row in ret_impact.get("top") or []:
+        lines.append(
+            f"  - {row.get('Categoria')} | impacto: "
+            f"{format_currency(as_float(row.get('Impacto_Estimado')))} | "
+            f"tasa: {format_pct(as_float(row.get('Tasa_Devolucion_Pct')))}"
+        )
 
     lines.append("")
     lines.append("### 3.5 Cartera y Riesgo de Crédito (banco_cartera)")
@@ -1266,17 +1447,25 @@ def generate_kpi_control_board(
 ) -> Path:
     output_path = resolve_output_path(end_date, output)
     blocks = load_query_blocks(SQL_PACK_PATH)
+    q1_start = trend_start_for(start_date)
+    prev_start, prev_end = previous_iso_week_range(start_date)
 
     results: Dict[str, List[Dict[str, Any]]] = {}
     conn = get_connection()
     try:
         for key in [f"Q{i}" for i in range(1, 18)]:
-            query = render_query(blocks[key], start_date, end_date)
+            # Q1 needs multi-week history so north-star baselines are meaningful
+            # when the board window is a single ISO week.
+            q_start = q1_start if key == "Q1" else start_date
+            query = render_query(blocks[key], q_start, end_date)
             results[key] = execute_query(conn, query)
+        results["Q2_prev"] = execute_query(
+            conn, render_query(blocks["Q2"], prev_start, prev_end)
+        )
     finally:
         conn.close()
 
-    scorecard = compute_scorecard(results)
+    scorecard = compute_scorecard(results, focus_end=end_date)
     markdown = render_markdown(start_date, end_date, scorecard, results)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
