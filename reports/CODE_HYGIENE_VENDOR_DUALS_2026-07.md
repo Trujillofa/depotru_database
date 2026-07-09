@@ -168,13 +168,37 @@ Do **not** merge 044↔163 into one meta row.
 
 ---
 
-## 5) Suggested next actions (after this note)
+## 5) Enforcement status (2026-07-09)
 
-1. Comercial confirms **owner card** above (esp. Olga = 131?).
-2. One-week pilot: ban multi-name use of 044.
-3. Re-measure purity of 044/131 after 30 days.
-4. Only then: optional presupuesto re-allocation for those two codes.
+| Item | Status |
+|------|--------|
+| Owner card confirmed | **Yes** — Olga=131, Huber=044, Betsy=163 (+ Huber credit handoff) |
+| Machine-readable card | `src/business_analyzer/core/vendor_ownership.py` (`OWNER_CARD`, 18 codes) |
+| Budget attribution | **Asignado > Factura owner > codigo** (`presupuesto_2026.attribute_sale`) |
+| Purity CLI | `python scripts/utils/vendor_code_purity.py` (`--month YYYY-MM` / `--days N`) |
+| Latest full month | `reports/VENDOR_CODE_PURITY_202606.md` |
+| Last-7d pilot | `reports/VENDOR_CODE_PURITY_last7d.md` |
+| Enero 2026 metas | **OK** — 18 codes, ~$8.35B total meta |
+
+### Live purity snapshot (June 2026)
+
+| Check | Result |
+|-------|--------|
+| **044 multi-name** | **Clean** — Huber only (~$152M) |
+| **131 multi-name** | **Open** — Carlos ~$31M + Diana ~$2.4M on 131 (prefer 003 / 106) |
+| **131 sede** | Carlos volume mostly **FED** (not FET) |
+| Merge orphans 123/133 | Tiny (&lt;$0.3M) — prefer 162 |
+| Huber→Betsy handoff | Not dual-identity; Asignado 163 wins |
+
+### Field pilot (this week)
+
+1. Keep **044 = Huber only** (already clean in June — maintain).
+2. Stop Carlos booking on **131** → use **003**.
+3. Stop Diana booking on **131** → use **106**.
+4. Olga on **131** + **FET** only.
+5. Re-run: `python scripts/utils/vendor_code_purity.py --days 7`
+6. After ~30 clean days: optional presupuesto re-allocation for 131 (not 044).
 
 ---
 
-*Generated from live SmartBusiness analysis (dual-code study + 044/131 sede/name split).*
+*Generated from live SmartBusiness analysis (dual-code study + 044/131 sede/name split + purity CLI).*

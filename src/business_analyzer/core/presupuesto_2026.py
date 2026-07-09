@@ -6,7 +6,6 @@ with explicit merges (William Quintero → 162). Company stretch default +25%.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import (
@@ -20,35 +19,18 @@ from typing import (
     Tuple,
 )
 
-# Built-in merge map: source code → canonical meta code
-DEFAULT_CODE_MERGES: Dict[str, str] = {
-    "123": "162",  # William Hernando Quintero (Sika)
-    "133": "162",
-}
-
-# Commercial owners for budget when only VendedorFactura is available.
-# Priority: VendedorAsignado code > Factura owner map > vendedor_codigo.
-#
-# Huber transferred credit customers to Betsy (163). Factura may still say
-# HUBER on those rows — Asignado 163-BETSY must win. Factura→044 is only a
-# fallback when Asignado is empty (Huber’s own residual book on 044).
-OFFICIAL_FACTURA_OWNERS: Dict[str, str] = {
-    "HUBER SANTIAGO ENCISO": "044",
-    "OLGA LUCIA TORRES": "131",
-    "WILLIAM HERNANDO QUINTERO G": "162",
-    "WILLIAM HERNANDO QUINTERO": "162",
-    "CRISTIAN GUSTAVO": "164",
-}
-
-# Preferred display names on presupuesto rows (overrides noisy Factura labels)
-OFFICIAL_CODE_NAMES: Dict[str, str] = {
-    "044": "HUBER SANTIAGO ENCISO",
-    "131": "OLGA LUCIA TORRES",
-    "162": "WILLIAM HERNANDO QUINTERO G",
-    "163": "BETSY GUZMAN",  # includes credit book transferred from Huber
-}
-
-_ASIGNADO_CODE_RE = re.compile(r"^\s*(\d+)\s*[-–]")
+# Ownership card + Factura map live in vendor_ownership (single source of truth).
+from business_analyzer.core.vendor_ownership import (
+    DEFAULT_CODE_MERGES,
+    OFFICIAL_CODE_NAMES,
+    OFFICIAL_FACTURA_OWNERS,
+)
+from business_analyzer.core.vendor_ownership import (
+    official_owner_for_factura as _official_owner_for_factura,
+)
+from business_analyzer.core.vendor_ownership import (
+    parse_asignado_code as _parse_asignado_code_vo,
+)
 
 DEFAULT_GROWTH = 0.25
 DEFAULT_NEWCOMER_GROWTH = 0.10
@@ -130,25 +112,14 @@ class SalesKey:
 
 def parse_asignado_code(asignado: Optional[str]) -> Optional[str]:
     """Extract leading code from values like ``044-HUBER SANTIAGO ENCISO``."""
-    if not asignado:
-        return None
-    m = _ASIGNADO_CODE_RE.match(str(asignado))
-    if not m:
-        return None
-    return normalize_code(m.group(1))
+    result: Optional[str] = _parse_asignado_code_vo(asignado)
+    return result
 
 
 def official_owner_for_factura(name: Optional[str]) -> Optional[str]:
     """Commercial owner code from VendedorFactura (budget rule overrides)."""
-    n = normalize_name(name)
-    if not n:
-        return None
-    if n in OFFICIAL_FACTURA_OWNERS:
-        return OFFICIAL_FACTURA_OWNERS[n]
-    for key, code in OFFICIAL_FACTURA_OWNERS.items():
-        if key in n or n in key:
-            return code
-    return None
+    result: Optional[str] = _official_owner_for_factura(name)
+    return result
 
 
 def build_name_to_code_map(
