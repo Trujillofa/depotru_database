@@ -38,6 +38,24 @@ class TestSourcePriority:
         assert "brand_peer" not in AFFINITY_SALES_SOURCES
 
 
+class TestParseCoincidenciasCsv:
+    def test_coincidencias_maps_to_co_occurrence_score(self, tmp_path: Path):
+        path = tmp_path / "aff.csv"
+        path.write_text(
+            "SKU,Rel_1_SKU,Rel_1_Nombre,Rel_1_Coincidencias,"
+            "Rel_2_SKU,Rel_2_Nombre,Rel_2_Coincidencias\n"
+            "A,B,Prod B,42,C,Prod C,7\n",
+            encoding="utf-8",
+        )
+        parsed = parse_affinity_csv(path, top_n=10)
+        assert "A" in parsed
+        assert parsed["A"][0].sku == "B"
+        assert parsed["A"][0].score == 42.0
+        assert parsed["A"][0].source == "co_occurrence"
+        assert parsed["A"][1].sku == "C"
+        assert parsed["A"][1].score == 7.0
+
+
 class TestMergeLinkCandidates:
     def test_affinity_wins_over_brand_peer_same_target(self):
         """Co-purchase for A→B outranks brand-peer A→B."""

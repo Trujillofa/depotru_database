@@ -80,12 +80,24 @@ def parse_affinity_csv(
                 rel = (row.get(f"Rel_{i}_SKU") or "").strip()
                 if not rel:
                     continue
-                score_raw = row.get(f"Rel_{i}_Score") or "0"
+                # Accept hybrid Score/Source or co-occurrence Coincidencias export.
+                score_raw = (
+                    row.get(f"Rel_{i}_Score")
+                    or row.get(f"Rel_{i}_Coincidencias")
+                    or "0"
+                )
                 try:
                     score = float(score_raw) if str(score_raw).strip() else 0.0
                 except ValueError:
                     score = 0.0
-                source = (row.get(f"Rel_{i}_Source") or "unknown").strip() or "unknown"
+                source = (row.get(f"Rel_{i}_Source") or "").strip()
+                if not source:
+                    # Coincidencias-only CSVs are sales co-purchase matrices.
+                    source = (
+                        "co_occurrence"
+                        if row.get(f"Rel_{i}_Coincidencias") is not None
+                        else "unknown"
+                    )
                 name = (row.get(f"Rel_{i}_Nombre") or "").strip()
                 links.append(
                     LinkCandidate(sku=rel, score=score, source=source, name=name)

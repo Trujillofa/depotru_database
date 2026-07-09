@@ -56,10 +56,27 @@ Contract version **1.0.0** — see `depotru_integrations.affinity.contract`.
 Producer: `business_analyzer.analysis.magento_related_export`
 Consumer (Magento repo): `scripts/catalog/apply_crosssell_merge_bulk.py`
 
+### E2E dry-run
+
+```bash
+# Local export + Magento --dry-run (no DB writes)
+PYTHONPATH=src python scripts/analysis/run_affinity_magento_e2e_dry_run.py \
+  --affinity ~/business_reports/top_10_related_products_per_sku.csv \
+  --output-dir data/export/affinity_e2e_dry_run \
+  --limit-skus 50
+
+# SSH validate SKUs on Magento (still no writes)
+PYTHONPATH=src python scripts/analysis/run_affinity_magento_e2e_dry_run.py \
+  --affinity ~/business_reports/top_10_related_products_per_sku.csv \
+  --limit-skus 25 --validate-remote
+```
+
+Reports: `reports/AFFINITY_E2E_DRY_RUN_*.md`
+
 ## Next
 
 1. Magento `DepositoTrujillo_Assistant` widget → `/v1/assistant/chat`
-2. E2E affinity job dry-run → staging apply
+2. Affinity **apply** on Magento after remote validate review (`--apply --clean-cache`)
 3. CRM / WMS tool implementations
 4. Split `AIVanna` routing into tools
 
