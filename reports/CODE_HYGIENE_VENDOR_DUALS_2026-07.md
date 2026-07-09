@@ -8,18 +8,30 @@
 
 | Code | Official owner | Notes |
 |------|----------------|--------|
-| **044** | **HUBER SANTIAGO ENCISO** | Huber’s code (not 163) |
+| **044** | **HUBER SANTIAGO ENCISO** | Huber’s **own** remaining activity |
+| **163** | **BETSY GUZMAN** | Includes **credit customers Huber transferred to Betsy** |
 | **131** | **OLGA LUCIA TORRES** | Olga / Calle 5 |
-| **163** | **BETSY GUZMAN** | Asignado label; Factura may show Huber — **Asignado wins for budget** |
+
+### Why 044 vs 163 looked confusing
+
+**Huber gave his credit customers to Betsy** — a real portfolio handoff, not “Huber has two codes.”
+
+| What you see in ERP | Correct reading |
+|---------------------|-----------------|
+| Asignado `163-BETSY…` + Factura often **HUBER** | Sale belongs to **Betsy** (transferred book); Factura name lagging |
+| Code / Asignado **044** | **Huber’s** own remaining sales |
+| 0% NIT overlap 044↔163 (2025 snapshot) | Separate books after handoff — **do not merge metas** |
+
+**Budget rule:** **Asignado > Factura** so transferred credit stays on **163**, and is not yanked back to 044 by Factura “HUBER”.
 
 ### Budget attribution priority (locked)
 
-1. **`VendedorAsignado`** leading code (`044-…`, `131-…`)
-2. **`VendedorFactura`** → official owner map / name map
+1. **`VendedorAsignado`** leading code (`044-…`, `163-BETSY…`, `131-…`)
+2. **`VendedorFactura`** → official owner map / name map (fallback when Asignado empty)
 3. **`vendedor_codigo`**
 4. POOL
 
-Do **not** merge large duals into one meta row; fix process + attribution instead.
+Do **not** merge 044↔163 into one meta row.
 
 ---
 
@@ -34,10 +46,10 @@ Do **not** merge large duals into one meta row; fix process + attribution instea
 
 | Invoice name | 2025 | 2026 H1 | 2026 Jun | Role |
 |--------------|-----:|--------:|---------:|------|
-| DANIEL ENRIQUE CAICEDO | $382M | $127M | $0 | Uses **095** as primary (~$4.1B H1) |
-| HUBER SANTIAGO ENCISO | $0 | $213M | **$152M** | Uses **163** as primary (~$918M H1); **044 is secondary channel** |
-| JULIAN ANDRES PINEDA | $231M | $83M | $0 | Uses **102** as primary (~$886M H1) |
-| FELIPE RAMIREZ | $20M | $10M | $0 | Uses **116** as primary |
+| DANIEL ENRIQUE CAICEDO | $382M | $127M | $0 | Should use **095** (not 044) |
+| HUBER SANTIAGO ENCISO | $0 | $213M | **$152M** | **044 = Huber’s code**; Jun–Jul mostly Huber-only on 044 |
+| JULIAN ANDRES PINEDA | $231M | $83M | $0 | Should use **102** (not 044) |
+| FELIPE RAMIREZ | $20M | $10M | $0 | Should use **116** |
 
 ### By sede
 - **FED** dominates (~$532M 2025 / ~$458M H1 2026).
@@ -52,15 +64,16 @@ Do **not** merge large duals into one meta row; fix process + attribution instea
 | FERRECENTRO SVCT ZOMAC SAS | Huber | $81M |
 | LUIS ALBERTO PAREDES MUNOZ | Huber | $45M |
 
-→ Same big accounts appear under **different invoice names** on code 044 → classic **shared commission/invoice code**, not a second ID for one rep.
+→ Historically multi-name on 044 (Daniel/Julian shared use). **Huber’s official code is 044**; large Factura-HUBER volume under **163** is the **transferred book to Betsy** (Asignado 163), not Huber’s second code.
 
-### 044 vs primary (same person, 2026 H1)
+### 044 vs other codes (2026 H1, by Factura name)
 
-| Person | Primary code | On primary | On 044 | Share on 044 |
-|--------|--------------|----------:|-------:|-------------:|
-| Daniel | **095** | $4,094M | $127M | ~3% of his named sales |
-| Huber | **163** | $918M | $213M | ~19% of his named sales |
-| Julian | **102** | $886M | $83M | ~9% of his named sales |
+| Person | Home code | On home code | Also on 044 | Note |
+|--------|-----------|-------------:|------------:|------|
+| Huber | **044** | (see 044) | — | Own remaining book |
+| Betsy | **163** | large | — | **Credit book from Huber**; Factura may still say Huber |
+| Daniel | **095** | $4,094M | $127M | Should not use 044 |
+| Julian | **102** | $886M | $83M | Should not use 044 |
 
 ---
 
@@ -98,7 +111,7 @@ Do **not** merge large duals into one meta row; fix process + attribution instea
 | Person | Primary | On primary | On 131 | Note |
 |--------|---------|----------:|-------:|------|
 | Carlos | **003** | $1,157M | $168M | ~13% of named sales on 131 (almost all FED) |
-| Olga | **131 only** | — | $50M | Needs **own clean code** or formal assignment to 131 |
+| Olga | **131** | — | $50M | **Confirmed owner** of 131 (Calle 5) |
 | Diana | **106** | $1,530M | $36M | Spillover; stop using 131 |
 
 ---
@@ -107,32 +120,32 @@ Do **not** merge large duals into one meta row; fix process + attribution instea
 
 ### Immediate (this week)
 
-1. **044 = Huber only**
-   - Daniel **095**, Julian **102**, others must not book on 044.
-   - Set **VendedorAsignado** = `044-HUBER…` (never 163 with Factura Huber for Huber’s own sales).
+1. **044 = Huber’s remaining book only**
+   - Daniel **095**, Julian **102** must not book on 044.
+   - Huber’s own sales: Asignado `044-HUBER…`.
 
-2. **131 = Olga only (Calle 5)**
-   - Carlos FED → **003** only (never 131).
+2. **163 = Betsy (credit book received from Huber)**
+   - Transferred credit customers: Asignado **`163-BETSY…`** even if Factura still says Huber.
+   - Do **not** reassign those rows to 044 by Factura name.
+
+3. **131 = Olga only (Calle 5)**
+   - Carlos FED → **003** only.
    - Diana → **106** only.
-   - Asignado must be `131-OLGA…` on Olga’s invoices.
+   - Asignado `131-OLGA…` on Olga’s invoices.
 
-3. **163 = Betsy Guzman**
-   - Keep separate from Huber/044.
-   - Asignado should stay `163-BETSY…` when sales belong to Betsy.
-
-4. **Stop “name on wrong code”**
-   - Same customer (e.g. FERRECENTRO, EL PUNTO) should not bounce across codes without a reason.
+4. **Optional cleanup**
+   - Update Factura name to **Betsy** on transferred accounts so screens match Asignado.
 
 ### Code ownership card (confirmed)
 
 | Code | Official owner(s) | Allowed sedes | Notes |
 |------|-------------------|---------------|--------|
 | 095 | Daniel Enrique Caicedo | FED (+ minor FEF) | Do not use 044 for Daniel |
-| **044** | **Huber Santiago Enciso** | FED | **Huber’s official code** |
-| 163 | Betsy Guzman | FED | Keep separate from Huber/044 |
+| **044** | **Huber Santiago Enciso** | FED | Huber’s **own** remaining book |
+| **163** | **Betsy Guzman** | FED | **+ credit customers from Huber** |
 | 102 | Julian Andres Pineda | FED | Prefer 102 over booking on 044 |
 | 003 | Carlos Efrey Pascuas | FED | Prefer 003 (not 131) for Carlos |
-| **131** | **Olga Lucia Torres** | **FET Calle 5** | Confirmed; Carlos should not use 131 |
+| **131** | **Olga Lucia Torres** | **FET Calle 5** | Confirmed |
 | 000 | SIN COMISION / ops | — | Not a salesperson target |
 | 162 | William H. Quintero (Sika) | FEF | 123/133 merged in presupuesto |
 

@@ -27,7 +27,11 @@ DEFAULT_CODE_MERGES: Dict[str, str] = {
 }
 
 # Commercial owners for budget when only VendedorFactura is available.
-# Priority for attribution: VendedorAsignado code > Factura owner map > vendedor_codigo.
+# Priority: VendedorAsignado code > Factura owner map > vendedor_codigo.
+#
+# Huber transferred credit customers to Betsy (163). Factura may still say
+# HUBER on those rows — Asignado 163-BETSY must win. Factura→044 is only a
+# fallback when Asignado is empty (Huber’s own residual book on 044).
 OFFICIAL_FACTURA_OWNERS: Dict[str, str] = {
     "HUBER SANTIAGO ENCISO": "044",
     "OLGA LUCIA TORRES": "131",
@@ -41,7 +45,7 @@ OFFICIAL_CODE_NAMES: Dict[str, str] = {
     "044": "HUBER SANTIAGO ENCISO",
     "131": "OLGA LUCIA TORRES",
     "162": "WILLIAM HERNANDO QUINTERO G",
-    "163": "BETSY GUZMAN",
+    "163": "BETSY GUZMAN",  # includes credit book transferred from Huber
 }
 
 _ASIGNADO_CODE_RE = re.compile(r"^\s*(\d+)\s*[-–]")
@@ -193,10 +197,13 @@ def attribute_sale(
     """Return active canonical code or POOL.
 
     Priority (budget):
-      1) VendedorAsignado leading code
-      2) VendedorFactura official owner / name map
+      1) VendedorAsignado leading code  (e.g. transferred book: 163-BETSY)
+      2) VendedorFactura official owner / name map  (fallback only)
       3) vendedor_codigo
       4) POOL
+
+    Huber→Betsy credit handoff: keep Asignado 163 on those customers; do not
+    reassign to 044 just because Factura still shows HUBER.
     """
     active = set(active_codes)
 
