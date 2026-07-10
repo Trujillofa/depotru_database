@@ -6,6 +6,9 @@ connections.ncx
 credentials.json
 secrets.yaml
 config.local.py
+deploy/bff/env.bff
+deploy/bff/last_tunnel_url.txt
+.tools/
 
 # Database dumps
 *.sql

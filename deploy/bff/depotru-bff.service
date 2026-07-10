@@ -1,0 +1,31 @@
+[Unit]
+Description=Depotru Platform BFF (FastAPI /v1 + assistant)
+Documentation=file:///home/yderf/Projects/depotru_database/deploy/bff/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/yderf/Projects/depotru_database
+Environment=PYTHONPATH=src
+Environment=PYTHONUNBUFFERED=1
+# Project secrets + platform keys
+EnvironmentFile=-/home/yderf/Projects/depotru_database/.env
+EnvironmentFile=-/home/yderf/Projects/depotru_database/deploy/bff/env.bff
+# Defaults if not set in env files
+Environment=BFF_HOST=0.0.0.0
+Environment=BFF_PORT=8000
+
+ExecStart=/home/yderf/Projects/depotru_database/.venv/bin/python -m uvicorn api:app \
+    --host ${BFF_HOST} \
+    --port ${BFF_PORT} \
+    --proxy-headers \
+    --forwarded-allow-ips=*
+
+Restart=always
+RestartSec=3
+# Soft resource caps (adjust as needed)
+MemoryMax=1G
+
+[Install]
+WantedBy=default.target

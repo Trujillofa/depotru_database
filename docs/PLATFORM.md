@@ -22,9 +22,22 @@ src/apps/api/v1.py           # FastAPI /v1 routes
 
 Legacy `business_analyzer` remains the bulk of BI implementation; modules grow services on top of the kernel.
 
+## Stable BFF (production-style)
+
+```bash
+./scripts/ops/install_stable_bff.sh   # user systemd: depotru-bff + depotru-bff-tunnel
+systemctl --user status depotru-bff depotru-bff-tunnel
+cat deploy/bff/last_tunnel_url.txt    # current public URL (quick mode)
+```
+
+- **BFF** always on `:8000` (survives reboot with linger).
+- **Tunnel**: quick mode auto-updates Magento `base_url`; set `CLOUDFLARE_TUNNEL_TOKEN` + `BFF_TUNNEL_MODE=named` for a fixed hostname.
+- Details: `deploy/bff/README.md`
+
 ## API v1
 
 Run: `python src/api.py` → `http://localhost:8000`
+Or systemd: `depotru-bff.service`
 
 | Endpoint | Purpose |
 |----------|---------|

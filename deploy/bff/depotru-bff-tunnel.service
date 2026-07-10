@@ -1,0 +1,25 @@
+[Unit]
+Description=Depotru BFF public tunnel (Cloudflare)
+Documentation=file:///home/yderf/Projects/depotru_database/deploy/bff/README.md
+After=network-online.target depotru-bff.service
+Wants=network-online.target
+# Prefer BFF up first, but tunnel can start alone
+Requires=
+
+[Service]
+Type=simple
+WorkingDirectory=/home/yderf/Projects/depotru_database
+EnvironmentFile=-/home/yderf/Projects/depotru_database/.env
+EnvironmentFile=-/home/yderf/Projects/depotru_database/deploy/bff/env.bff
+Environment=BFF_PORT=8000
+Environment=BFF_TUNNEL_MODE=quick
+Environment=BFF_SYNC_MAGENTO=1
+
+ExecStart=/home/yderf/Projects/depotru_database/.venv/bin/python \
+    /home/yderf/Projects/depotru_database/scripts/ops/run_bff_tunnel.py
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
