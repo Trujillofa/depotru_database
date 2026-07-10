@@ -39,7 +39,7 @@ Platform adapters bridge them; Magento never free-form queries MSSQL.
 
 - [x] E2E affinity → `apply_crosssell_merge_bulk` dry-run + remote validate (no writes)
 - [x] Affinity **apply** on Magento (merge-only, 25+50 SKU batches; mostly already present)
-- [ ] Magento `DepositoTrujillo_Assistant` widget → BFF
+- [x] Magento `DepositoTrujillo_Assistant` widget module scaffolded (proxy + FAB; deploy to enable)
 - [ ] Live sellable qty with production token (scoped)
 - [ ] LLM tool-calling on top of registry (replace stub router)
 
