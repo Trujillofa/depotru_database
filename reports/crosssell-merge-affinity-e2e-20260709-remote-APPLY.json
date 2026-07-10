@@ -1,0 +1,32 @@
+{
+  "validate": {
+    "mode": "validate",
+    "source_count": 25,
+    "candidate_links": 200,
+    "links_added": 0,
+    "links_skipped_existing": 0,
+    "skipped_missing_source": 0,
+    "skipped_missing_linked": 0,
+    "missing_skus_sample": [
+      "0020280001",
+      "0020280100",
+      "0090060016"
+    ],
+    "missing_skus_count": 3
+  },
+  "apply": {
+    "mode": "apply",
+    "source_count": 25,
+    "candidate_links": 200,
+    "links_added": 0,
+    "links_skipped_existing": 197,
+    "skipped_missing_source": 0,
+    "skipped_missing_linked": 3,
+    "missing_skus_sample": [
+      "0020280001",
+      "0020280100",
+      "0090060016"
+    ],
+    "missing_skus_count": 3
+  }
+}
