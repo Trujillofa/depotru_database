@@ -78,6 +78,45 @@ class MagentoRestClient:
             return data
         return {}
 
+    def search_products(
+        self,
+        query: str,
+        *,
+        page_size: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Search products by name (LIKE) via Magento REST searchCriteria."""
+        from urllib.parse import quote
+
+        q = (query or "").strip()
+        if not q:
+            return []
+        page_size = max(1, min(int(page_size), 20))
+        # filter name like %query%
+        params = (
+            "searchCriteria[filter_groups][0][filters][0][field]=name"
+            f"&searchCriteria[filter_groups][0][filters][0][value]=%{quote(q)}%"
+            "&searchCriteria[filter_groups][0][filters][0][condition_type]=like"
+            f"&searchCriteria[pageSize]={page_size}"
+            "&searchCriteria[currentPage]=1"
+        )
+        data = self._request("GET", f"/rest/V1/products?{params}")
+        if not isinstance(data, dict):
+            return []
+        items = data.get("items") or []
+        out: List[Dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            out.append(
+                {
+                    "sku": str(item.get("sku") or ""),
+                    "name": str(item.get("name") or ""),
+                    "status": item.get("status"),
+                    "type_id": item.get("type_id"),
+                }
+            )
+        return out
+
     def get_source_items(self, sku: str) -> List[Dict[str, Any]]:
         """MSI source items for a SKU (searchCriteria)."""
         from urllib.parse import quote

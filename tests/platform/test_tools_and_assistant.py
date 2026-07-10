@@ -79,6 +79,24 @@ def test_assistant_stock_stub():
 
 
 @pytest.mark.unit
+@pytest.mark.module_assistant
+def test_assistant_product_name_search_routes():
+    from modules.assistant.chat import extract_product_query
+
+    assert extract_product_query("tienen cemento?") == "cemento"
+    assert extract_product_query("stock de cemento") == "cemento"
+    assert extract_product_query("busco varilla 1/2") == "varilla 1/2"
+
+    resp = run_assistant_turn(
+        ChatRequest(message="tienen cemento?", audience=Audience.PUBLIC)
+    )
+    assert "catalog.search_products" in resp.tools_used
+    # Either product hits or storefront search URL — never bare generic help
+    assert "cemento" in resp.reply.lower()
+    assert "modo herramientas" not in resp.reply.lower()
+
+
+@pytest.mark.unit
 def test_v1_api_tools_and_chat():
     from api import app
 
