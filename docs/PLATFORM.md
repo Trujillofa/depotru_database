@@ -31,8 +31,9 @@ cat deploy/bff/last_tunnel_url.txt    # current public URL (quick mode)
 ```
 
 - **BFF** always on `:8000` (survives reboot with linger).
-- **Tunnel**: quick mode auto-updates Magento `base_url`; set `CLOUDFLARE_TUNNEL_TOKEN` + `BFF_TUNNEL_MODE=named` for a fixed hostname.
-- Details: `deploy/bff/README.md`
+- **Tunnel**: quick mode auto-updates Magento `base_url` (hostname changes on restart).
+- **Named tunnel** (fixed `bff.depositotrujillo.co`): needs Cloudflare account access →
+  `./scripts/ops/setup_named_tunnel.sh` + `CLOUDFLARE_TUNNEL_TOKEN` (see `deploy/bff/README.md`).
 
 ## API v1
 

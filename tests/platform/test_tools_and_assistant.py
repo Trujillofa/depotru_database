@@ -67,6 +67,16 @@ def test_assistant_branches_turn():
 
 @pytest.mark.unit
 @pytest.mark.module_assistant
+def test_assistant_branches_cuales_son_las_sedes():
+    resp = run_assistant_turn(
+        ChatRequest(message="cuales son las sedes", audience=Audience.PUBLIC)
+    )
+    assert "FED" in resp.reply
+    assert "info.branches" in resp.tools_used
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
 def test_assistant_stock_stub():
     resp = run_assistant_turn(
         ChatRequest(

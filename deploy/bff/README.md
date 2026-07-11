@@ -29,27 +29,34 @@ Requires:
 
 ## Named tunnel (stable hostname — preferred)
 
-1. Cloudflare Zero Trust → Networks → Tunnels → Create
-2. Copy **token**
-3. In `deploy/bff/env.bff`:
+Requires Cloudflare login for the account that owns DNS (e.g. `depositotrujillo.co`).
+Until you have access, use **quick tunnel** mode (default) — systemd keeps it up and
+auto-syncs Magento `base_url` when the hostname changes.
+
+### When you have Cloudflare access
+
+**Dashboard token (easiest):**
+
+1. Zero Trust → Networks → Tunnels → Create → Cloudflared connector → copy **token**
+2. Public Hostname: `bff.depositotrujillo.co` → `http://127.0.0.1:8000`
+3. Put in `deploy/bff/env.bff`:
 
 ```bash
 BFF_TUNNEL_MODE=named
 CLOUDFLARE_TUNNEL_TOKEN=eyJ...
-# public hostname e.g. bff.depositotrujillo.co → http://127.0.0.1:8000
 ```
 
-4. Point Magento once:
+4. Run:
 
 ```bash
-php bin/magento config:set dt_assistant/general/base_url 'https://bff.yourdomain.com'
+./scripts/ops/setup_named_tunnel.sh bff.depositotrujillo.co
+# or: systemctl --user restart depotru-bff-tunnel
 ```
 
-5. Restart tunnel:
+5. Magento once: `config:set dt_assistant/general/base_url 'https://bff.depositotrujillo.co'`
 
-```bash
-systemctl --user restart depotru-bff-tunnel
-```
+**CLI alternative:** `cloudflared tunnel login` then
+`./scripts/ops/setup_named_tunnel.sh bff.depositotrujillo.co`
 
 ## Quick tunnel (auto Magento sync)
 

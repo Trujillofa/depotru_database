@@ -34,7 +34,14 @@ class ChatResponse:
 
 _SKU_RE = re.compile(r"\b(\d{4,14})\b")
 _BRANCH_RE = re.compile(
-    r"\b(sede|sucursal|horario|ubicaci[oó]n|d[oó]nde est[aá]n)\b",
+    r"(?:"
+    r"\bsedes?\b|"  # sede / sedes
+    r"\bsucursales?\b|"
+    r"\bhorarios?\b|"
+    r"\bubicaci[oó]n(?:es)?\b|"
+    r"d[oó]nde\s+est[aá]n|"
+    r"cu[aá]les\s+son\s+las\s+sedes"
+    r")",
     re.I,
 )
 _STOCK_RE = re.compile(
