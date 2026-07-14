@@ -115,7 +115,9 @@ jobs:
       - name: Install linting tools
         run: |
           python -m pip install --upgrade pip
-          pip install black==23.12.1 isort flake8 flake8-pyproject
+          # Pin isort to pre-commit rev (5.13.2). Unpinned isort 8.x reformats
+          # imports incompatibly and fails Lint on otherwise-clean trees.
+          pip install black==23.12.1 isort==5.13.2 flake8 flake8-pyproject
 
       - name: Check code formatting with black
         run: |
