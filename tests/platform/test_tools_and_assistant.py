@@ -147,6 +147,45 @@ def test_assistant_problem_pintar_habitacion():
 
 
 @pytest.mark.unit
+@pytest.mark.module_assistant
+def test_problem_guides_expanded_coverage():
+    """New guides should match common storefront job phrases."""
+    from modules.assistant.problem_guides import GUIDES, match_guide
+
+    assert len(GUIDES) >= 30
+    cases = {
+        "quiero instalar un tanque de agua": "tanque_agua",
+        "necesito drywall para un cielorraso": "drywall",
+        "se me tapó el desagüe del baño": "destape_desague",
+        "cómo impermeabilizar la terraza": "impermeabilizar_terraza",
+        "materiales para un portón": "porton",
+        "pintar el hierro con óxido": "pintura_metal",
+        "kit de herramientas para la casa": "herramientas_basicas",
+        "instalar un inodoro": "inodoro_sanitario",
+        "malla angeo para zancudos": "mosquitero",
+        "bomba de agua con poca presión": "bomba_agua",
+    }
+    for phrase, expected_id in cases.items():
+        guide = match_guide(phrase)
+        assert guide is not None, phrase
+        assert guide.id == expected_id, f"{phrase} → {guide.id} (want {expected_id})"
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_assistant_problem_tanque_reply_no_sku():
+    resp = run_assistant_turn(
+        ChatRequest(
+            message="qué necesito para instalar un tanque de agua?",
+            audience=Audience.PUBLIC,
+        )
+    )
+    assert "tanque" in resp.reply.lower()
+    assert "SKU" not in resp.reply
+    assert "catalog.search_products" in resp.tools_used
+
+
+@pytest.mark.unit
 def test_v1_api_tools_and_chat():
     from api import app
 
