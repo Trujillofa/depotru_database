@@ -56,9 +56,7 @@ from .analytics.trend_metrics import analyze_trends as analyze_trends_core
 from .config import Config, CustomerSegmentation, InventoryConfig, ProfitabilityConfig
 from .contracts.row_contracts import extract_row_value
 from .data_access import fetch_banco_datos, resolve_connection_details
-from .reporting import (
-    MATPLOTLIB_AVAILABLE,
-)
+from .reporting import MATPLOTLIB_AVAILABLE
 from .reporting import (
     generate_visualization_report as generate_visualization_report_core,
 )

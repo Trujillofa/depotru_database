@@ -65,9 +65,13 @@ Platform adapters bridge them; Magento never free-form queries MSSQL.
 
 ## Non-goals (near term)
 
-- Replace b2c.smart-business inventory writer
+- Full replacement of b2c.smart-business inventory writer (still primary feed)
 - Full CRM SPA before APIs
 - Public exposure of cost / cartera
+
+**Related (shipped tooling, not a full rewrite):** website J3 warehouse allowlist +
+`depotru-website-stock` CLI measure/optional MSI patch — see
+`docs/reference/website-warehouse-allowlist.md` and depositotrujillo.co#182.
 
 ---
 
