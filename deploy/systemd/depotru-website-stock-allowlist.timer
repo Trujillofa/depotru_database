@@ -1,0 +1,15 @@
+[Unit]
+Description=Timer: website stock allowlist Magento sync (#182)
+# Counteract B2C all-warehouse push during business hours (Colombia)
+
+[Timer]
+# Every 2 hours during typical B2C sync window (07:15–17:15 America/Bogota)
+OnCalendar=*-*-* 07,09,11,13,15,17:15:00
+# Also once overnight after possible evening overwrites
+OnCalendar=*-*-* 21:30:00
+Persistent=true
+RandomizedDelaySec=90
+Unit=depotru-website-stock-allowlist.service
+
+[Install]
+WantedBy=timers.target

@@ -53,7 +53,28 @@ depotru-website-stock --sku 0020280079 --apply --source-code default
 
 1. Apply the same denylist in **b2c.smart-business.app** warehouse selection.
 2. Use this repo’s CLI to **measure** impact and verify SKUs.
-3. Only use `--apply` if intentionally shadowing B2C for listed SKUs.
+3. Until B2C is fixed, run the **scheduled MSI re-apply** (below).
+
+## Scheduled Magento re-apply (until B2C denylist)
+
+Counteracts b2c.smart-business re-push of denylist warehouses.
+
+```bash
+# Install user systemd timer (every 2h 07–17 + 21:30)
+./scripts/ops/install_website_stock_timer.sh
+
+systemctl --user status depotru-website-stock-allowlist.timer
+journalctl --user -u depotru-website-stock-allowlist.service -n 40
+tail -5 ~/business_reports/website_stock_allowlist_sync.log
+
+# Manual / dry-run
+PYTHONPATH=src .venv/bin/python scripts/ops/run_website_stock_allowlist_sync.py --dry-run
+PYTHONPATH=src .venv/bin/python scripts/ops/run_website_stock_allowlist_sync.py
+```
+
+Credentials: `~/.config/depotru/website-stock.env` (install script) plus
+`MAGENTO_ENV_PHP` → sibling `depositotrujillo.co/config/env.php` for SSH password.
+Requires J3/SmartBusiness DB access from depotru `.env` / NCX.
 
 ## Related
 

@@ -12,3 +12,9 @@
 
 # Weekly Vanna training refresh (optional) — Sunday 03:00
 # 0 3 * * 0 cd /home/yderf/Projects/depotru_database && PYTHONPATH=src uv run python scripts/utils/retrain_vanna.py --reset >> ~/business_reports/cron.log 2>&1
+
+# Website stock allowlist → Magento MSI (#182) — prefer systemd timer:
+#   ./scripts/ops/install_website_stock_timer.sh
+# Cron fallback (every 2h 07–17 + 21:30):
+# 15 7,9,11,13,15,17 * * * cd /home/yderf/Projects/depotru_database && PYTHONPATH=src .venv/bin/python scripts/ops/run_website_stock_allowlist_sync.py >> ~/business_reports/website_stock_allowlist_sync.log 2>&1
+# 30 21 * * * cd /home/yderf/Projects/depotru_database && PYTHONPATH=src .venv/bin/python scripts/ops/run_website_stock_allowlist_sync.py >> ~/business_reports/website_stock_allowlist_sync.log 2>&1
