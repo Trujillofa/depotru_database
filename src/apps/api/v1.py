@@ -150,6 +150,23 @@ async def assistant_chat(
             locale=body.locale,
         )
     )
+    try:
+        from modules.assistant.logging import log_assistant_turn
+
+        log_assistant_turn(
+            session_id=resp.session_id,
+            audience=chat_audience.value,
+            locale=body.locale,
+            message=body.message,
+            reply=resp.reply,
+            tools_used=resp.tools_used,
+            mode=resp.mode,
+            guide_id=resp.guide_id,
+            product_query=resp.product_query,
+            grounded=resp.grounded,
+        )
+    except Exception:  # noqa: BLE001 — logging never breaks chat
+        pass
     return AssistantChatResponse(
         reply=resp.reply,
         session_id=resp.session_id,

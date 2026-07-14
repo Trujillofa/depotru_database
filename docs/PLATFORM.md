@@ -81,6 +81,33 @@ Response:
 
 Browser only calls same-origin `/assistant/chat/post` (form_key + message). API key never leaves Magento.
 
+### Chat question log (JSONL)
+
+Each `POST /v1/assistant/chat` appends one line (never fails the request):
+
+```bash
+# Path (override with ASSISTANT_CHAT_LOG)
+data/assistant/chat_log.jsonl
+
+# Recent questions without a matched problem guide
+jq -r 'select(.guide_id == null) | .message' data/assistant/chat_log.jsonl | tail -50
+
+# Top matched guides
+jq -r '.guide_id // "none"' data/assistant/chat_log.jsonl | sort | uniq -c | sort -rn
+```
+
+Fields: `ts`, `session_id`, `message` (≤500), `reply_preview` (≤200), `tools_used`,
+`guide_id`, `product_query`, `grounded`. No API keys or full tool payloads.
+
+### Product deep links
+
+When Magento REST search returns `url_key`, replies include PDP URLs:
+
+`• Nombre del producto — https://www.depositotrujillo.co/{url_key}.html`
+
+Env: `MAGENTO_STOREFRONT_URL` (preferred), `MAGENTO_BASE_URL`, optional
+`MAGENTO_PRODUCT_URL_SUFFIX` (default `.html`). banco_datos fallback shows names only.
+
 ### Magento stock (optional)
 
 ```bash

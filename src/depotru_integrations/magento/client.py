@@ -78,6 +78,36 @@ class MagentoRestClient:
             return data
         return {}
 
+    @staticmethod
+    def _custom_attr(item: Dict[str, Any], code: str) -> str:
+        attrs = item.get("custom_attributes") or []
+        if not isinstance(attrs, list):
+            return ""
+        for attr in attrs:
+            if not isinstance(attr, dict):
+                continue
+            if str(attr.get("attribute_code") or "") == code:
+                return str(attr.get("value") or "").strip()
+        return ""
+
+    def product_url_for_key(self, url_key: str) -> str:
+        """Build storefront PDP URL from Magento url_key."""
+        key = (url_key or "").strip().strip("/")
+        if not key:
+            return ""
+        store = (os.getenv("MAGENTO_STOREFRONT_URL") or "").strip().rstrip(
+            "/"
+        ) or self.config.base_url.rstrip("/")
+        if not store:
+            return ""
+        suffix = os.getenv("MAGENTO_PRODUCT_URL_SUFFIX", ".html")
+        if not suffix.startswith(".") and suffix:
+            suffix = f".{suffix}"
+        # url_key may already include .html
+        if key.endswith(suffix) or key.endswith(".html"):
+            return f"{store}/{key}"
+        return f"{store}/{key}{suffix}"
+
     def search_products(
         self,
         query: str,
@@ -107,10 +137,14 @@ class MagentoRestClient:
         for item in items:
             if not isinstance(item, dict):
                 continue
+            url_key = self._custom_attr(item, "url_key")
+            product_url = self.product_url_for_key(url_key) if url_key else ""
             out.append(
                 {
                     "sku": str(item.get("sku") or ""),
                     "name": str(item.get("name") or ""),
+                    "url_key": url_key,
+                    "product_url": product_url,
                     "status": item.get("status"),
                     "type_id": item.get("type_id"),
                 }

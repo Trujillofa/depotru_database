@@ -83,15 +83,32 @@ def _tool_related_from_candidates(ctx: ToolContext, params: Mapping[str, Any]) -
     }
 
 
-def _storefront_search_url(query: str) -> str:
-    from urllib.parse import quote_plus
-
-    base = (
+def _storefront_base_url() -> str:
+    return (
         __import__("os").getenv("MAGENTO_STOREFRONT_URL")
         or __import__("os").getenv("MAGENTO_BASE_URL")
         or "https://www.depositotrujillo.co"
     ).rstrip("/")
-    return f"{base}/catalogsearch/result/?q={quote_plus(query)}"
+
+
+def _storefront_search_url(query: str) -> str:
+    from urllib.parse import quote_plus
+
+    return f"{_storefront_base_url()}/catalogsearch/result/?q={quote_plus(query)}"
+
+
+def storefront_product_url(url_key: str) -> str:
+    """Build a PDP URL from Magento url_key (customer-facing, no SKU)."""
+    key = (url_key or "").strip().strip("/")
+    if not key:
+        return ""
+    suffix = __import__("os").getenv("MAGENTO_PRODUCT_URL_SUFFIX", ".html")
+    if suffix and not suffix.startswith("."):
+        suffix = f".{suffix}"
+    base = _storefront_base_url()
+    if key.endswith(suffix) or key.endswith(".html"):
+        return f"{base}/{key}"
+    return f"{base}/{key}{suffix}" if suffix else f"{base}/{key}"
 
 
 def _search_products_db(query: str, limit: int = 5) -> list[dict]:

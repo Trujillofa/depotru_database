@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from depotru_kernel.auth import Audience
 from depotru_tools.registry import ToolContext, get_default_registry
@@ -38,6 +38,8 @@ class ChatResponse:
     tool_results: List[Dict[str, Any]] = field(default_factory=list)
     grounded: bool = True
     mode: str = "stub_tools"
+    guide_id: Optional[str] = None
+    product_query: Optional[str] = None
 
 
 _BRANCH_RE = re.compile(
@@ -128,17 +130,51 @@ def _search_products(
     return result if isinstance(result, dict) else {}
 
 
-def _product_names(products: List[Dict[str, Any]], limit: int = 5) -> List[str]:
-    names: List[str] = []
-    for p in products[:limit]:
+def _collect_products(
+    products: List[Any],
+    limit: int = 5,
+) -> List[Dict[str, Any]]:
+    """De-dupe by name; prefer entries that already have product_url."""
+    by_name: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    for raw in products:
+        if not isinstance(raw, dict):
+            continue
+        p: Dict[str, Any] = raw
         name = (p.get("name") or "").strip()
-        if name and name not in names:
-            names.append(name)
-    return names
+        if not name:
+            continue
+        key = name.casefold()
+        existing = by_name.get(key)
+        if existing is None:
+            by_name[key] = p
+            order.append(key)
+        elif (
+            not (existing.get("product_url") or "").strip()
+            and (p.get("product_url") or "").strip()
+        ):
+            by_name[key] = p
+    # Prefer linked products first, preserve relative order within groups
+    linked = [
+        by_name[k] for k in order if (by_name[k].get("product_url") or "").strip()
+    ]
+    plain = [
+        by_name[k] for k in order if not (by_name[k].get("product_url") or "").strip()
+    ]
+    return (linked + plain)[:limit]
 
 
-def _format_product_bullets(names: List[str]) -> str:
-    return "\n".join(f"• {n}" for n in names)
+def format_product_lines(products: List[Dict[str, Any]], limit: int = 5) -> str:
+    """Customer-facing bullets: name + optional PDP URL (never SKU)."""
+    lines: List[str] = []
+    for p in _collect_products(products, limit=limit):
+        name = (p.get("name") or "").strip()
+        url = (p.get("product_url") or "").strip()
+        if url:
+            lines.append(f"• {name} — {url}")
+        else:
+            lines.append(f"• {name}")
+    return "\n".join(lines)
 
 
 def _reply_problem_guide(
@@ -147,7 +183,8 @@ def _reply_problem_guide(
     tools_used: List[str],
     tool_results: List[Dict[str, Any]],
     text: str,
-) -> Optional[str]:
+) -> Optional[Tuple[str, str]]:
+    """Return (reply, guide_id) or None."""
     guide = match_guide(text)
     if not guide:
         return None
@@ -160,27 +197,21 @@ def _reply_problem_guide(
     if guide.tip:
         parts.append(f"\nConsejo: {guide.tip}")
 
-    # Ground with a few real catalog names (no SKUs)
-    found_names: List[str] = []
+    found: List[Dict[str, Any]] = []
     search_url = ""
     for q in search_queries_for_guide(guide, max_queries=3):
         result = _search_products(registry, ctx, q, limit=2)
         tools_used.append("catalog.search_products")
         tool_results.append({"tool": "catalog.search_products", "result": result})
-        found_names.extend(_product_names(result.get("products") or [], limit=2))
+        found.extend(result.get("products") or [])
         if not search_url:
             search_url = result.get("search_url") or ""
 
-    # de-dupe names preserving order
-    uniq: List[str] = []
-    for n in found_names:
-        if n not in uniq:
-            uniq.append(n)
-    if uniq:
+    product_block = format_product_lines(found, limit=6)
+    if product_block:
         parts.append("\nAlgunos productos de nuestro catálogo que pueden servir:")
-        parts.append(_format_product_bullets(uniq[:6]))
+        parts.append(product_block)
     if search_url:
-        # Use first need query for a useful storefront link when possible
         first_q = guide.needs[0].query if guide.needs else guide.title
         result_url = _search_products(registry, ctx, first_q, limit=1)
         tools_used.append("catalog.search_products")
@@ -192,7 +223,7 @@ def _reply_problem_guide(
         "\nSi me das más detalle (medidas, material o foto del problema), "
         "afino la lista."
     )
-    return "\n".join(parts)
+    return "\n".join(parts), guide.id
 
 
 def _reply_problem_topic(
@@ -208,14 +239,14 @@ def _reply_problem_topic(
     tool_results.append({"tool": "catalog.search_products", "result": result})
     products = result.get("products") or []
     search_url = result.get("search_url") or ""
-    names = _product_names(products, limit=6)
+    product_block = format_product_lines(products, limit=6)
 
     parts = [
         f"Para «{topic}» te oriento con productos por nombre "
         f"(sin códigos internos):",
     ]
-    if names:
-        parts.append(_format_product_bullets(names))
+    if product_block:
+        parts.append(product_block)
         parts.append(
             "\nSi me cuentas más del problema (gotera, pintura, plomería, "
             "electricidad, etc.), te armo una lista de materiales paso a paso."
@@ -244,12 +275,12 @@ def _reply_product_name_search(
     tool_results.append({"tool": "catalog.search_products", "result": result})
     products = result.get("products") or []
     search_url = result.get("search_url") or ""
-    names = _product_names(products, limit=5)
+    product_block = format_product_lines(products, limit=5)
 
-    if names:
+    if product_block:
         reply = (
             f"Encontré estos productos relacionados con «{product_q}»:\n"
-            + _format_product_bullets(names)
+            + product_block
             + "\n\n¿Es para algún trabajo en particular? "
             "Dime el problema (pintar, gotera, plomería, etc.) "
             "y te sugiero qué más suele hacer falta."
@@ -309,15 +340,15 @@ def run_assistant_turn(req: ChatRequest) -> ChatResponse:
 
     # Problem / project first (customer language)
     if looks_like_problem(text) or match_guide(text):
-        guide_reply = _reply_problem_guide(
-            registry, ctx, tools_used, tool_results, text
-        )
-        if guide_reply:
+        guided = _reply_problem_guide(registry, ctx, tools_used, tool_results, text)
+        if guided:
+            guide_reply, guide_id = guided
             return ChatResponse(
                 reply=guide_reply,
                 session_id=session_id,
                 tools_used=tools_used,
                 tool_results=tool_results,
+                guide_id=guide_id,
             )
         topic = extract_problem_topic(text)
         if topic:
@@ -327,6 +358,7 @@ def run_assistant_turn(req: ChatRequest) -> ChatResponse:
                 session_id=session_id,
                 tools_used=tools_used,
                 tool_results=tool_results,
+                product_query=topic,
             )
 
     # Product name search: "tienen cemento?", "busco varilla"
@@ -334,15 +366,18 @@ def run_assistant_turn(req: ChatRequest) -> ChatResponse:
     if product_q:
         # If the product phrase is itself a problem phrase, prefer guide
         if match_guide(product_q) or looks_like_problem(product_q):
-            guide_reply = _reply_problem_guide(
+            guided = _reply_problem_guide(
                 registry, ctx, tools_used, tool_results, product_q
             )
-            if guide_reply:
+            if guided:
+                guide_reply, guide_id = guided
                 return ChatResponse(
                     reply=guide_reply,
                     session_id=session_id,
                     tools_used=tools_used,
                     tool_results=tool_results,
+                    guide_id=guide_id,
+                    product_query=product_q,
                 )
         reply = _reply_product_name_search(
             registry, ctx, tools_used, tool_results, product_q
@@ -352,18 +387,16 @@ def run_assistant_turn(req: ChatRequest) -> ChatResponse:
             session_id=session_id,
             tools_used=tools_used,
             tool_results=tool_results,
+            product_query=product_q,
         )
 
-    # Free-text fallback: try guide match on whole text already done;
-    # if message is long enough, treat as soft topic search
+    # Free-text fallback
     if len(text) >= 12 and not _BRANCH_RE.search(text):
-        # Avoid treating pure greetings as product search
         if not re.fullmatch(
             r"(hola|buenas|buenos\s+d[ií]as|buenas\s+tardes|hey|hi)[\s!.]*",
             text,
             flags=re.I,
         ):
-            # Prefer problem topic extraction one more time
             topic = extract_problem_topic(text) or text[:80]
             if looks_like_problem(text) or extract_problem_topic(text):
                 reply = _reply_problem_topic(
@@ -374,6 +407,7 @@ def run_assistant_turn(req: ChatRequest) -> ChatResponse:
                     session_id=session_id,
                     tools_used=tools_used,
                     tool_results=tool_results,
+                    product_query=topic,
                 )
 
     # Default help (no SKU language)
