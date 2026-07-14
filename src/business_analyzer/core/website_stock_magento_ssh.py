@@ -12,7 +12,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shlex
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
@@ -187,7 +189,13 @@ def _ssh_connect(cfg: MagentoSshConfig):
     import paramiko  # type: ignore[import-untyped]
 
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # Prefer known_hosts; reject unknown hosts (ops host must be trusted once).
+    client.load_system_host_keys()
+    try:
+        client.load_host_keys(str(Path.home() / ".ssh" / "known_hosts"))
+    except OSError:
+        pass
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
     kwargs: Dict[str, Any] = {
         "hostname": cfg.host,
         "username": cfg.username,
@@ -224,8 +232,9 @@ def _ssh_connect(cfg: MagentoSshConfig):
 def _ssh_exec(
     client, command: str, *, working_dir: str, timeout: int = 300
 ) -> tuple[str, str, int]:
-    full = f"cd {working_dir} && {command}"
-    _stdin, stdout, stderr = client.exec_command(full, timeout=timeout)
+    # Quote cwd; command is built only from fixed templates + int offsets.
+    full = f"cd {shlex.quote(working_dir)} && {command}"
+    _stdin, stdout, stderr = client.exec_command(full, timeout=timeout)  # nosec B601
     out = stdout.read().decode("utf-8", errors="replace")
     err = stderr.read().decode("utf-8", errors="replace")
     status = stdout.channel.recv_exit_status()
@@ -293,9 +302,14 @@ def apply_payload_via_ssh(
         }
 
     client = _ssh_connect(cfg)
-    remote_php = "/tmp/dt_website_stock_allowlist_apply.php"
-    remote_payload = "/tmp/dt_website_stock_allowlist_payload.json"
+    token = uuid.uuid4().hex[:12]
+    # Unique remote names under /tmp (Magento host jailshell; no shared sticky issues)
+    remote_php = f"/tmp/dt_wsa_{token}.php"  # nosec B108
+    remote_payload = f"/tmp/dt_wsa_{token}.json"  # nosec B108
     mode = "dry-run" if dry_run else "apply"
+    if mode not in ("dry-run", "apply"):
+        raise ValueError(f"invalid mode: {mode}")
+    batch_size = max(1, min(int(batch_size), 100))
     result: Dict[str, Any] = {
         "mode": mode,
         "sku_count": len(payload),
@@ -314,7 +328,10 @@ def apply_payload_via_ssh(
 
         offset = 0
         while offset < len(payload):
-            cmd = f"php {remote_php} {remote_payload} {mode} " f"{offset} {batch_size}"
+            cmd = (
+                f"php {shlex.quote(remote_php)} {shlex.quote(remote_payload)} "
+                f"{shlex.quote(mode)} {int(offset)} {int(batch_size)}"
+            )
             out, err, status = _ssh_exec(
                 client, cmd, working_dir=cfg.magento_root, timeout=600
             )
