@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Website J3 warehouse allowlist** (depositotrujillo.co#182):
+  - SSOT: `website_warehouse_policy` denylist CEN/EXH/EXD/BDT/MDL/TRA
+  - SQL: website vs excluded stock from `InvDetalleExistencias`
+  - CLI: `depotru-website-stock` (impact report, Magento compare, gated MSI write)
+  - Magento client: optional `post_source_items`
+  - Docs: `docs/reference/website-warehouse-allowlist.md`
 - **Platform Phase 0 skeleton** for multi-module scale (Magento assistant, CRM, WMS, catalog):
   - `depotru_kernel` — document exclusions, COP formatting, unified attribution wrapper, audience/scopes
   - `depotru_tools` — capability registry + builtins (`platform.health`, `info.branches`, `attribution.resolve_seller`, `catalog.related_for_sku`, `inventory.sellable_qty`)

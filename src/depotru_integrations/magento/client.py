@@ -1,6 +1,9 @@
 """Thin Magento REST client for platform tools.
 
-Does not replace b2c.smart-business.app inventory writers. Read-only by default.
+Default path is read-only (sellable qty, product search). Optional
+``post_source_items`` supports gated MSI writes for website stock tooling
+(issue #182). Prefer configuring b2c.smart-business warehouse denylist first —
+that feed may overwrite Magento during business hours.
 """
 
 from __future__ import annotations
@@ -202,3 +205,14 @@ class MagentoRestClient:
             "sources": sources,
             "status": "ok",
         }
+
+    def post_source_items(self, items: List[Dict[str, Any]]) -> Any:
+        """POST /V1/inventory/source-items (MSI write).
+
+        Each item: sku, source_code, quantity, status (1 in-stock / 0 OOS).
+        Requires an integration token with inventory write ACL.
+        """
+        if not items:
+            return {"message": "empty"}
+        payload = {"sourceItems": items}
+        return self._request("POST", "/rest/V1/inventory/source-items", body=payload)

@@ -147,6 +147,7 @@ vanna-grok = "vanna_grok:main"
 vanna-chat = "vanna_grok:main"
 depotru-db-mcp = "business_analyzer.mcp.database_server:main"
 depotru-enrich-celular = "business_analyzer.analysis.cotizaciones_celular_cli:main"
+depotru-website-stock = "business_analyzer.core.website_stock_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Trujillofa/depotru_database"
