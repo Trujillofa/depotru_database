@@ -1,0 +1,18 @@
+[Unit]
+Description=Depotru: re-apply J3 website warehouse allowlist to Magento MSI (#182)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/depotru_database
+# Load DB + Magento SSH from env file (created by install script)
+EnvironmentFile=-%h/.config/depotru/website-stock.env
+Environment=PYTHONPATH=src
+# Prefer venv python when present
+ExecStart=%h/Projects/depotru_database/.venv/bin/python scripts/ops/run_website_stock_allowlist_sync.py
+Nice=10
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

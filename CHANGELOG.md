@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CLI: `depotru-website-stock` (impact report, Magento compare, gated MSI write)
   - Magento client: optional `post_source_items`
   - Docs: `docs/reference/website-warehouse-allowlist.md`
+  - **Scheduled MSI re-apply** via SSH: `scripts/ops/run_website_stock_allowlist_sync.py` +
+    systemd timer `depotru-website-stock-allowlist` (until B2C denylist is configured)
 - **Platform Phase 0 skeleton** for multi-module scale (Magento assistant, CRM, WMS, catalog):
   - `depotru_kernel` — document exclusions, COP formatting, unified attribution wrapper, audience/scopes
   - `depotru_tools` — capability registry + builtins (`platform.health`, `info.branches`, `attribution.resolve_seller`, `catalog.related_for_sku`, `inventory.sellable_qty`)
