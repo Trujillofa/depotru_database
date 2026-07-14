@@ -60,9 +60,11 @@ def test_assistant_branches_turn():
     resp = run_assistant_turn(
         ChatRequest(message="¿dónde están las sedes?", audience=Audience.PUBLIC)
     )
-    assert "FED" in resp.reply
+    assert "Sede Principal" in resp.reply
     assert "info.branches" in resp.tools_used
     assert resp.grounded is True
+    # No internal ERP branch codes for customers
+    assert "FED" not in resp.reply
 
 
 @pytest.mark.unit
@@ -71,21 +73,23 @@ def test_assistant_branches_cuales_son_las_sedes():
     resp = run_assistant_turn(
         ChatRequest(message="cuales son las sedes", audience=Audience.PUBLIC)
     )
-    assert "FED" in resp.reply
+    assert "Sede Principal" in resp.reply or "sedes" in resp.reply.lower()
     assert "info.branches" in resp.tools_used
 
 
 @pytest.mark.unit
 @pytest.mark.module_assistant
-def test_assistant_stock_stub():
+def test_assistant_ignores_sku_customer_language():
+    """Customers don't use SKUs — assistant must not push SKU workflows."""
     resp = run_assistant_turn(
         ChatRequest(
             message="hay stock del SKU 1234567890?",
             audience=Audience.PUBLIC,
         )
     )
-    assert "1234567890" in resp.reply
-    assert "inventory.sellable_qty" in resp.tools_used
+    # No inventory-by-SKU path for storefront; guide them to problem/name language
+    assert "inventory.sellable_qty" not in resp.tools_used
+    assert "sku" not in resp.reply.lower()
 
 
 @pytest.mark.unit
@@ -104,6 +108,42 @@ def test_assistant_product_name_search_routes():
     # Either product hits or storefront search URL — never bare generic help
     assert "cemento" in resp.reply.lower()
     assert "modo herramientas" not in resp.reply.lower()
+    # Never list SKU codes to customers
+    assert not any(
+        line.strip().startswith("- ") and ":" in line and any(c.isdigit() for c in line)
+        for line in resp.reply.splitlines()
+        if "SKU" in line.upper()
+    )
+    assert "SKU" not in resp.reply
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_assistant_problem_gotera_guide():
+    resp = run_assistant_turn(
+        ChatRequest(message="tengo una gotera en el techo", audience=Audience.PUBLIC)
+    )
+    assert "gotera" in resp.reply.lower() or "filtración" in resp.reply.lower()
+    assert "impermeabilizante" in resp.reply.lower() or "sellador" in resp.reply.lower()
+    assert "SKU" not in resp.reply
+    assert "catalog.search_products" in resp.tools_used
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_assistant_problem_pintar_habitacion():
+    from modules.assistant.problem_guides import match_guide
+
+    assert match_guide("qué necesito para pintar una habitación") is not None
+    resp = run_assistant_turn(
+        ChatRequest(
+            message="qué necesito para pintar una habitación?",
+            audience=Audience.PUBLIC,
+        )
+    )
+    assert "pint" in resp.reply.lower()
+    assert "rodillo" in resp.reply.lower() or "brocha" in resp.reply.lower()
+    assert "SKU" not in resp.reply
 
 
 @pytest.mark.unit

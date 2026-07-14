@@ -1,4 +1,4 @@
-"""Storefront / multi-channel AI assistant (tool-calling, grounded answers)."""
+"""Storefront assistant module (problem → product guidance)."""
 
 from modules.assistant.chat import ChatRequest, ChatResponse, run_assistant_turn
 
