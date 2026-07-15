@@ -100,6 +100,14 @@ def test_assistant_product_name_search_routes():
     assert extract_product_query("tienen cemento?") == "cemento"
     assert extract_product_query("stock de cemento") == "cemento"
     assert extract_product_query("busco varilla 1/2") == "varilla 1/2"
+    assert extract_product_query("cotizar un tanque ajover") is not None
+    assert (
+        "rodillo"
+        in (
+            extract_product_query('HOLA ANDO BUSCANDO 15 RODILLOS PROFESIONAL DE 4"')
+            or ""
+        ).lower()
+    )
 
     resp = run_assistant_turn(
         ChatRequest(message="tienen cemento?", audience=Audience.PUBLIC)
@@ -115,6 +123,99 @@ def test_assistant_product_name_search_routes():
         if "SKU" in line.upper()
     )
     assert "SKU" not in resp.reply
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_assistant_greeting_no_platform_health():
+    """Chat-log: greetings must not call platform.health."""
+    for msg in (
+        "Hola",
+        "buenas noches",
+        "buen día",
+        "hola buenos dias",
+        "hello mister",
+    ):
+        resp = run_assistant_turn(ChatRequest(message=msg, audience=Audience.PUBLIC))
+        assert "platform.health" not in resp.tools_used, msg
+        assert "asistente" in resp.reply.lower() or "depósito" in resp.reply.lower()
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_assistant_chat_log_product_and_guide_routes():
+    """Routes derived from production chat_log.jsonl unmatched turns."""
+    # Cotizar tanque → guide or catalog, never health
+    resp = run_assistant_turn(
+        ChatRequest(message="cotizar un tanque ajover", audience=Audience.PUBLIC)
+    )
+    assert "platform.health" not in resp.tools_used
+    assert (
+        resp.guide_id == "tanque_agua" or "catalog.search_products" in resp.tools_used
+    )
+    assert "tanque" in resp.reply.lower()
+
+    # Greeting + product search
+    resp = run_assistant_turn(
+        ChatRequest(
+            message='HOLA ANDO BUSCANDO 15 RODILLOS PROFESIONAL DE 4"',
+            audience=Audience.PUBLIC,
+        )
+    )
+    assert "platform.health" not in resp.tools_used
+    assert "catalog.search_products" in resp.tools_used
+    assert "rodillo" in resp.reply.lower() or "rodillos" in resp.reply.lower()
+
+    # Bare product / typo anticorrosivo → metal paint guide or catalog
+    resp = run_assistant_turn(
+        ChatRequest(message="SDS anticorrisvo negro", audience=Audience.PUBLIC)
+    )
+    assert "platform.health" not in resp.tools_used
+    assert (
+        resp.guide_id == "pintura_metal" or "catalog.search_products" in resp.tools_used
+    )
+
+    # Lámina galvanizada
+    resp = run_assistant_turn(
+        ChatRequest(
+            message="necesito un lamina galvanizada calibre 12",
+            audience=Audience.PUBLIC,
+        )
+    )
+    assert "platform.health" not in resp.tools_used
+    assert resp.guide_id == "teja_zinc" or "catalog.search_products" in resp.tools_used
+    assert (
+        "lám" in resp.reply.lower()
+        or "lamina" in resp.reply.lower()
+        or "zinc" in resp.reply.lower()
+        or "catálogo" in resp.reply.lower()
+        or "productos" in resp.reply.lower()
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_assistant_cart_pay_not_product_search():
+    resp = run_assistant_turn(
+        ChatRequest(
+            message="Necesito pagar por internet lo que tengo en el carro me ayudas",
+            audience=Audience.PUBLIC,
+        )
+    )
+    assert "catalog.search_products" not in resp.tools_used
+    assert "platform.health" not in resp.tools_used
+    assert "carrito" in resp.reply.lower() or "checkout" in resp.reply.lower()
+    assert "pagar" in resp.reply.lower() or "tienda" in resp.reply.lower()
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_assistant_sede_quede_principal():
+    resp = run_assistant_turn(
+        ChatRequest(message="Dónde quede la sede principal", audience=Audience.PUBLIC)
+    )
+    assert "info.branches" in resp.tools_used
+    assert "Sede Principal" in resp.reply or "sedes" in resp.reply.lower()
 
 
 @pytest.mark.unit
@@ -186,8 +287,12 @@ def test_assistant_problem_tanque_reply_no_sku():
 
 
 @pytest.mark.unit
-def test_v1_api_tools_and_chat():
+def test_v1_api_tools_and_chat(monkeypatch: pytest.MonkeyPatch):
     from api import app
+
+    # Sourced deploy/bff/env.bff must not force 401 in unit tests
+    monkeypatch.delenv("PLATFORM_API_KEYS", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
 
     client = TestClient(app)
     r = client.get("/v1/health")
@@ -206,6 +311,9 @@ def test_v1_api_tools_and_chat():
     body = r3.json()
     assert "FED" in body["reply"] or "sedes" in body["reply"].lower()
     assert body["grounded"] is True
+    # Response schema includes optional routing diagnostics
+    assert "guide_id" in body
+    assert "product_query" in body
 
     r4 = client.get("/v1/affinity/contract")
     assert r4.status_code == 200

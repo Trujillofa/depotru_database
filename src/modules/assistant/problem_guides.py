@@ -390,7 +390,9 @@ GUIDES: Tuple[ProblemGuide, ...] = (
         title="Tanque de agua o almacenamiento",
         patterns=(
             r"tanque\s+de\s+agua",
-            r"tanque\s+(elevado|pl[aá]stico|polietileno)",
+            r"tanque\s+(elevado|pl[aá]stico|polietileno|ajover)",
+            r"tanque\s+ajover",
+            r"cotizar\s+(?:un|una|unos|unas)?\s*tanque",
             r"instalar\s+(un\s+)?tanque",
             r"\bpolietileno\b.*tanque|tanque.*\bpolietileno\b",
             r"almacenamiento\s+de\s+agua",
@@ -681,9 +683,10 @@ GUIDES: Tuple[ProblemGuide, ...] = (
         patterns=(
             r"pintar\s+(el\s+)?(metal|hierro|reja|port[oó]n)",
             r"\b[oó]xido\b",
-            r"anticorrosiv",
+            r"anticorr",  # anticorrosivo + typos (anticorrisvo)
             r"pintura\s+(para\s+)?(metal|hierro)",
             r"quitar\s+[oó]xido",
+            r"\bsds\b.*anticorr|anticorr.*\bsds\b",
         ),
         intro="Para pintar metal o tratar óxido suele usarse:",
         needs=(
@@ -779,6 +782,9 @@ GUIDES: Tuple[ProblemGuide, ...] = (
         title="Aditivos e impermeabilizantes de obra (tipo Sika)",
         patterns=(
             r"\bsika\b",
+            r"\bsikagrout\b",
+            r"\bgrouting\b",
+            r"grouting\s+de\s+nivelaci[oó]n",
             r"aditivo\s+(para\s+)?(mortero|concreto|impermeabil)",
             r"impermeabilizante\s+cementoso",
             r"hidr[oó]fugo",
@@ -930,10 +936,14 @@ GUIDES: Tuple[ProblemGuide, ...] = (
             r"cubierta\s+liviana",
             r"techo\s+de\s+l[aá]mina",
             r"l[aá]mina\s+(de\s+)?techo",
+            r"l[aá]mina\s+galvanizada",
+            r"l[aá]mina\s+cal(?:ibre)?\s*\d+",
+            r"lamina\s+galvanizada",
         ),
         intro="Para cubierta de zinc/lámina suele necesitarse:",
         needs=(
             ProductNeed("Láminas o tejas del perfil correcto", "teja zinc"),
+            ProductNeed("Lámina galvanizada (calibre según uso)", "lamina galvanizada"),
             ProductNeed("Tornillos para teja / autofijantes", "tornillo teja"),
             ProductNeed("Caballetes y remates", "caballete"),
             ProductNeed("Sellador o silicona para traslapes", "silicona"),
@@ -941,7 +951,7 @@ GUIDES: Tuple[ProblemGuide, ...] = (
                 "Cinta asfáltica o manto en uniones (si aplica)", "cinta asfaltica"
             ),
         ),
-        tip="Lleva la medida del traslape y la longitud de la caída de agua.",
+        tip="Lleva la medida del traslape y la longitud de la caída de agua. Para lámina, indica calibre y si es techo o cerramiento.",
     ),
     ProblemGuide(
         id="pozo_septico",
