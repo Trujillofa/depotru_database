@@ -60,11 +60,19 @@ def test_assistant_branches_turn():
     resp = run_assistant_turn(
         ChatRequest(message="¿dónde están las sedes?", audience=Audience.PUBLIC)
     )
-    assert "Sede Principal" in resp.reply
+    assert "Bodega del Sur" in resp.reply
+    assert "Bodega Mangueras" in resp.reply
+    assert "Bodega 6" in resp.reply
+    assert "Distribuciones" in resp.reply or "Calle 5" in resp.reply
+    assert "Dirección:" in resp.reply
+    assert "Calle 24" in resp.reply or "Carrera 20" in resp.reply
+    assert "depositotrujillo.co/bodegas" in resp.reply
     assert "info.branches" in resp.tools_used
     assert resp.grounded is True
     # No internal ERP branch codes for customers
     assert "FED" not in resp.reply
+    assert "FEF" not in resp.reply
+    assert "FET" not in resp.reply
 
 
 @pytest.mark.unit
@@ -73,8 +81,20 @@ def test_assistant_branches_cuales_son_las_sedes():
     resp = run_assistant_turn(
         ChatRequest(message="cuales son las sedes", audience=Audience.PUBLIC)
     )
-    assert "Sede Principal" in resp.reply or "sedes" in resp.reply.lower()
+    assert "Bodega" in resp.reply or "sedes" in resp.reply.lower()
+    assert "Dirección:" in resp.reply
     assert "info.branches" in resp.tools_used
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_assistant_bodegas_keyword_routes():
+    resp = run_assistant_turn(
+        ChatRequest(message="dónde quedan las bodegas", audience=Audience.PUBLIC)
+    )
+    assert "info.branches" in resp.tools_used
+    assert "Bodega del Sur" in resp.reply
+    assert "Horario:" in resp.reply
 
 
 @pytest.mark.unit
@@ -215,7 +235,8 @@ def test_assistant_sede_quede_principal():
         ChatRequest(message="Dónde quede la sede principal", audience=Audience.PUBLIC)
     )
     assert "info.branches" in resp.tools_used
-    assert "Sede Principal" in resp.reply or "sedes" in resp.reply.lower()
+    assert "Dirección:" in resp.reply
+    assert "Bodega" in resp.reply or "Distribuciones" in resp.reply
 
 
 @pytest.mark.unit
@@ -309,8 +330,10 @@ def test_v1_api_tools_and_chat(monkeypatch: pytest.MonkeyPatch):
     )
     assert r3.status_code == 200
     body = r3.json()
-    assert "FED" in body["reply"] or "sedes" in body["reply"].lower()
+    assert "Bodega" in body["reply"] or "sedes" in body["reply"].lower()
+    assert "Dirección:" in body["reply"] or "bodegas" in body["reply"].lower()
     assert body["grounded"] is True
+    assert "FED" not in body["reply"]
     # Response schema includes optional routing diagnostics
     assert "guide_id" in body
     assert "product_query" in body

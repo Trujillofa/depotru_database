@@ -2,34 +2,142 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from depotru_kernel.attribution import resolve_seller
 from depotru_kernel.auth import ToolScope
 from depotru_kernel.documents import CANONICAL_EXCLUDED_DOCUMENT_CODES
 from depotru_tools.registry import ToolContext, ToolRegistry, ToolSpec
 
-# Public store info (static; Magento theme can override later via config).
+# Public storefront locations (SSOT for customers: depositotrujillo.co/bodegas).
+# Do not expose ERP document codes (FED/FEF/FET) to customers.
+_PUBLIC_HOURS = (
+    "Lunes a sábado (no festivos): 8:00 a.m. a 12:00 m. y 2:00 p.m. a 5:00 p.m."
+)
+_BODEGAS_URL = "https://www.depositotrujillo.co/bodegas"
+
 BRANCHES = [
     {
-        "code": "FED",
-        "name": "Sede Principal",
+        "name": "Bodega del Sur",
+        "kind": "bodega",
         "city": "Neiva",
-        "note": "Sucursal comercial (DocumentosCodigo FED)",
+        "department": "Huila",
+        "address": "Calle 24 con Carrera 20, Neiva, Huila",
+        "phone": None,
+        "whatsapp": None,
+        "hours": _PUBLIC_HOURS,
+        "maps_url": "https://www.google.com/maps/search/?api=1&query=2.901117,-75.282284",
+        "note": "La más grande y amplia de Neiva; almacenamiento y distribución.",
     },
     {
-        "code": "FEF",
-        "name": "Sede Ferias / alterna",
+        "name": "Bodega Mangueras",
+        "kind": "bodega",
         "city": "Neiva",
-        "note": "Sucursal comercial",
+        "department": "Huila",
+        "address": "Calle 23 Sur # 6, Neiva, Huila",
+        "phone": None,
+        "whatsapp": None,
+        "hours": _PUBLIC_HOURS,
+        "maps_url": "https://www.google.com/maps/search/?api=1&query=2.907155,-75.284999",
+        "note": (
+            "Tanques plásticos, pozos sépticos, mallas, mangueras de riego y afines."
+        ),
     },
     {
-        "code": "FET",
-        "name": "Calle 5",
+        "name": "Bodega 6",
+        "kind": "bodega",
         "city": "Neiva",
-        "note": "Sucursal comercial",
+        "department": "Huila",
+        "address": (
+            "Zona Recrificadora Santofimio (Carrera 3 / Pasaje Camacho), Neiva, Huila"
+        ),
+        "phone": None,
+        "whatsapp": None,
+        "hours": _PUBLIC_HOURS,
+        "maps_url": "https://www.google.com/maps/search/?api=1&query=2.922615,-75.289394",
+        "note": "Punto de la red de bodegas en el centro de Neiva.",
+    },
+    {
+        "name": "Sede Distribuciones (Sede Quinta / Calle 5)",
+        "kind": "sede",
+        "city": "Neiva",
+        "department": "Huila",
+        "address": "Calle 5 # 4-55, Neiva, Huila",
+        "phone": "3152091771",
+        "whatsapp": "3152091771",
+        "hours": _PUBLIC_HOURS,
+        "maps_url": "https://www.google.com/maps/search/?api=1&query=2.924377,-75.288068",
+        "note": "Sede comercial Calle 5 (también referida como Sede Quinta).",
     },
 ]
+
+STORE_CONTACT = {
+    "whatsapp": "3168688799",
+    "customer_service_phone": "3009109549",
+    "hours": _PUBLIC_HOURS,
+    "more_info_url": _BODEGAS_URL,
+    "city": "Neiva",
+    "department": "Huila",
+    "legal_address": "Calle 4 # 2-20, Neiva, Huila (oficina / razón social)",
+}
+
+
+def format_branches_customer_reply(
+    payload: Optional[Mapping[str, Any]] = None,
+) -> str:
+    """Spanish customer-facing list with address, hours, phones and maps."""
+    data = dict(payload or {})
+    branches = data.get("branches") or BRANCHES
+    contact = data.get("contact") or STORE_CONTACT
+    lines = [
+        "Nuestras sedes y bodegas en Neiva (Huila):",
+        "",
+    ]
+    for b in branches:
+        if not isinstance(b, Mapping):
+            continue
+        name = (b.get("name") or "").strip()
+        if not name:
+            continue
+        lines.append(f"• {name}")
+        address = (b.get("address") or "").strip()
+        if address:
+            lines.append(f"  Dirección: {address}")
+        hours = (b.get("hours") or contact.get("hours") or "").strip()
+        if hours:
+            lines.append(f"  Horario: {hours}")
+        phone = (b.get("phone") or "").strip()
+        if phone:
+            pretty = _pretty_phone(phone)
+            lines.append(f"  Teléfono: {pretty}")
+        wa = (b.get("whatsapp") or "").strip()
+        if wa and wa != phone:
+            lines.append(f"  WhatsApp sede: {_pretty_phone(wa)}")
+        maps_url = (b.get("maps_url") or "").strip()
+        if maps_url:
+            lines.append(f"  Mapa: {maps_url}")
+        note = (b.get("note") or "").strip()
+        if note:
+            lines.append(f"  Nota: {note}")
+        lines.append("")
+
+    wa_main = (contact.get("whatsapp") or "").strip()
+    svc = (contact.get("customer_service_phone") or "").strip()
+    more = (contact.get("more_info_url") or _BODEGAS_URL).strip()
+    if wa_main:
+        lines.append(f"WhatsApp general: {_pretty_phone(wa_main)}")
+    if svc:
+        lines.append(f"Servicio al cliente: {_pretty_phone(svc)}")
+    if more:
+        lines.append(f"Más información y mapas: {more}")
+    return "\n".join(lines).strip()
+
+
+def _pretty_phone(raw: str) -> str:
+    digits = "".join(c for c in raw if c.isdigit())
+    if len(digits) == 10:
+        return f"{digits[:3]} {digits[3:6]} {digits[6:]}"
+    return raw.strip()
 
 
 def _tool_platform_health(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
@@ -43,7 +151,12 @@ def _tool_platform_health(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
 
 
 def _tool_branches_info(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
-    return {"branches": BRANCHES, "locale": "es_CO"}
+    return {
+        "branches": BRANCHES,
+        "contact": STORE_CONTACT,
+        "locale": "es_CO",
+        "source": _BODEGAS_URL,
+    }
 
 
 def _tool_resolve_seller(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
@@ -252,7 +365,10 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
     registry.register(
         ToolSpec(
             name="info.branches",
-            description="List commercial branch / sede codes",
+            description=(
+                "List storefront sedes/bodegas with full address, hours, "
+                "phones and map links (Neiva, Huila)"
+            ),
             scope=ToolScope.PUBLIC_INFO,
             handler=_tool_branches_info,
             public_safe=True,

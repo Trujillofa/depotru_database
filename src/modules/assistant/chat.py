@@ -47,12 +47,18 @@ class ChatResponse:
 _BRANCH_RE = re.compile(
     r"(?:"
     r"\bsedes?\b|"  # sede / sedes
+    r"\bbodegas?\b|"
+    r"\balmacenes?\b|"
     r"\bsucursales?\b|"
     r"\bhorarios?\b|"
     r"\bubicaci[oó]n(?:es)?\b|"
     r"d[oó]nde\s+(?:est[aá]n|est[aá]|queda|quede)|"
     r"cu[aá]les\s+son\s+las\s+sedes|"
-    r"sede\s+principal"
+    r"sede\s+principal|"
+    r"sede\s+quinta|"
+    r"bodega\s+del\s+sur|"
+    r"bodega\s+mangueras|"
+    r"bodega\s*6\b"
     r")",
     re.I,
 )
@@ -450,15 +456,16 @@ def run_stub_turn(req: ChatRequest) -> ChatResponse:
             mode="stub_tools",
         )
 
-    # Branches / store info
+    # Branches / bodegas / store info (full address — see /bodegas)
     if _BRANCH_RE.search(text):
+        from depotru_tools.builtins import format_branches_customer_reply
+
         result = registry.call("info.branches", {}, context=ctx)
         tools_used.append("info.branches")
         tool_results.append({"tool": "info.branches", "result": result})
-        lines = [
-            f"- {b['name']} ({b.get('city', '')})" for b in result.get("branches", [])
-        ]
-        reply = "Nuestras sedes comerciales:\n" + "\n".join(lines)
+        reply = format_branches_customer_reply(
+            result if isinstance(result, dict) else None
+        )
         return ChatResponse(
             reply=reply,
             session_id=session_id,
