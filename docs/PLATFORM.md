@@ -81,6 +81,24 @@ Response:
 
 Browser only calls same-origin `/assistant/chat/post` (form_key + message). API key never leaves Magento.
 
+### Hybrid stub-first LLM
+
+Routing is **deterministic first** (greetings, sedes, cart, problem guides, product
+name search). Only when the stub would return generic help does the optional LLM
+run, calling **public** registry tools (`info.branches`, `catalog.search_products`).
+
+```bash
+# Enable on BFF (uses GROK_API_KEY from .env)
+export ASSISTANT_LLM=1
+# optional:
+# export ASSISTANT_LLM_MODEL=grok-4-1-fast-non-reasoning
+systemctl --user restart depotru-bff
+```
+
+- Default **off** (CI / no key → same stub-only behavior).
+- Response `mode`: `stub_tools` | `llm_tools`.
+- Never invents prices/stock; no SKU language; no attribution tools.
+
 ### Chat question log (JSONL)
 
 Each `POST /v1/assistant/chat` appends one line (never fails the request):
@@ -143,9 +161,9 @@ Reports: `reports/AFFINITY_E2E_DRY_RUN_*.md`
 
 ## Next
 
-1. Deploy + enable `DepositoTrujillo_Assistant` on Magento (BFF must be reachable from origin)
-2. Live sellable qty (`MAGENTO_*` on BFF)
-3. LLM tool-calling on assistant stub
+1. Enable `ASSISTANT_LLM=1` on production BFF when ready (Grok key in `.env`)
+2. Live sellable qty (`MAGENTO_*` on BFF) + optional stock tool in LLM allowlist
+3. Named Cloudflare tunnel when account token available
 4. CRM / WMS modules
 5. Split `AIVanna` routing into tools
 

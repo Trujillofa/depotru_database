@@ -41,8 +41,8 @@ Platform adapters bridge them; Magento never free-form queries MSSQL.
 - [x] Affinity **apply** on Magento (merge-only, 25+50 SKU batches; mostly already present)
 - [x] Magento `DepositoTrujillo_Assistant` widget module scaffolded (proxy + FAB; deploy to enable)
 - [x] Chat-log routing polish (greetings, bare product, cotizar, cart/pay, guide patterns)
+- [x] Hybrid stub-first LLM tool-calling (`ASSISTANT_LLM=1`, public tools only)
 - [ ] Live sellable qty with production token (scoped)
-- [ ] LLM tool-calling on top of registry (replace stub router)
 - [ ] Named Cloudflare tunnel (`bff.depositotrujillo.co`) when account token available
 
 ### Phase 2 — CRM core
