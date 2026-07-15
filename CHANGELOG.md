@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Assistant routing quality (production chat log)**:
+  - Greeting-only turns return help without `platform.health`
+  - Product extract: `cotizar`, `ando buscando`, strip leading greeting/qty
+  - Bare product-name fallthrough → `catalog.search_products`
+  - Cart/checkout/pay intent → Spanish storefront ops reply (no product misroute)
+  - Branch phrasing: `dónde quede`, `sede principal`
+  - Guide patterns: tanque ajover/cotizar, lámina galvanizada, anticorr typos, sikagrout/grouting
 - **Website J3 warehouse allowlist** (depositotrujillo.co#182):
   - SSOT: `website_warehouse_policy` denylist CEN/EXH/EXD/BDT/MDL/TRA
   - SQL: website vs excluded stock from `InvDetalleExistencias`

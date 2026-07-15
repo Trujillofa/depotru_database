@@ -48,8 +48,54 @@ _BRANCH_RE = re.compile(
     r"\bsucursales?\b|"
     r"\bhorarios?\b|"
     r"\bubicaci[oó]n(?:es)?\b|"
-    r"d[oó]nde\s+est[aá]n|"
-    r"cu[aá]les\s+son\s+las\s+sedes"
+    r"d[oó]nde\s+(?:est[aá]n|est[aá]|queda|quede)|"
+    r"cu[aá]les\s+son\s+las\s+sedes|"
+    r"sede\s+principal"
+    r")",
+    re.I,
+)
+# Full-message greetings only (no product/job content).
+_GREETING_ONLY_RE = re.compile(
+    r"^\s*(?:"
+    r"hola(?:\s+(?:buenos?\s+d[ií]as|buenas?\s+(?:tardes|noches)|buenas))?|"
+    r"buenos?\s+d[ií]as|"
+    r"buen\s+d[ií]a|"
+    r"buenas?\s+(?:tardes|noches)|"
+    r"buenas|"
+    r"hello(?:\s+\w+)?|"
+    r"hi|"
+    r"hey|"
+    r"saludos"
+    r")[\s!.¡¿,?]*$",
+    re.I,
+)
+# Leading greeting on mixed turns: "HOLA ANDO BUSCANDO…"
+_LEADING_GREETING_RE = re.compile(
+    r"^\s*(?:"
+    r"hola|"
+    r"buenos?\s+d[ií]as|"
+    r"buen\s+d[ií]a|"
+    r"buenas?\s+(?:tardes|noches)|"
+    r"buenas|"
+    r"hello|"
+    r"hi|"
+    r"hey"
+    r")[\s,!.¡¿:]+",
+    re.I,
+)
+# Checkout / online payment — not a product search.
+_CART_PAY_RE = re.compile(
+    r"(?:"
+    r"\bpagar\b|"
+    r"\bpago\b|"
+    r"\bpagos?\b|"
+    r"\bcarrito\b|"
+    r"carro\s+de\s+compras|"
+    r"\bcheckout\b|"
+    r"pasarela\s+de\s+pago|"
+    r"medio\s+de\s+pago|"
+    r"pagar\s+por\s+internet|"
+    r"lo\s+que\s+tengo\s+en\s+el\s+carro"
     r")",
     re.I,
 )
@@ -62,15 +108,24 @@ _PRODUCT_QUERY_RE = re.compile(
     r"stock\s+(?:de\s+|del\s+)?(.+?)(?:\?|$)|"
     r"existencia\s+(?:de\s+|del\s+)?(.+?)(?:\?|$)|"
     r"busco\s+(.+?)(?:\?|$)|"
+    r"ando\s+buscando\s+(.+?)(?:\?|$)|"
+    r"buscando\s+(.+?)(?:\?|$)|"
+    r"cotizar\s+(?:un|una|unos|unas)?\s*(.+?)(?:\?|$)|"
     r"necesito\s+(?!material(?:es)?\s+para|cosas\s+para|productos?\s+para)(.+?)(?:\?|$)|"
     r"venden\s+(.+?)(?:\?|$)|"
     r"precio\s+(?:de\s+|del\s+)?(.+?)(?:\?|$)|"
-    r"me\s+recomiendan?\s+(.+?)(?:\?|$)"
+    r"me\s+recomiendan?\s+(.+?)(?:\?|$)|"
+    r"suministro[,\s]+(?:transporte[,\s]+)?(?:e\s+)?instalaci[oó]n\s+de\s+(.+?)(?:\?|$)"
     r")",
     re.I,
 )
 _STOP_QUERY = re.compile(
     r"\b(sku|sede|sucursal|horario|producto|productos|relacionad\w*|stock)\b",
+    re.I,
+)
+# Leading quantity: "15 rodillos profesional…"
+_LEADING_QTY_RE = re.compile(
+    r"^\s*\d+(?:[.,]\d+)?\s*(?:x\s*)?(?:und(?:s|ades?)?|unidades?)?\s+",
     re.I,
 )
 
@@ -84,6 +139,13 @@ _HELP_REPLY = (
     "No invento precios de costo ni datos de terceros."
 )
 
+_CART_REPLY = (
+    "Para pagar o finalizar lo que tienes en el carrito, usa el "
+    "checkout de la tienda en www.depositotrujillo.co (ícono del carrito). "
+    "Desde este chat no puedo cobrar ni ver tu carrito. "
+    "Si necesitas un producto, sedes u orientación para un trabajo, dímelo."
+)
+
 
 def _clean_product_query(raw: str) -> str:
     q = (raw or "").strip()
@@ -94,6 +156,7 @@ def _clean_product_query(raw: str) -> str:
         q,
         flags=re.I,
     ).strip()
+    q = _LEADING_QTY_RE.sub("", q).strip()
     q = re.sub(r"\s+(por\s+favor|pls|please)\s*$", "", q, flags=re.I).strip()
     if len(q) < 2 or _STOP_QUERY.search(q):
         return ""
@@ -103,9 +166,25 @@ def _clean_product_query(raw: str) -> str:
     return q[:80]
 
 
+def _strip_leading_greeting(text: str) -> str:
+    """Remove leading hola/buenas so mixed turns can product-route."""
+    return _LEADING_GREETING_RE.sub("", text or "", count=1).strip()
+
+
+def is_greeting_only(text: str) -> bool:
+    return bool(_GREETING_ONLY_RE.match((text or "").strip()))
+
+
+def is_cart_pay_intent(text: str) -> bool:
+    return bool(_CART_PAY_RE.search(text or ""))
+
+
 def extract_product_query(text: str) -> Optional[str]:
     """Pull a product name fragment from natural Spanish storefront questions."""
-    m = _PRODUCT_QUERY_RE.search(text or "")
+    t = _strip_leading_greeting(text or "")
+    if not t:
+        t = text or ""
+    m = _PRODUCT_QUERY_RE.search(t)
     if not m:
         return None
     for g in m.groups():
@@ -114,6 +193,35 @@ def extract_product_query(text: str) -> Optional[str]:
             if cleaned:
                 return cleaned
     return None
+
+
+def bare_product_query(text: str) -> Optional[str]:
+    """Treat free-text as a catalog query when it looks like a product name.
+
+    Used after explicit extract fails: «SDS anticorrisvo negro», «Lavaropas…».
+    """
+    t = _strip_leading_greeting(text or "")
+    t = (t or text or "").strip()
+    t = re.sub(r"[¿?¡!]+", "", t).strip()
+    if len(t) < 4:
+        return None
+    if is_greeting_only(t) or is_cart_pay_intent(t) or _BRANCH_RE.search(t):
+        return None
+    # Single short token with no letters of substance
+    if re.fullmatch(r"\d+", t):
+        return None
+    # Prefer messages that look like product names / specs, not long prose
+    cleaned = _clean_product_query(t)
+    if not cleaned or len(cleaned) < 4:
+        return None
+    # Skip pure help questions without a noun phrase
+    if re.match(
+        r"^(c[oó]mo|qu[eé]|por\s+qu[eé]|ayuda|help)\b",
+        cleaned,
+        flags=re.I,
+    ):
+        return None
+    return cleaned[:80]
 
 
 def _search_products(
@@ -322,6 +430,14 @@ def run_assistant_turn(req: ChatRequest) -> ChatResponse:
             mode="stub_tools",
         )
 
+    # Greeting-only: friendly help, no platform.health noise
+    if is_greeting_only(text):
+        return ChatResponse(
+            reply="¡Hola! " + _HELP_REPLY,
+            session_id=session_id,
+            mode="stub_tools",
+        )
+
     # Branches / store info
     if _BRANCH_RE.search(text):
         result = registry.call("info.branches", {}, context=ctx)
@@ -336,6 +452,14 @@ def run_assistant_turn(req: ChatRequest) -> ChatResponse:
             session_id=session_id,
             tools_used=tools_used,
             tool_results=tool_results,
+        )
+
+    # Cart / online payment (before product extract — "carro" ≠ product)
+    if is_cart_pay_intent(text):
+        return ChatResponse(
+            reply=_CART_REPLY,
+            session_id=session_id,
+            mode="stub_tools",
         )
 
     # Problem / project first (customer language)
@@ -361,7 +485,7 @@ def run_assistant_turn(req: ChatRequest) -> ChatResponse:
                 product_query=topic,
             )
 
-    # Product name search: "tienen cemento?", "busco varilla"
+    # Product name search: "tienen cemento?", "busco varilla", "cotizar un tanque"
     product_q = extract_product_query(text)
     if product_q:
         # If the product phrase is itself a problem phrase, prefer guide
@@ -369,6 +493,19 @@ def run_assistant_turn(req: ChatRequest) -> ChatResponse:
             guided = _reply_problem_guide(
                 registry, ctx, tools_used, tool_results, product_q
             )
+            if guided:
+                guide_reply, guide_id = guided
+                return ChatResponse(
+                    reply=guide_reply,
+                    session_id=session_id,
+                    tools_used=tools_used,
+                    tool_results=tool_results,
+                    guide_id=guide_id,
+                    product_query=product_q,
+                )
+        # Full message may match a guide even when extract is a product noun
+        if match_guide(text):
+            guided = _reply_problem_guide(registry, ctx, tools_used, tool_results, text)
             if guided:
                 guide_reply, guide_id = guided
                 return ChatResponse(
@@ -390,33 +527,53 @@ def run_assistant_turn(req: ChatRequest) -> ChatResponse:
             product_query=product_q,
         )
 
-    # Free-text fallback
-    if len(text) >= 12 and not _BRANCH_RE.search(text):
-        if not re.fullmatch(
-            r"(hola|buenas|buenos\s+d[ií]as|buenas\s+tardes|hey|hi)[\s!.]*",
-            text,
-            flags=re.I,
-        ):
-            topic = extract_problem_topic(text) or text[:80]
-            if looks_like_problem(text) or extract_problem_topic(text):
-                reply = _reply_problem_topic(
-                    registry, ctx, tools_used, tool_results, topic
-                )
+    # Problem topic free-text (no curated guide)
+    topic = extract_problem_topic(text)
+    if topic:
+        reply = _reply_problem_topic(registry, ctx, tools_used, tool_results, topic)
+        return ChatResponse(
+            reply=reply,
+            session_id=session_id,
+            tools_used=tools_used,
+            tool_results=tool_results,
+            product_query=topic,
+        )
+
+    # Bare product name / model / industrial phrase fallthrough
+    bare_q = bare_product_query(text)
+    if bare_q:
+        if match_guide(bare_q) or match_guide(text):
+            guided = _reply_problem_guide(
+                registry,
+                ctx,
+                tools_used,
+                tool_results,
+                text if match_guide(text) else bare_q,
+            )
+            if guided:
+                guide_reply, guide_id = guided
                 return ChatResponse(
-                    reply=reply,
+                    reply=guide_reply,
                     session_id=session_id,
                     tools_used=tools_used,
                     tool_results=tool_results,
-                    product_query=topic,
+                    guide_id=guide_id,
+                    product_query=bare_q,
                 )
+        reply = _reply_product_name_search(
+            registry, ctx, tools_used, tool_results, bare_q
+        )
+        return ChatResponse(
+            reply=reply,
+            session_id=session_id,
+            tools_used=tools_used,
+            tool_results=tool_results,
+            product_query=bare_q,
+        )
 
-    # Default help (no SKU language)
-    health = registry.call("platform.health", {}, context=ctx)
-    tools_used.append("platform.health")
-    tool_results.append({"tool": "platform.health", "result": health})
+    # Default help — no platform.health (noise in chat logs)
     return ChatResponse(
         reply=_HELP_REPLY,
         session_id=session_id,
-        tools_used=tools_used,
-        tool_results=tool_results,
+        mode="stub_tools",
     )

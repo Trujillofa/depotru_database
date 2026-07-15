@@ -93,6 +93,8 @@ class AssistantChatResponse(BaseModel):
     tools_used: List[str]
     grounded: bool
     mode: str
+    guide_id: Optional[str] = None
+    product_query: Optional[str] = None
 
 
 @router.get("/health")
@@ -173,6 +175,8 @@ async def assistant_chat(
         tools_used=resp.tools_used,
         grounded=resp.grounded,
         mode=resp.mode,
+        guide_id=resp.guide_id,
+        product_query=resp.product_query,
     )
 
 
