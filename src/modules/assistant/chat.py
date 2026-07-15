@@ -37,9 +37,11 @@ class ChatResponse:
     tools_used: List[str] = field(default_factory=list)
     tool_results: List[Dict[str, Any]] = field(default_factory=list)
     grounded: bool = True
-    mode: str = "stub_tools"
+    mode: str = "stub_tools"  # stub_tools | llm_tools
     guide_id: Optional[str] = None
     product_query: Optional[str] = None
+    # Internal: True only for generic-help stub path → hybrid may call LLM
+    llm_eligible: bool = False
 
 
 _BRANCH_RE = re.compile(
@@ -199,6 +201,7 @@ def bare_product_query(text: str) -> Optional[str]:
     """Treat free-text as a catalog query when it looks like a product name.
 
     Used after explicit extract fails: «SDS anticorrisvo negro», «Lavaropas…».
+    Long free-form prose is left for hybrid LLM (not forced through catalog).
     """
     t = _strip_leading_greeting(text or "")
     t = (t or text or "").strip()
@@ -214,12 +217,18 @@ def bare_product_query(text: str) -> Optional[str]:
     cleaned = _clean_product_query(t)
     if not cleaned or len(cleaned) < 4:
         return None
-    # Skip pure help questions without a noun phrase
+    # Skip pure help questions / free-form intents (hybrid LLM path)
     if re.match(
-        r"^(c[oó]mo|qu[eé]|por\s+qu[eé]|ayuda|help)\b",
+        r"^(c[oó]mo|qu[eé]|por\s+qu[eé]|ayuda|help|quiero|quisiera|"
+        r"me\s+gustar[ií]a|ayúdame|ayudame|podr[ií]as|me\s+puedes|"
+        r"explica|recomi[eé]ndame|necesito\s+ayuda)\b",
         cleaned,
         flags=re.I,
     ):
+        return None
+    # Long prose (many tokens, no clear product phrase) → LLM-eligible help
+    words = cleaned.split()
+    if len(words) > 10:
         return None
     return cleaned[:80]
 
@@ -410,8 +419,11 @@ def _reply_product_name_search(
     return reply
 
 
-def run_assistant_turn(req: ChatRequest) -> ChatResponse:
-    """Deterministic tool-routing for public/customer audiences."""
+def run_stub_turn(req: ChatRequest) -> ChatResponse:
+    """Deterministic tool-routing for public/customer audiences.
+
+    Sets ``llm_eligible=True`` only on generic help (hybrid may escalate).
+    """
     session_id = req.session_id or str(uuid.uuid4())
     registry = get_default_registry()
     ctx = ToolContext(audience=req.audience, request_id=session_id)
@@ -571,9 +583,47 @@ def run_assistant_turn(req: ChatRequest) -> ChatResponse:
             product_query=bare_q,
         )
 
-    # Default help — no platform.health (noise in chat logs)
+    # Default help — LLM-eligible (hybrid may escalate)
     return ChatResponse(
         reply=_HELP_REPLY,
         session_id=session_id,
         mode="stub_tools",
+        llm_eligible=True,
+    )
+
+
+def run_assistant_turn(req: ChatRequest) -> ChatResponse:
+    """Hybrid: deterministic stub first; LLM tools only on generic-help fallback."""
+    stub = run_stub_turn(req)
+    if not stub.llm_eligible:
+        return stub
+
+    from modules.assistant import llm_router
+
+    if not llm_router.llm_enabled():
+        return stub
+
+    registry = get_default_registry()
+    llm_out = llm_router.run_llm_turn(
+        message=(req.message or "").strip(),
+        session_id=stub.session_id,
+        audience=req.audience,
+        registry=registry,
+        locale=req.locale,
+    )
+    if not llm_out:
+        return stub
+
+    reply, tools_used, tool_results = llm_out
+    if not reply:
+        return stub
+
+    return ChatResponse(
+        reply=reply,
+        session_id=stub.session_id,
+        tools_used=tools_used,
+        tool_results=tool_results,
+        grounded=True,
+        mode="llm_tools",
+        llm_eligible=False,
     )

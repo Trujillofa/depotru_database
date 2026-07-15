@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Hybrid stub-first LLM assistant** (`ASSISTANT_LLM=1`):
+  - Confident stub paths (greetings, sedes, cart, guides, product search) skip LLM
+  - Generic-help fallthrough uses Grok tool loop (`info.branches`, `catalog.search_products`)
+  - `mode=llm_tools` when LLM answers; fail-soft back to stub help
+  - Module: `modules.assistant.llm_router`
 - **Assistant routing quality (production chat log)**:
   - Greeting-only turns return help without `platform.health`
   - Product extract: `cotizar`, `ando buscando`, strip leading greeting/qty
