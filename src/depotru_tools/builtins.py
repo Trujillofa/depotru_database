@@ -26,7 +26,11 @@ BRANCHES = [
         "phone": None,
         "whatsapp": None,
         "hours": _PUBLIC_HOURS,
-        "maps_url": "https://www.google.com/maps/search/?api=1&query=2.901117,-75.282284",
+        # Google place: Depósito Trujillo @ Cl. 24 & Cra. 20
+        "maps_url": (
+            "https://www.google.com/maps/place/Deposito+Trujillo/"
+            "@2.9008497,-75.279817,17z"
+        ),
         "note": "La más grande y amplia de Neiva; almacenamiento y distribución.",
     },
     {
@@ -48,13 +52,15 @@ BRANCHES = [
         "kind": "bodega",
         "city": "Neiva",
         "department": "Huila",
-        "address": (
-            "Zona Recrificadora Santofimio (Carrera 3 / Pasaje Camacho), Neiva, Huila"
-        ),
+        "address": "Recrificadora Santofimio, Neiva, Huila",
         "phone": None,
         "whatsapp": None,
         "hours": _PUBLIC_HOURS,
-        "maps_url": "https://www.google.com/maps/search/?api=1&query=2.922615,-75.289394",
+        # Google place: Recrificadora Santofimio
+        "maps_url": (
+            "https://www.google.com/maps/place/Recrificadora+Santofimio/"
+            "@2.9223815,-75.2892973,17z"
+        ),
         "note": "Punto de la red de bodegas en el centro de Neiva.",
     },
     {
