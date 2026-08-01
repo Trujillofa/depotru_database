@@ -21,18 +21,34 @@ def test_sql_pack_includes_q13_critical_inventory():
     )
     assert "Q13" in blocks
     sql = blocks["Q13"].upper()
+    compact = sql.replace(" ", "")
     assert "INVDETALLEEXISTENCIAS" in sql
-    assert "BANCO_DATOS" in sql
+    assert "INVVENTASDETALLE" in compact
+    assert "'ALM'" in sql
     assert "DIAS_COBERTURA" in sql
     assert "VENTA_DIARIA_PROMEDIO" in sql
     assert "PRIORIDAD" in sql
+    assert "V.ALMACENCODIGO = EX.ALMACENCODIGO" in sql
 
 
-def test_load_query_blocks_requires_q1_through_q15():
+def test_sql_pack_includes_q18_rotacion_scorecard():
     blocks = load_query_blocks(
         ROOT / "scripts" / "analysis" / "kpi_sql_pack.sql.template"
     )
-    assert set(blocks.keys()) >= {f"Q{i}" for i in range(1, 18)}
+    assert "Q18" in blocks
+    sql = blocks["Q18"].upper()
+    assert "QUIEBRE" in sql
+    assert "MUERTO" in sql
+    assert "SOBRESTOCK" in sql
+    assert "INVVENTASDETALLE" in sql.replace(" ", "")
+    assert "'ALM'" in sql
+
+
+def test_load_query_blocks_requires_q1_through_q18():
+    blocks = load_query_blocks(
+        ROOT / "scripts" / "analysis" / "kpi_sql_pack.sql.template"
+    )
+    assert set(blocks.keys()) >= {f"Q{i}" for i in range(1, 19)}
 
 
 def test_compute_scorecard_includes_inventory_from_q13():

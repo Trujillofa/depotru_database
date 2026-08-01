@@ -13,9 +13,10 @@ from business_analyzer.core.j3system_critical_inventory import (
 )
 
 
-def test_critical_inventory_sql_cross_database_join():
+def test_critical_inventory_sql_warehouse_demand_and_commercial_wh():
     sql = build_critical_inventory_sql("2024-12-31").upper()
-    assert "SMARTBUSINESS.DBO.BANCO_DATOS" in sql
+    compact = sql.replace(" ", "")
+    assert "INVVENTASDETALLE" in compact
     assert "J3SYSTEM.DBO.INVDETALLEEXISTENCIAS" in sql
     assert "J3SYSTEM.DBO.INVEXISTENCIAS" in sql
     assert "J3SYSTEM.DBO.ADMARTICULOS" in sql
@@ -23,6 +24,14 @@ def test_critical_inventory_sql_cross_database_join():
     assert "DIAS_COBERTURA" in sql
     assert "VENTA_DIARIA_PROMEDIO" in sql
     assert "PRIORIDAD" in sql
+    assert "'ALM'" in sql
+    assert "'DIS'" in sql
+    assert "V.ALMACENCODIGO = EX.ALMACENCODIGO" in sql
+    # No ghost warehouses
+    assert "'CON'" not in sql
+    assert "'B.ROT'" not in sql
+    # Negatives allowed
+    assert "SALDO_ACTUAL < 0" in sql or "SALDOACTUAL" in compact
 
 
 def test_critical_inventory_sql_excludes_test_documents():
@@ -37,6 +46,7 @@ def test_warehouse_sql_aggregates_by_almacen():
     assert "SKUS_CRITICOS" in sql
     assert "PROMEDIO_DIAS_COBERTURA" in sql
     assert "GROUP BY" in sql
+    assert "INVVENTASDETALLE" in sql.replace(" ", "")
 
 
 def test_validate_inventory_as_of_date_rejects_bad_dates():

@@ -125,6 +125,35 @@ def kpi_board_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, An
     }
 
 
+def rotacion_status_text(result: Dict[str, Any]) -> str:
+    as_of = result.get("as_of_date")
+    filename = Path(result["path"]).name if result.get("path") else None
+    if filename:
+        return f"✓ Rotación de existencias lista — {as_of} ({filename})"
+    return f"✓ Rotación de existencias — {as_of}"
+
+
+def rotacion_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
+    status = result.get("status")
+    if status == "error":
+        return {
+            "type": "error",
+            "id": cache_id,
+            "error": result.get("message", "Error generando rotación de existencias"),
+        }
+    return {
+        "type": "rotacion",
+        "id": cache_id,
+        "text": result.get("message", ""),
+        "status_text": rotacion_status_text(result),
+        "download_url": manager_report_download_path(result.get("path")),
+        "format": result.get("format", "html"),
+        "as_of_date": result.get("as_of_date"),
+        "demand_mode": result.get("demand_mode"),
+        "insights_count": result.get("insights_count"),
+    }
+
+
 def manager_report_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
     """Serialize a manager report routing result for the Vanna web UI."""
     status = result.get("status")
@@ -394,6 +423,61 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             cache.set(id=cache_id, field="kpi_board", value=result)
             return jsonify(kpi_board_api_payload(result, cache_id))
 
+        @requires_auth
+        def generate_rotacion(user):
+            as_of_date = flask.request.args.get("as_of_date")
+            top_n = flask.request.args.get("top_n", type=int)
+            demand_mode = flask.request.args.get("demand_mode")
+            fmt = flask.request.args.get("format", "html")
+
+            if flask.request.method == "POST":
+                body = flask.request.get_json(silent=True) or {}
+                as_of_date = body.get("as_of_date", as_of_date)
+                top_n = body.get("top_n", top_n)
+                demand_mode = body.get("demand_mode", demand_mode)
+                fmt = body.get("format", fmt)
+
+            if not as_of_date:
+                return jsonify(
+                    {
+                        "type": "error",
+                        "error": "Indica as_of_date (YYYY-MM-DD) para rotación.",
+                    }
+                )
+
+            top_n = int(top_n) if top_n is not None else 50
+            demand_mode = str(demand_mode or "warehouse").strip().lower()
+            fmt = str(fmt or "html").strip().lower()
+            cache_id = cache.generate_id(
+                as_of_date=as_of_date,
+                top_n=top_n,
+                demand_mode=demand_mode,
+                format=fmt,
+            )
+
+            try:
+                from business_analyzer.reports.rotacion_existencias import (
+                    build_rotacion_result,
+                )
+
+                result = build_rotacion_result(
+                    as_of_date=str(as_of_date),
+                    top_n=top_n,
+                    demand_mode=demand_mode,
+                    fmt=fmt,
+                )
+            except Exception as exc:
+                result = {
+                    "status": "error",
+                    "message": f"Error generando rotación de existencias: {exc}",
+                }
+
+            if result.get("status") == "error":
+                return jsonify(rotacion_api_payload(result, cache_id))
+
+            cache.set(id=cache_id, field="rotacion", value=result)
+            return jsonify(rotacion_api_payload(result, cache_id))
+
         @self.flask_app.route("/api/v0/recommended_reports", methods=["GET"])
         def recommended_reports():
             return jsonify(recommended_reports_payload())
@@ -422,6 +506,12 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             "/api/v0/generate_kpi_board",
             endpoint="smart_generate_kpi_board",
             view_func=generate_kpi_board,
+            methods=["GET", "POST"],
+        )
+        self.flask_app.add_url_rule(
+            "/api/v0/generate_rotacion",
+            endpoint="smart_generate_rotacion",
+            view_func=generate_rotacion,
             methods=["GET", "POST"],
         )
         self._patch_assets_js()

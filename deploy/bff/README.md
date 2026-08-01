@@ -63,10 +63,21 @@ CLOUDFLARE_TUNNEL_TOKEN=eyJ...
 Default after install. On each tunnel start, URL is written to
 `deploy/bff/last_tunnel_url.txt` and Magento `dt_assistant/general/base_url` is updated over SSH.
 
+**Credentials** (same stack as website stock allowlist sync):
+
+1. `MAGENTO_SSH_PASSWORD` in `env.bff` / `.env`, or
+2. `MAGENTO_ENV_PHP` → sibling `depositotrujillo.co/config/env.php` (`server.password`)
+
+Key auth is optional. A broken/missing key passphrase no longer blocks sync if
+password is available via env.php.
+
 ```bash
 systemctl --user restart depotru-bff depotru-bff-tunnel
 cat deploy/bff/last_tunnel_url.txt
 journalctl --user -u depotru-bff-tunnel -n 30 --no-pager
+# Manual sync test:
+# set -a; source deploy/bff/env.bff; set +a
+# PYTHONPATH=src .venv/bin/python -c "from scripts... "  # or restart tunnel unit
 ```
 
 ## Ops

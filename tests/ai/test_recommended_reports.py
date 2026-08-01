@@ -80,10 +80,11 @@ class TestRecommendedReportsCatalog:
     def test_payload_includes_period_defaults_and_month_names(self):
         payload = recommended_reports_payload(today=date(2024, 12, 15))
         assert "reports" in payload
-        assert len(payload["reports"]) == 6
+        assert len(payload["reports"]) == 7
         assert payload["default_year"] == 2024
         assert payload["default_month"] == 11
         assert payload["month_names"]["12"] == "Diciembre"
+        assert payload["default_as_of_date"] == "2024-12-14"
 
     def test_build_manager_action_pdf_question(self):
         action = build_manager_action(year=2024, month=12, fmt="pdf")
@@ -121,6 +122,8 @@ class TestRecommendedReportsCatalog:
         assert "informe-format" in patched
         assert "informe-week" in patched
         assert "generate_kpi_board" in patched
+        assert "generate_rotacion" in patched
+        assert "informe-as-of" in patched
 
 
 @pytest.fixture
@@ -167,6 +170,12 @@ class TestRecommendedReportsFlaskRoutes:
         )
         assert kpi_entry["period_type"] == "week"
         assert kpi_entry["action"]["type"] == "generate_kpi_board"
+        rot_entry = next(
+            r for r in payload["reports"] if r["id"] == "rotacion-existencias"
+        )
+        assert rot_entry["period_type"] == "as_of_date"
+        assert rot_entry["action"]["type"] == "generate_rotacion"
+        assert "as_of_date" in rot_entry["action"]
 
         evidence = tmp_path / "recommended-reports.json"
         evidence.write_text(json.dumps(payload, ensure_ascii=False, indent=2))

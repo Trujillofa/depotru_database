@@ -1,37 +1,31 @@
 """J3System critical inventory and stock-break analysis.
 
-Combines warehouse-level balances from ``InvDetalleExistencias`` with 90-day
-sales velocity from ``banco_datos`` (cross-database on the same MSSQL host).
+Risk shortlist (Q13): commercial warehouses only, warehouse-level commercial
+demand from ``InvVentasDetalle`` (sales doc exclusions), negatives kept as quiebre.
 
-Coverage (días) = ``SaldoActual / venta_diaria_promedio`` where
-``venta_diaria_promedio = SUM(Cantidad últimos N días) / N``.
-
-``StockMinimo`` is often zero in J3System; use ``low_stock_threshold`` (default 10)
-as the operational alert level (aligned with the manager report).
+Full portfolio report: see ``inventory_turnover`` / Rotación de Existencias.
 """
 
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, List, Mapping, Optional, Sequence, cast
 
-from business_analyzer.core.database import Database, qualified_sb_table
+from business_analyzer.core.database import Database
+from business_analyzer.core.inventory_warehouse_policy import (
+    turnover_sku_denylist_sql_not_like,
+    turnover_warehouse_sql_in_list,
+)
 from business_analyzer.core.j3system_sales_warehouse import (
     _validate_period_date,
     qualified_j3_table,
 )
+from depotru_kernel.documents import excluded_document_sql_in_list
 
 DEFAULT_VELOCITY_DAYS = 90
 DEFAULT_LOW_STOCK_THRESHOLD = 10
-DEFAULT_MIN_VELOCITY_QTY = 50
+DEFAULT_MIN_VELOCITY_QTY = 20
 DEFAULT_MAX_COVER_DAYS_ALERT = 14
 DEFAULT_TOP_N = 50
-
-EXCLUDED_DOC_CODES: tuple[str, ...] = ("XY", "AS", "TS", "YX", "ISC")
-
-
-def _excluded_docs_sql() -> str:
-    return ", ".join(f"'{code}'" for code in EXCLUDED_DOC_CODES)
 
 
 def _positive_int(value: int, name: str) -> int:
@@ -45,25 +39,37 @@ def build_velocity_cte(
     *,
     as_of_date: str,
     velocity_days: int = DEFAULT_VELOCITY_DAYS,
-    sb_database: Optional[str] = None,
+    j3_database: Optional[str] = None,
+    warehouse_codes: Optional[Sequence[str]] = None,
 ) -> str:
-    """CTE: SKU-level sales quantity and daily average over ``velocity_days``."""
-    banco = qualified_sb_table("banco_datos", sb_database)
+    """CTE: commercial demand per SKU×warehouse from J3 sales lines."""
     days = _positive_int(velocity_days, "velocity_days")
     as_of = _validate_period_date(as_of_date, "as_of_date")
-    excluded = _excluded_docs_sql()
+    excluded = excluded_document_sql_in_list()
+    wh_in = turnover_warehouse_sql_in_list(warehouse_codes)
+    inv_ventas = qualified_j3_table("InvVentas", j3_database)
+    inv_detalle = qualified_j3_table("InvVentasDetalle", j3_database)
+    articulos = qualified_j3_table("AdmArticulos", j3_database)
+    almacen = qualified_j3_table("AdmAlmacen", j3_database)
+    documentos = qualified_j3_table("AdmDocumentos", j3_database)
     return f"""
 velocidad AS (
     SELECT
-        ArticulosCodigo,
-        SUM(Cantidad) AS Cantidad_90d,
-        SUM(Cantidad) / {days}.0 AS Venta_Diaria_Promedio
-    FROM {banco}
-    WHERE Fecha >= DATEADD(DAY, -{days}, CAST('{as_of}' AS DATE))
-      AND Fecha <= CAST('{as_of}' AS DATE)
-      AND DocumentosCodigo NOT IN ({excluded})
-      AND Cantidad > 0
-    GROUP BY ArticulosCodigo
+        art.ArticulosCodigo,
+        al.AlmacenCodigo,
+        SUM(d.Cantidad) AS Cantidad_90d,
+        SUM(d.Cantidad) / {days}.0 AS Venta_Diaria_Promedio
+    FROM {inv_ventas} v
+    JOIN {inv_detalle} d ON d.VentaID = v.VentaID
+    JOIN {articulos} art ON art.ArticulosID = d.ArticulosID
+    JOIN {almacen} al ON al.AlmacenID = d.AlmacenID
+    JOIN {documentos} doc ON doc.DocumentosID = v.DocumentosID
+    WHERE v.Fecha >= DATEADD(DAY, -{days}, CAST('{as_of}' AS DATE))
+      AND v.Fecha <= CAST('{as_of}' AS DATE)
+      AND doc.DocumentosCodigo NOT IN ({excluded})
+      AND d.Cantidad <> 0
+      AND al.AlmacenCodigo IN ({wh_in})
+    GROUP BY art.ArticulosCodigo, al.AlmacenCodigo
 )""".strip()
 
 
@@ -71,16 +77,19 @@ def build_existencias_cte(
     *,
     inventory_year: Optional[int] = None,
     j3_database: Optional[str] = None,
+    warehouse_codes: Optional[Sequence[str]] = None,
 ) -> str:
-    """CTE: current balances per SKU and warehouse (latest ``Ano`` by default)."""
+    """CTE: balances per SKU×commercial warehouse (negatives kept)."""
     detalle = qualified_j3_table("InvDetalleExistencias", j3_database)
     existencias = qualified_j3_table("InvExistencias", j3_database)
     articulos = qualified_j3_table("AdmArticulos", j3_database)
     almacen = qualified_j3_table("AdmAlmacen", j3_database)
+    wh_in = turnover_warehouse_sql_in_list(warehouse_codes)
+    sku_deny = turnover_sku_denylist_sql_not_like()
     year_filter = (
-        f"WHERE d.Ano = {int(inventory_year)}"
+        f"d.Ano = {int(inventory_year)}"
         if inventory_year is not None
-        else f"WHERE d.Ano = (SELECT MAX(Ano) FROM {detalle})"
+        else f"d.Ano = (SELECT MAX(Ano) FROM {detalle})"
     )
     return f"""
 existencias AS (
@@ -96,10 +105,9 @@ existencias AS (
     JOIN {existencias} e ON e.ExistenciasID = d.ExistenciasID
     JOIN {articulos} a ON a.ArticulosID = e.ArticulosID
     JOIN {almacen} al ON al.AlmacenID = d.AlmacenID
-    {year_filter}
-      AND CAST(d.SaldoActual AS DECIMAL(18, 4)) >= 0
-      AND al.AlmacenCodigo IS NOT NULL
-      AND al.AlmacenCodigo <> ''
+    WHERE {year_filter}
+      AND al.AlmacenCodigo IN ({wh_in})
+      AND NOT ({sku_deny})
 )""".strip()
 
 
@@ -114,21 +122,29 @@ def build_critical_inventory_sql(
     inventory_year: Optional[int] = None,
     j3_database: Optional[str] = None,
     sb_database: Optional[str] = None,
+    warehouse_codes: Optional[Sequence[str]] = None,
 ) -> str:
-    """SKUs with low stock and high rotation, ranked by days of cover."""
+    """SKUs with low stock and high local demand, ranked by days of cover.
+
+    ``sb_database`` retained for call-site compatibility; demand is J3-native.
+    """
+    _ = sb_database  # unused; demand is warehouse-level from J3
     velocity = build_velocity_cte(
         as_of_date=as_of_date,
         velocity_days=velocity_days,
-        sb_database=sb_database,
+        j3_database=j3_database,
+        warehouse_codes=warehouse_codes,
     )
     existencias = build_existencias_cte(
-        inventory_year=inventory_year, j3_database=j3_database
+        inventory_year=inventory_year,
+        j3_database=j3_database,
+        warehouse_codes=warehouse_codes,
     )
     threshold = _positive_int(low_stock_threshold, "low_stock_threshold")
     min_qty = _positive_int(min_velocity_qty, "min_velocity_qty")
     max_cover = _positive_int(max_cover_days_alert, "max_cover_days_alert")
     limit = _positive_int(top_n, "top_n")
-    as_of = _validate_period_date(as_of_date, "as_of_date")
+    _validate_period_date(as_of_date, "as_of_date")
     return f"""
 WITH {velocity},
 {existencias}
@@ -148,6 +164,8 @@ SELECT TOP ({limit})
         ELSE NULL
     END AS Dias_Cobertura,
     CASE
+        WHEN ex.Saldo_Actual < 0
+        THEN 'QUIEBRE_INMINENTE'
         WHEN ex.Stock_Minimo > 0 AND ex.Saldo_Actual < ex.Stock_Minimo
         THEN 'DEBAJO_MINIMO'
         WHEN v.Venta_Diaria_Promedio > 0
@@ -161,10 +179,13 @@ SELECT TOP ({limit})
         ELSE 'ALERTA_ROTACION'
     END AS Prioridad
 FROM existencias ex
-INNER JOIN velocidad v ON v.ArticulosCodigo = ex.ArticulosCodigo
+INNER JOIN velocidad v
+    ON v.ArticulosCodigo = ex.ArticulosCodigo
+   AND v.AlmacenCodigo = ex.AlmacenCodigo
 WHERE v.Cantidad_90d >= {min_qty}
   AND (
-    (ex.Stock_Minimo > 0 AND ex.Saldo_Actual < ex.Stock_Minimo)
+    ex.Saldo_Actual < 0
+    OR (ex.Stock_Minimo > 0 AND ex.Saldo_Actual < ex.Stock_Minimo)
     OR ex.Saldo_Actual <= {threshold}
     OR (
         v.Venta_Diaria_Promedio > 0
@@ -187,15 +208,20 @@ def build_critical_inventory_by_warehouse_sql(
     inventory_year: Optional[int] = None,
     j3_database: Optional[str] = None,
     sb_database: Optional[str] = None,
+    warehouse_codes: Optional[Sequence[str]] = None,
 ) -> str:
     """Aggregate critical SKU counts and average cover days per warehouse."""
+    _ = sb_database
     velocity = build_velocity_cte(
         as_of_date=as_of_date,
         velocity_days=velocity_days,
-        sb_database=sb_database,
+        j3_database=j3_database,
+        warehouse_codes=warehouse_codes,
     )
     existencias = build_existencias_cte(
-        inventory_year=inventory_year, j3_database=j3_database
+        inventory_year=inventory_year,
+        j3_database=j3_database,
+        warehouse_codes=warehouse_codes,
     )
     threshold = _positive_int(low_stock_threshold, "low_stock_threshold")
     min_qty = _positive_int(min_velocity_qty, "min_velocity_qty")
@@ -217,10 +243,13 @@ criticos AS (
             ELSE NULL
         END AS Dias_Cobertura
     FROM existencias ex
-    INNER JOIN velocidad v ON v.ArticulosCodigo = ex.ArticulosCodigo
+    INNER JOIN velocidad v
+        ON v.ArticulosCodigo = ex.ArticulosCodigo
+       AND v.AlmacenCodigo = ex.AlmacenCodigo
     WHERE v.Cantidad_90d >= {min_qty}
       AND (
-        (ex.Stock_Minimo > 0 AND ex.Saldo_Actual < ex.Stock_Minimo)
+        ex.Saldo_Actual < 0
+        OR (ex.Stock_Minimo > 0 AND ex.Saldo_Actual < ex.Stock_Minimo)
         OR ex.Saldo_Actual <= {threshold}
         OR (
             v.Venta_Diaria_Promedio > 0

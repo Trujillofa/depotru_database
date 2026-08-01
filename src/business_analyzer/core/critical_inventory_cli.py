@@ -68,8 +68,9 @@ def render_markdown(report: dict) -> str:
         "",
         f"- **Fecha referencia:** {report['as_of_date']}",
         f"- **Ventana velocidad:** {report.get('velocity_days', 90)} días",
-        "- **Fuentes:** `InvDetalleExistencias` (J3System) + `banco_datos` (SmartBusiness)",
-        "- **Cobertura (días):** `SaldoActual / venta_diaria_promedio`",
+        "- **Fuentes:** `InvDetalleExistencias` + demanda `InvVentas`/`InvVentasDetalle` "
+        "(bodegas comerciales ALM/SUR/BD6/DIS/FLO)",
+        "- **Cobertura (días):** `SaldoActual / venta_diaria` (misma bodega)",
         "",
         "## Resumen",
         "",

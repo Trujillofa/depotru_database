@@ -548,20 +548,27 @@ ORDER BY Cotizaciones DESC;
 
 
 /* -------------------------------------------------------------------------- */
-/* Q13) Inventario crítico y quiebres (InvDetalleExistencias + banco_datos 90d) */
-/* Cobertura días = SaldoActual / venta_diaria_promedio                        */
+/* Q13) Inventario crítico (comercial WH + demanda por bodega InvVentasDetalle) */
+/* Bodegas: ALM,SUR,BD6,DIS,FLO. Negativos = quiebre. Excluye servicios 008050* */
+/* Cobertura = SaldoActual / venta_diaria (misma bodega)                        */
 /* -------------------------------------------------------------------------- */
 WITH velocidad AS (
     SELECT
-        ArticulosCodigo,
-        SUM(Cantidad) AS Cantidad_90d,
-        SUM(Cantidad) / 90.0 AS Venta_Diaria_Promedio
-    FROM SmartBusiness.dbo.banco_datos
-    WHERE Fecha >= DATEADD(DAY, -90, CAST(@end_date AS DATE))
-      AND Fecha <= CAST(@end_date AS DATE)
-      AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
-      AND Cantidad > 0
-    GROUP BY ArticulosCodigo
+        art.ArticulosCodigo,
+        al.AlmacenCodigo,
+        SUM(d.Cantidad) AS Cantidad_90d,
+        SUM(d.Cantidad) / 90.0 AS Venta_Diaria_Promedio
+    FROM J3System.dbo.InvVentas v
+    JOIN J3System.dbo.InvVentasDetalle d ON d.VentaID = v.VentaID
+    JOIN J3System.dbo.AdmArticulos art ON art.ArticulosID = d.ArticulosID
+    JOIN J3System.dbo.AdmAlmacen al ON al.AlmacenID = d.AlmacenID
+    JOIN J3System.dbo.AdmDocumentos doc ON doc.DocumentosID = v.DocumentosID
+    WHERE v.Fecha >= DATEADD(DAY, -90, CAST(@end_date AS DATE))
+      AND v.Fecha <= CAST(@end_date AS DATE)
+      AND doc.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+      AND d.Cantidad <> 0
+      AND al.AlmacenCodigo IN ('ALM', 'SUR', 'BD6', 'DIS', 'FLO')
+    GROUP BY art.ArticulosCodigo, al.AlmacenCodigo
 ),
 existencias AS (
     SELECT
@@ -576,9 +583,15 @@ existencias AS (
     JOIN J3System.dbo.AdmArticulos a ON a.ArticulosID = e.ArticulosID
     JOIN J3System.dbo.AdmAlmacen al ON al.AlmacenID = d.AlmacenID
     WHERE d.Ano = (SELECT MAX(Ano) FROM J3System.dbo.InvDetalleExistencias)
-      AND CAST(d.SaldoActual AS DECIMAL(18, 4)) >= 0
-      AND al.AlmacenCodigo IS NOT NULL
-      AND al.AlmacenCodigo <> ''
+      AND al.AlmacenCodigo IN ('ALM', 'SUR', 'BD6', 'DIS', 'FLO')
+      AND NOT (
+            a.ArticulosCodigo = '0080500001'
+            OR a.ArticulosCodigo = '0110010001'
+            OR a.ArticulosCodigo LIKE '008050%'
+            OR a.ArticulosNombre LIKE '%SERVICIO%'
+            OR a.ArticulosNombre LIKE '%SERV DE %'
+            OR a.ArticulosNombre LIKE '%TRANSPORTE DE MERCANCIA%'
+      )
 )
 SELECT TOP (25)
     ex.ArticulosCodigo AS SKU,
@@ -594,6 +607,8 @@ SELECT TOP (25)
         ELSE NULL
     END AS Dias_Cobertura,
     CASE
+        WHEN ex.Saldo_Actual < 0
+        THEN 'QUIEBRE_INMINENTE'
         WHEN ex.Stock_Minimo > 0 AND ex.Saldo_Actual < ex.Stock_Minimo
         THEN 'DEBAJO_MINIMO'
         WHEN v.Venta_Diaria_Promedio > 0
@@ -607,10 +622,13 @@ SELECT TOP (25)
         ELSE 'ALERTA_ROTACION'
     END AS Prioridad
 FROM existencias ex
-INNER JOIN velocidad v ON v.ArticulosCodigo = ex.ArticulosCodigo
-WHERE v.Cantidad_90d >= 50
+INNER JOIN velocidad v
+    ON v.ArticulosCodigo = ex.ArticulosCodigo
+   AND v.AlmacenCodigo = ex.AlmacenCodigo
+WHERE v.Cantidad_90d >= 20
   AND (
-    (ex.Stock_Minimo > 0 AND ex.Saldo_Actual < ex.Stock_Minimo)
+    ex.Saldo_Actual < 0
+    OR (ex.Stock_Minimo > 0 AND ex.Saldo_Actual < ex.Stock_Minimo)
     OR ex.Saldo_Actual <= 10
     OR (
         v.Venta_Diaria_Promedio > 0
@@ -851,3 +869,93 @@ FROM movimientos_filtrados
 WHERE LEFT(CuentasPucCodigo, 1) IN ('4', '5', '6')
 GROUP BY LEFT(CuentasPucCodigo, 1)
 ORDER BY Clase_Puc;
+
+
+/* -------------------------------------------------------------------------- */
+/* Q18) Rotación scorecard — band counts on commercial WH + warehouse demand   */
+/* Snapshot for weekly board; full report: run_rotacion_existencias.py         */
+/* -------------------------------------------------------------------------- */
+WITH velocidad AS (
+    SELECT
+        art.ArticulosCodigo,
+        al.AlmacenCodigo,
+        SUM(d.Cantidad) AS Cantidad_90d,
+        SUM(d.Cantidad) / 90.0 AS Venta_Diaria
+    FROM J3System.dbo.InvVentas v
+    JOIN J3System.dbo.InvVentasDetalle d ON d.VentaID = v.VentaID
+    JOIN J3System.dbo.AdmArticulos art ON art.ArticulosID = d.ArticulosID
+    JOIN J3System.dbo.AdmAlmacen al ON al.AlmacenID = d.AlmacenID
+    JOIN J3System.dbo.AdmDocumentos doc ON doc.DocumentosID = v.DocumentosID
+    WHERE v.Fecha >= DATEADD(DAY, -90, CAST(@end_date AS DATE))
+      AND v.Fecha <= CAST(@end_date AS DATE)
+      AND doc.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
+      AND d.Cantidad <> 0
+      AND al.AlmacenCodigo IN ('ALM', 'SUR', 'BD6', 'DIS', 'FLO')
+    GROUP BY art.ArticulosCodigo, al.AlmacenCodigo
+),
+base AS (
+    SELECT
+        a.ArticulosCodigo AS SKU,
+        al.AlmacenCodigo,
+        CAST(d.SaldoActual AS DECIMAL(18, 4)) AS Stock,
+        ISNULL(v.Cantidad_90d, 0) AS Venta_Nd,
+        ISNULL(v.Venta_Diaria, 0) AS Venta_Diaria,
+        CASE
+            WHEN ISNULL(v.Venta_Diaria, 0) > 0
+            THEN CAST(d.SaldoActual AS DECIMAL(18, 4)) / v.Venta_Diaria
+            ELSE NULL
+        END AS Dias_Cobertura
+    FROM J3System.dbo.InvDetalleExistencias d
+    JOIN J3System.dbo.InvExistencias e ON e.ExistenciasID = d.ExistenciasID
+    JOIN J3System.dbo.AdmArticulos a ON a.ArticulosID = e.ArticulosID
+    JOIN J3System.dbo.AdmAlmacen al ON al.AlmacenID = d.AlmacenID
+    LEFT JOIN velocidad v
+        ON v.ArticulosCodigo = a.ArticulosCodigo
+       AND v.AlmacenCodigo = al.AlmacenCodigo
+    WHERE d.Ano = (SELECT MAX(Ano) FROM J3System.dbo.InvDetalleExistencias)
+      AND al.AlmacenCodigo IN ('ALM', 'SUR', 'BD6', 'DIS', 'FLO')
+      AND NOT (
+            a.ArticulosCodigo = '0080500001'
+            OR a.ArticulosCodigo = '0110010001'
+            OR a.ArticulosCodigo LIKE '008050%'
+            OR a.ArticulosNombre LIKE '%SERVICIO%'
+            OR a.ArticulosNombre LIKE '%SERV DE %'
+            OR a.ArticulosNombre LIKE '%TRANSPORTE DE MERCANCIA%'
+      )
+      AND (
+            CAST(d.SaldoActual AS DECIMAL(18, 4)) <> 0
+            OR ISNULL(v.Cantidad_90d, 0) <> 0
+      )
+),
+clasificado AS (
+    SELECT
+        *,
+        CASE
+            WHEN Stock <= 0 AND Venta_Nd <= 0 THEN 'SIN_MOVIMIENTO_SIN_STOCK'
+            WHEN Stock <= 0 THEN 'QUIEBRE'
+            WHEN Venta_Nd <= 0 THEN 'MUERTO'
+            WHEN Dias_Cobertura IS NOT NULL AND Venta_Nd >= 20 AND Dias_Cobertura < 7
+                THEN 'QUIEBRE'
+            WHEN Dias_Cobertura IS NOT NULL AND Venta_Nd >= 20 AND Dias_Cobertura < 30
+                THEN 'BAJA_COBERTURA'
+            WHEN Dias_Cobertura IS NOT NULL AND Stock >= 1 AND Dias_Cobertura > 120
+                THEN 'SOBRESTOCK'
+            WHEN Dias_Cobertura IS NOT NULL THEN 'SALUDABLE'
+            WHEN Stock > 0 AND Venta_Nd > 0 THEN 'SALUDABLE'
+            ELSE 'MUERTO'
+        END AS Bandera
+    FROM base
+)
+SELECT
+    COUNT(*) AS Filas,
+    SUM(CASE WHEN Bandera = 'QUIEBRE' THEN 1 ELSE 0 END) AS QUIEBRE,
+    SUM(CASE WHEN Bandera = 'MUERTO' THEN 1 ELSE 0 END) AS MUERTO,
+    SUM(CASE WHEN Bandera = 'SOBRESTOCK' THEN 1 ELSE 0 END) AS SOBRESTOCK,
+    SUM(CASE WHEN Bandera = 'SALUDABLE' THEN 1 ELSE 0 END) AS SALUDABLE,
+    SUM(CASE WHEN Bandera = 'BAJA_COBERTURA' THEN 1 ELSE 0 END) AS BAJA_COBERTURA,
+    SUM(CASE WHEN Stock > 0 THEN Stock ELSE 0 END) AS Stock_Total_Positivo,
+    SUM(CASE WHEN Bandera = 'MUERTO' AND Stock > 0 THEN Stock ELSE 0 END)
+        AS Stock_Unidades_Muerto,
+    AVG(CASE WHEN Venta_Nd > 0 THEN Dias_Cobertura ELSE NULL END)
+        AS Promedio_Dias_Cobertura
+FROM clasificado;

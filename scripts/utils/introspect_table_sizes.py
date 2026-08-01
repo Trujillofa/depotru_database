@@ -16,22 +16,36 @@ if str(_SRC) not in sys.path:
 
 from business_analyzer.core.database import Database  # noqa: E402
 
+# Row counts must come from sys.partitions alone. Joining allocation_units first
+# multiplies p.rows by LOB/overflow units (often 2–3x inflation).
 TABLE_SIZE_SQL = """
 SELECT
     s.name AS schema_name,
     t.name AS table_name,
-    SUM(CASE WHEN p.index_id IN (0, 1) THEN p.rows ELSE 0 END) AS row_count,
-    SUM(a.total_pages) * 8 AS total_space_kb,
-    SUM(a.used_pages) * 8 AS used_space_kb
+    r.row_count,
+    sp.total_space_kb,
+    sp.used_space_kb
 FROM sys.tables t
 INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-INNER JOIN sys.partitions p ON t.object_id = p.object_id
-INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
+INNER JOIN (
+    SELECT
+        p.object_id,
+        SUM(CASE WHEN p.index_id IN (0, 1) THEN p.rows ELSE 0 END) AS row_count
+    FROM sys.partitions p
+    GROUP BY p.object_id
+) r ON t.object_id = r.object_id
+INNER JOIN (
+    SELECT
+        p.object_id,
+        SUM(a.total_pages) * 8 AS total_space_kb,
+        SUM(a.used_pages) * 8 AS used_space_kb
+    FROM sys.partitions p
+    INNER JOIN sys.allocation_units a ON p.partition_id = a.container_id
+    GROUP BY p.object_id
+) sp ON t.object_id = sp.object_id
 WHERE t.is_ms_shipped = 0
-GROUP BY s.name, t.name
-ORDER BY total_space_kb DESC, row_count DESC
+ORDER BY sp.total_space_kb DESC, r.row_count DESC
 """
-
 COLUMN_SUMMARY_SQL = """
 SELECT
     c.COLUMN_NAME AS column_name,
@@ -60,7 +74,16 @@ def fetch_column_summary(conn, schema: str, table: str) -> list[dict[str, Any]]:
     return rows
 
 
-def introspect_database(db: Database, database_name: str) -> dict[str, Any]:
+def introspect_database(
+    db: Database,
+    database_name: str,
+    *,
+    schema_limit: int | None = 10,
+) -> dict[str, Any]:
+    """Introspect table sizes and optional column summaries.
+
+    schema_limit: max tables to describe (largest first). None = all tables.
+    """
     if (
         database_name.lower()
         == db.validate_sql_identifier(
@@ -74,9 +97,9 @@ def introspect_database(db: Database, database_name: str) -> dict[str, Any]:
 
     try:
         sizes = fetch_table_sizes(conn)
-        top_tables = sizes[:10]
+        describe_rows = sizes if schema_limit is None else sizes[:schema_limit]
         schemas: dict[str, list[dict[str, Any]]] = {}
-        for row in top_tables:
+        for row in describe_rows:
             key = f"{row['schema_name']}.{row['table_name']}"
             schemas[key] = fetch_column_summary(
                 conn, row["schema_name"], row["table_name"]
@@ -86,6 +109,7 @@ def introspect_database(db: Database, database_name: str) -> dict[str, Any]:
             "table_count": len(sizes),
             "tables": sizes,
             "top_10_schema": schemas,
+            "schema_table_count": len(schemas),
         }
     finally:
         conn.close()
@@ -99,12 +123,20 @@ def main() -> int:
         default="both",
     )
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--schema-limit",
+        type=int,
+        default=10,
+        help="Max tables to column-describe per DB (largest first). "
+        "Use 0 for all tables.",
+    )
     args = parser.parse_args()
 
     from config import Config
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     db = Database()
+    schema_limit: int | None = None if args.schema_limit == 0 else args.schema_limit
 
     targets: list[tuple[str, str]] = []
     if args.database in ("smartbusiness", "both"):
@@ -114,7 +146,9 @@ def main() -> int:
 
     all_schema: dict[str, Any] = {}
     for slug, name in targets:
-        payload = introspect_database(db, name)
+        # SmartBusiness is small: always describe every table for decision docs.
+        limit = None if slug == "smartbusiness" else schema_limit
+        payload = introspect_database(db, name, schema_limit=limit)
         out_file = args.output_dir / f"{slug}_table_sizes.json"
         out_file.write_text(
             json.dumps(payload, indent=2, default=str), encoding="utf-8"
