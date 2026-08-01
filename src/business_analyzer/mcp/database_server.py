@@ -764,7 +764,7 @@ def _build_server():
 
 def _register_tools(srv: Any) -> None:
     """Backward-compatible no-op: tools are registered inside ``_build_server``."""
-    del srv  # registration happens at construction time
+    _ = srv
 
 
 # ---------------------------------------------------------------------------

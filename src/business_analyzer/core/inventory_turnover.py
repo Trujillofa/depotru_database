@@ -98,12 +98,10 @@ def classify_turnover_band(
         and dias_cobertura > overstock_days
     ):
         return BAND_SOBRESTOCK
-    if dias_cobertura is not None:
-        return BAND_SALUDABLE
-    # Demand below min_velocity but > 0 and positive stock
-    if stock > 0 and venta_comercial_nd > 0:
-        return BAND_SALUDABLE
-    return BAND_MUERTO
+    # Positive stock with commercial demand remaining after quiebre /
+    # baja / sobrestock checks (or cover days unavailable). Stock<=0 and
+    # no_sales already returned above.
+    return BAND_SALUDABLE
 
 
 def commercial_cover_days(stock: float, venta_diaria: float) -> Optional[float]:

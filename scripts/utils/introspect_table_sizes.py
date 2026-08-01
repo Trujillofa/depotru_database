@@ -82,7 +82,7 @@ def introspect_database(
 ) -> dict[str, Any]:
     """Introspect table sizes and optional column summaries.
 
-    schema_limit: max tables to describe (largest first). None = all tables.
+    schema_limit: max tables to describe (largest first). None or <=0 = all tables.
     """
     if (
         database_name.lower()
@@ -97,7 +97,9 @@ def introspect_database(
 
     try:
         sizes = fetch_table_sizes(conn)
-        describe_rows = sizes if schema_limit is None else sizes[:schema_limit]
+        describe_rows = (
+            sizes if schema_limit is None or schema_limit <= 0 else sizes[:schema_limit]
+        )
         schemas: dict[str, list[dict[str, Any]]] = {}
         for row in describe_rows:
             key = f"{row['schema_name']}.{row['table_name']}"
@@ -128,11 +130,14 @@ def main() -> int:
         type=int,
         default=10,
         help="Max tables to column-describe per DB (largest first). "
-        "Use 0 for all tables.",
+        "Use 0 for all tables. Negative values are rejected.",
     )
     args = parser.parse_args()
 
     from config import Config
+
+    if args.schema_limit < 0:
+        parser.error("--schema-limit must be >= 0 (use 0 for all tables)")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     db = Database()

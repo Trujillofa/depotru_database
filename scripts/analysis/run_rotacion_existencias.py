@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date
 from pathlib import Path
 from typing import List, Optional
 
@@ -23,7 +22,6 @@ from business_analyzer.core.inventory_turnover import (  # noqa: E402
 from business_analyzer.reports.rotacion_existencias import (  # noqa: E402
     build_rotacion_result,
     default_as_of_date,
-    render_markdown,
 )
 
 

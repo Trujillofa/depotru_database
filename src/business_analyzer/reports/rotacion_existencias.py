@@ -85,18 +85,28 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         "",
         f"- **Fecha referencia:** {report.get('as_of_date')}",
         f"- **Ventana demanda comercial:** {days} días",
-        f"- **Modo demanda:** `{report.get('demand_mode')}` — "
-        f"{report.get('demand_mode_label')}",
+        (
+            f"- **Modo demanda:** `{report.get('demand_mode')}` — "
+            f"{report.get('demand_mode_label')}"
+        ),
         f"- **Bodegas comerciales:** {', '.join(f'`{c}`' for c in allow)}",
-        f"- **Exclusión demanda comercial (DocumentosCodigo):** "
-        f"{', '.join(f'`{c}`' for c in excluded)}",
-        "- **Fuentes stock:** `InvDetalleExistencias`; "
-        "demanda: J3 `InvVentas`/`InvVentasDetalle` (modo warehouse) o "
-        "`banco_datos` (modo company)",
-        "- **Cobertura:** `Stock / Venta_Diaria_Comercial` "
-        "(misma bodega en modo warehouse)",
-        f"- **Filas detalle (SKU×bodega):** "
-        f"{_fmt_num(report.get('detail_row_count'), 0)}",
+        (
+            "- **Exclusión demanda comercial (DocumentosCodigo):** "
+            + ", ".join(f"`{c}`" for c in excluded)
+        ),
+        (
+            "- **Fuentes stock:** `InvDetalleExistencias`; "
+            "demanda: J3 `InvVentas`/`InvVentasDetalle` (modo warehouse) o "
+            "`banco_datos` (modo company)"
+        ),
+        (
+            "- **Cobertura:** `Stock / Venta_Diaria_Comercial` "
+            "(misma bodega en modo warehouse)"
+        ),
+        (
+            f"- **Filas detalle (SKU×bodega):** "
+            f"{_fmt_num(report.get('detail_row_count'), 0)}"
+        ),
         "",
     ]
     notes = report.get("data_quality_notes") or []
@@ -112,27 +122,39 @@ def render_markdown(report: Mapping[str, Any]) -> str:
             "## Resumen ejecutivo",
             "",
             f"- **Filas con stock o venta:** {_fmt_num(summary.get('Filas'), 0)}",
-            f"- **Posiciones con stock > 0:** "
-            f"{_fmt_num(summary.get('SKUs_Con_Stock'), 0)}",
-            f"- **Posiciones con venta comercial:** "
-            f"{_fmt_num(summary.get('SKUs_Con_Venta'), 0)}",
+            (
+                f"- **Posiciones con stock > 0:** "
+                f"{_fmt_num(summary.get('SKUs_Con_Stock'), 0)}"
+            ),
+            (
+                f"- **Posiciones con venta comercial:** "
+                f"{_fmt_num(summary.get('SKUs_Con_Venta'), 0)}"
+            ),
             f"- **QUIEBRE:** {_fmt_num(summary.get('QUIEBRE'), 0)}",
             f"- **BAJA_COBERTURA:** {_fmt_num(summary.get('BAJA_COBERTURA'), 0)}",
             f"- **SALUDABLE:** {_fmt_num(summary.get('SALUDABLE'), 0)}",
             f"- **SOBRESTOCK:** {_fmt_num(summary.get('SOBRESTOCK'), 0)}",
             f"- **MUERTO:** {_fmt_num(summary.get('MUERTO'), 0)}",
-            f"- **Stock total (unidades):** "
-            f"{_fmt_num(summary.get('Stock_Total_Unidades'), 0)}",
-            f"- **Stock en MUERTO:** "
-            f"{_fmt_num(summary.get('Stock_Unidades_Muerto'), 0)} "
-            f"({_fmt_num(100 * float(summary.get('Share_Unidades_Muerto') or 0), 1)}%)",
-            f"- **Mediana días cobertura (con demanda):** "
-            f"{_fmt_num(summary.get('Mediana_Dias_Cobertura'), 1)}",
+            (
+                f"- **Stock total (unidades):** "
+                f"{_fmt_num(summary.get('Stock_Total_Unidades'), 0)}"
+            ),
+            (
+                f"- **Stock en MUERTO:** "
+                f"{_fmt_num(summary.get('Stock_Unidades_Muerto'), 0)} "
+                f"({_fmt_num(100 * float(summary.get('Share_Unidades_Muerto') or 0), 1)}%)"
+            ),
+            (
+                f"- **Mediana días cobertura (con demanda):** "
+                f"{_fmt_num(summary.get('Mediana_Dias_Cobertura'), 1)}"
+            ),
             "",
             "## A — Comprar / transferir (QUIEBRE, 1 fila por SKU = peor bodega)",
             "",
-            "| SKU | Producto | Bodega | Stock | Venta comercial | Días cob. | "
-            "Salida física YTD |",
+            (
+                "| SKU | Producto | Bodega | Stock | Venta comercial | Días cob. | "
+                "Salida física YTD |"
+            ),
             "|---|---|---|---:|---:|---:|---:|",
         ]
     )
@@ -170,8 +192,10 @@ def render_markdown(report: Mapping[str, Any]) -> str:
             "",
             "## C — Traslados sugeridos (superávit → quiebre, mismo SKU)",
             "",
-            "| SKU | Producto | Desde | Hacia | Stock origen | Stock dest. | "
-            "Venta dest. | Sugerido mover |",
+            (
+                "| SKU | Producto | Desde | Hacia | Stock origen | Stock dest. | "
+                "Venta dest. | Sugerido mover |"
+            ),
             "|---|---|---|---|---:|---:|---:|---:|",
         ]
     )
@@ -223,19 +247,29 @@ def render_markdown(report: Mapping[str, Any]) -> str:
             "",
             "## Metodología",
             "",
-            "1. **Demanda comercial** (`Venta_Comercial_Nd`): "
-            f"modo `{report.get('demand_mode')}` — {report.get('demand_mode_label')}. "
-            f"Exclusión de venta `{', '.join(excluded)}` "
-            "(no aplica a salidas de inventario TS/ISC).",
-            "2. **Stock**: `InvDetalleExistencias.SaldoActual` (incluye negativos); "
-            f"solo bodegas {', '.join(allow)}.",
-            "3. **Salida física YTD**: suma mensual `SalidasEne…Dic` en existencias "
-            "(movimientos de inventario ya contados en el ERP).",
-            "4. **Banderas:** QUIEBRE (stock≤0 o cob.<7d con demanda en esa bodega), "
-            "BAJA_COBERTURA (7–30d), SALUDABLE (30–120d), SOBRESTOCK (>120d), "
-            "MUERTO (stock>0 sin venta comercial en esa bodega).",
-            "5. La exclusión de códigos de documento es un **filtro de hechos de venta**, "
-            "no implica que esos documentos no muevan inventario físico.",
+            (
+                "1. **Demanda comercial** (`Venta_Comercial_Nd`): "
+                f"modo `{report.get('demand_mode')}` — {report.get('demand_mode_label')}. "
+                f"Exclusión de venta `{', '.join(excluded)}` "
+                "(no aplica a salidas de inventario TS/ISC)."
+            ),
+            (
+                "2. **Stock**: `InvDetalleExistencias.SaldoActual` (incluye negativos); "
+                f"solo bodegas {', '.join(allow)}."
+            ),
+            (
+                "3. **Salida física YTD**: suma mensual `SalidasEne…Dic` en existencias "
+                "(movimientos de inventario ya contados en el ERP)."
+            ),
+            (
+                "4. **Banderas:** QUIEBRE (stock≤0 o cob.<7d con demanda en esa bodega), "
+                "BAJA_COBERTURA (7–30d), SALUDABLE (30–120d), SOBRESTOCK (>120d), "
+                "MUERTO (stock>0 sin venta comercial en esa bodega)."
+            ),
+            (
+                "5. La exclusión de códigos de documento es un **filtro de hechos de venta**, "
+                "no implica que esos documentos no muevan inventario físico."
+            ),
             "",
         ]
     )
@@ -276,7 +310,7 @@ def build_rotacion_result(
     if fmt_norm not in ("html", "pdf", "markdown", "json"):
         return {
             "status": "error",
-            "message": f"Formato inválido: {fmt!r} (use html, pdf o markdown)",
+            "message": (f"Formato inválido: {fmt!r} (use html, pdf, markdown o json)"),
         }
 
     try:

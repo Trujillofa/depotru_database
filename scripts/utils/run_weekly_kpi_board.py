@@ -85,6 +85,7 @@ def _run_rotacion(as_of: str) -> Path:
         top_n=50,
         output_dir=out_dir,
         write_json=True,
+        fmt="html",
     )
     if result.get("status") == "error":
         raise RuntimeError(result.get("message", "Rotación failed"))

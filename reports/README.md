@@ -7,7 +7,7 @@ This directory contains generated analysis reports and their supporting data.
 ### Markdown Reports (Root Level)
 - `DATABASE_TABLE_DECISION_SUMMARY.md` - Live inventory of every SmartBusiness + J3System table with decision-oriented explanations (refresh via `scripts/utils/introspect_table_sizes.py`)
 - `DATABASE_TABLE_ANALYSIS_RECOMMENDATIONS.md` - Strategic recommendations companion (2026-07-07 baseline)
-- `ROTACION_EXISTENCIAS_<date>.md` - Commercial warehouse inventory turnover (quiebre, muerto, transfers); CLI or **Vanna UI → Informes recomendados** at `http://127.0.0.1:8084/`
+- `ROTACION_EXISTENCIAS_<date>.html` (also `.pdf` / `.md` via CLI) - Commercial warehouse inventory turnover (quiebre, muerto, transfers); CLI or **Vanna UI → Informes recomendados** at `http://127.0.0.1:8084/`
 - `CRITICAL_INVENTORY_<date>.md` - Risk shortlist (Q13); commercial WH + warehouse demand
 - `ANALYSIS_REPORT.md` - Comprehensive analysis across all categories
 - `KPI_CONTROL_BOARD_TEMPLATE.md` - Weekly KPI operating template (scorecard + actions)
@@ -58,4 +58,5 @@ python scripts/utils/run_weekly_kpi_board.py --print-cron
 ```
 
 This creates a historical series like `KPI_CONTROL_BOARD_2026_W16.md`.
-With `--with-rotacion`, also writes `ROTACION_EXISTENCIAS_<week_end>.md`.
+With `--with-rotacion`, also writes `ROTACION_EXISTENCIAS_<week_end>.html`
+(and companion `.json` when JSON sidecar is enabled).

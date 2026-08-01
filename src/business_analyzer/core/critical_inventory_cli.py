@@ -68,22 +68,31 @@ def render_markdown(report: dict) -> str:
         "",
         f"- **Fecha referencia:** {report['as_of_date']}",
         f"- **Ventana velocidad:** {report.get('velocity_days', 90)} días",
-        "- **Fuentes:** `InvDetalleExistencias` + demanda `InvVentas`/`InvVentasDetalle` "
-        "(bodegas comerciales ALM/SUR/BD6/DIS/FLO)",
+        (
+            "- **Fuentes:** `InvDetalleExistencias` + demanda "
+            "`InvVentas`/`InvVentasDetalle` "
+            "(bodegas comerciales ALM/SUR/BD6/DIS/FLO)"
+        ),
         "- **Cobertura (días):** `SaldoActual / venta_diaria` (misma bodega)",
         "",
         "## Resumen",
         "",
-        f"- **SKUs críticos (top {len(report.get('critical_skus', []))}):** "
-        f"{int(summary.get('SKUs_Criticos', 0)):,}".replace(",", "."),
-        f"- **Quiebre <7 días cobertura:** {int(summary.get('SKUs_Quiebre_7d', 0)):,}".replace(
-            ",", "."
+        (
+            f"- **SKUs críticos (top {len(report.get('critical_skus', []))}):** "
+            + f"{int(summary.get('SKUs_Criticos', 0)):,}".replace(",", ".")
         ),
-        f"- **Stock ≤10 unidades:** {int(summary.get('SKUs_Stock_Bajo', 0)):,}".replace(
-            ",", "."
+        (
+            f"- **Quiebre <7 días cobertura:** "
+            + f"{int(summary.get('SKUs_Quiebre_7d', 0)):,}".replace(",", ".")
         ),
-        f"- **Promedio días cobertura:** "
-        f"{float(summary.get('Promedio_Dias_Cobertura', 0)):.1f}",
+        (
+            f"- **Stock ≤10 unidades:** "
+            + f"{int(summary.get('SKUs_Stock_Bajo', 0)):,}".replace(",", ".")
+        ),
+        (
+            f"- **Promedio días cobertura:** "
+            f"{float(summary.get('Promedio_Dias_Cobertura', 0)):.1f}"
+        ),
         "",
         "## Top SKUs críticos (menor cobertura primero)",
         "",

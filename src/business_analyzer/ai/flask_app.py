@@ -9,6 +9,7 @@ builds charts from numeric data instead of stale LLM plotly code.
 
 from __future__ import annotations
 
+import logging
 import traceback
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -466,10 +467,16 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                     demand_mode=demand_mode,
                     fmt=fmt,
                 )
-            except Exception as exc:
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "generate_rotacion failed as_of=%s fmt=%s", as_of_date, fmt
+                )
                 result = {
                     "status": "error",
-                    "message": f"Error generando rotación de existencias: {exc}",
+                    "message": (
+                        "Error generando rotación de existencias. "
+                        "Revise la fecha/formato o los logs del servidor."
+                    ),
                 }
 
             if result.get("status") == "error":

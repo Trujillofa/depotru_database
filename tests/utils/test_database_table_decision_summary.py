@@ -7,12 +7,9 @@ SmartBusiness table and documents the live J3 inventory shape.
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from unittest.mock import MagicMock
-
-import pytest
 
 from scripts.utils.introspect_table_sizes import (
     fetch_column_summary,
