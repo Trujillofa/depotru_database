@@ -164,6 +164,35 @@ GOLDEN_QUESTIONS = [
         ["invventas", "invventasdetalle"],
         id="sika_brand_at_warehouse_flo",
     ),
+    pytest.param(
+        "top 10 productos de alfa",
+        [
+            "left join productos_adicional",
+            "bd.marca collate database_default",
+            "pa.producto_marca collate database_default",
+            "'alfa'",
+            "like '%alfa%'",
+            "group by bd.articulosnombre",
+        ],
+        ["categoria, '')))) = 'alfa'"],
+        id="alfa_brand_top_products",
+    ),
+    pytest.param(
+        "top 10 productos de la marca alfa",
+        [
+            "left join productos_adicional",
+            "'alfa'",
+            "like '%alfa%'",
+        ],
+        ["categoria, '')))) = 'la marca alfa'", "= 'la marca alfa'"],
+        id="alfa_marca_phrase_brand_routing",
+    ),
+    pytest.param(
+        "top 10 productos de la marca trebol",
+        ["left join productos_adicional", "'trebol'", "like '%trebol%'"],
+        ["categoria", "= 'la marca trebol'"],
+        id="unknown_brand_via_marca_phrase",
+    ),
 ]
 
 

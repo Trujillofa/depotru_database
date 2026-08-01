@@ -72,25 +72,38 @@ if str(Path(__file__).resolve().parents[2] / "src") not in sys.path:
 # Lazy import of MCP SDK so that "import business_analyzer.mcp" or the package
 # can succeed even if the user only installed the core (non-mcp) extras.
 _mcp_available = False
+Server: Any = None
+stdio_server: Any = None
+types: Any = None
 try:
-    import mcp.types as types
-    from mcp.server import Server
-    from mcp.server.stdio import stdio_server
+    import mcp.types as _mcp_types
+    from mcp.server import Server as _McpServer
+    from mcp.server.stdio import stdio_server as _stdio_server
 
+    types = _mcp_types
+    Server = _McpServer
+    stdio_server = _stdio_server
     _mcp_available = True
 except ImportError:
-    Server = None  # type: ignore
-    stdio_server = None  # type: ignore
-    types = None  # type: ignore
+    pass
 
 # Reuse the project's robust Database layer (NCX, validation, pooling, J3 helper, etc.)
+Database: Any = None
+ConnectionType: Any = None
+CoreConfig: Any = None
+LegacyConfig: Any = None
 try:
-    from business_analyzer.core.database import Config as CoreConfig
-    from business_analyzer.core.database import ConnectionType, Database
+    from business_analyzer.core.database import Config as _CoreConfig
+    from business_analyzer.core.database import ConnectionType as _ConnectionType
+    from business_analyzer.core.database import Database as _Database
 
-    LegacyConfig = None
+    CoreConfig = _CoreConfig
+    ConnectionType = _ConnectionType
+    Database = _Database
     try:
-        from business_analyzer.core.config import Config as LegacyConfig
+        from business_analyzer.core.config import Config as _LegacyConfig
+
+        LegacyConfig = _LegacyConfig
     except Exception:
         pass  # Legacy config optional; core.database already provides Config
 except (ImportError, ModuleNotFoundError) as import_err:
@@ -102,10 +115,6 @@ except (ImportError, ModuleNotFoundError) as import_err:
         "Falling back to minimal standalone DB helper (limited NCX/J3 support).",
         file=sys.stderr,
     )
-    Database = None  # type: ignore
-    ConnectionType = None  # type: ignore
-    CoreConfig = None
-    LegacyConfig = None
 
 # ---------------------------------------------------------------------------
 # Configuration (same spirit as the main project)
@@ -229,7 +238,7 @@ def _get_database(target_db: Optional[str] = None) -> Any:
                 )
 
             # Fallback
-            import pymssql  # type: ignore
+            import pymssql
 
             db_name = target_db or cfg["database"]
             conn = pymssql.connect(
@@ -328,397 +337,434 @@ def _execute_on_db_with_timeout(
 # ---------------------------------------------------------------------------
 
 
-def _build_server():
-    """Construct the MCP server and register all tools. Only called when we actually start the MCP process."""
-    if not _mcp_available or Server is None:
-        raise RuntimeError(
-            "MCP SDK not available. Install with: pip install mcp (or use 'uv --with mcp ...')"
-        )
-
-    srv = Server("depotru-database-mcp")
-
-    @srv.list_tools()
-    async def list_tools() -> List[types.Tool]:
-        tools = [
-            types.Tool(
-                name="query",
-                description=(
-                    "Execute a read-oriented SQL query against the configured MSSQL instance. "
-                    "Supports both SmartBusiness and J3System via the 'database' parameter. "
-                    "Queries are validated for basic safety."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "sql": {
-                            "type": "string",
-                            "description": "The SQL to execute (SELECT/WITH preferred)",
-                        },
-                        "database": {
-                            "type": "string",
-                            "description": "Target database name (e.g. 'SmartBusiness' or 'J3System'). Defaults to DB_NAME env.",
-                            "default": None,
-                        },
-                        "params": {
-                            "type": "array",
-                            "items": {"type": ["string", "number", "boolean", "null"]},
-                            "description": "Optional parameters for parameterized query (recommended).",
-                            "default": None,
-                        },
-                    },
-                    "required": ["sql"],
-                },
+def _tool_definitions() -> List[Any]:
+    """Shared tool catalog for MCP 1.x and 2.x registration."""
+    return [
+        types.Tool(
+            name="query",
+            description=(
+                "Execute a read-oriented SQL query against the configured MSSQL instance. "
+                "Supports both SmartBusiness and J3System via the 'database' parameter. "
+                "Queries are validated for basic safety."
             ),
-            types.Tool(
-                name="list_tables",
-                description="List tables in the target database (useful for schema exploration).",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "database": {
-                            "type": "string",
-                            "description": "Target database",
-                            "default": None,
-                        },
-                        "schema": {
-                            "type": "string",
-                            "description": "Schema filter (default: dbo)",
-                            "default": "dbo",
-                        },
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sql": {
+                        "type": "string",
+                        "description": "The SQL to execute (SELECT/WITH preferred)",
+                    },
+                    "database": {
+                        "type": "string",
+                        "description": (
+                            "Target database name (e.g. 'SmartBusiness' or "
+                            "'J3System'). Defaults to DB_NAME env."
+                        ),
+                        "default": None,
+                    },
+                    "params": {
+                        "type": "array",
+                        "items": {"type": ["string", "number", "boolean", "null"]},
+                        "description": (
+                            "Optional parameters for parameterized query (recommended)."
+                        ),
+                        "default": None,
                     },
                 },
-            ),
-            types.Tool(
-                name="describe_table",
-                description="Return column metadata for a table (name, type, nullable, etc.).",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "table": {
-                            "type": "string",
-                            "description": "Table name (without schema)",
-                        },
-                        "database": {
-                            "type": "string",
-                            "description": "Target database",
-                            "default": None,
-                        },
-                        "schema": {"type": "string", "default": "dbo"},
+                "required": ["sql"],
+            },
+        ),
+        types.Tool(
+            name="list_tables",
+            description="List tables in the target database (useful for schema exploration).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "database": {
+                        "type": "string",
+                        "description": "Target database",
+                        "default": None,
                     },
-                    "required": ["table"],
-                },
-            ),
-            types.Tool(
-                name="query_smartbusiness",
-                description=(
-                    "Convenience wrapper for SmartBusiness. Automatically injects the common "
-                    "DocumentosCodigo exclusion (XY, AS, TS, etc.) used throughout the project. "
-                    "Great for ad-hoc sales queries without forgetting the filter."
-                ),
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "sql": {
-                            "type": "string",
-                            "description": "Base SELECT ... FROM banco_datos ... (the exclusion will be added if missing)",
-                        },
-                        "params": {
-                            "type": "array",
-                            "items": {"type": ["string", "number"]},
-                            "default": None,
-                        },
+                    "schema": {
+                        "type": "string",
+                        "description": "Schema filter (default: dbo)",
+                        "default": "dbo",
                     },
-                    "required": ["sql"],
                 },
+            },
+        ),
+        types.Tool(
+            name="describe_table",
+            description="Return column metadata for a table (name, type, nullable, etc.).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "table": {
+                        "type": "string",
+                        "description": "Table name (without schema)",
+                    },
+                    "database": {
+                        "type": "string",
+                        "description": "Target database",
+                        "default": None,
+                    },
+                    "schema": {"type": "string", "default": "dbo"},
+                },
+                "required": ["table"],
+            },
+        ),
+        types.Tool(
+            name="query_smartbusiness",
+            description=(
+                "Convenience wrapper for SmartBusiness. Automatically injects the common "
+                "DocumentosCodigo exclusion (XY, AS, TS, etc.) used throughout the project. "
+                "Great for ad-hoc sales queries without forgetting the filter."
             ),
-            types.Tool(
-                name="health",
-                description="Lightweight health check / ping for MCP clients and monitoring. Does not require DB connectivity.",
-                inputSchema={"type": "object", "properties": {}},
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sql": {
+                        "type": "string",
+                        "description": (
+                            "Base SELECT ... FROM banco_datos ... "
+                            "(the exclusion will be added if missing)"
+                        ),
+                    },
+                    "params": {
+                        "type": "array",
+                        "items": {"type": ["string", "number"]},
+                        "default": None,
+                    },
+                },
+                "required": ["sql"],
+            },
+        ),
+        types.Tool(
+            name="health",
+            description=(
+                "Lightweight health check / ping for MCP clients and monitoring. "
+                "Does not require DB connectivity."
             ),
-        ]
-        return tools
-
-    return srv
+            inputSchema={"type": "object", "properties": {}},
+        ),
+    ]
 
 
 def _normalize_database(db_name: Optional[str]) -> str:
     if not db_name:
         cfg = _get_db_config()
-        return cfg["database"]
+        return str(cfg["database"])
     if db_name.lower() in ("j3", "j3system", "j3_system"):
         cfg = _get_db_config()
-        return cfg["j3_database"]
-    return db_name
+        return str(cfg["j3_database"])
+    return str(db_name)
 
 
-def _register_tools(srv):
-    """Register all call_tool handlers on the given server instance."""
+def _apply_rate_limit(name: str) -> None:
+    """M-NEW-3: basic rate limiting - thread safe (M2)."""
+    now = time.time()
+    with _rate_limit_lock:
+        calls = _rate_limit.get(name, [])
+        calls = [t for t in calls if now - t < _RATE_LIMIT_WINDOW]
+        if len(calls) >= _MAX_CALLS_PER_WINDOW:
+            raise ValueError(
+                f"Rate limit exceeded for tool '{name}'. Please slow down requests."
+            )
+        calls.append(now)
+        _rate_limit[name] = calls
 
-    @srv.call_tool()
-    async def call_tool(
-        name: str, arguments: Dict[str, Any]
-    ) -> List[types.TextContent]:
-        # M-NEW-3: basic rate limiting - thread safe (M2)
-        now = time.time()
-        with _rate_limit_lock:
-            calls = _rate_limit.get(name, [])
-            calls = [t for t in calls if now - t < _RATE_LIMIT_WINDOW]
-            if len(calls) >= _MAX_CALLS_PER_WINDOW:
+
+async def _dispatch_tool(name: str, arguments: Dict[str, Any]) -> List[Any]:
+    """Execute a named tool; returns a list of TextContent blocks."""
+    _apply_rate_limit(name)
+
+    try:
+        if name == "query":
+            sql: str = arguments["sql"]
+            db_name = _normalize_database(arguments.get("database"))
+            params = tuple(arguments.get("params") or ())
+
+            if not _is_safe_sql(sql):
                 raise ValueError(
-                    f"Rate limit exceeded for tool '{name}'. Please slow down requests."
-                )
-            calls.append(now)
-            _rate_limit[name] = calls
-
-        try:
-            if name == "query":
-                sql: str = arguments["sql"]
-                db_name = _normalize_database(arguments.get("database"))
-                params = tuple(arguments.get("params") or ())
-
-                if not _is_safe_sql(sql):
-                    raise ValueError(
-                        "Query rejected for safety. Only SELECT/WITH/EXEC allowed unless ALLOW_WRITE=1."
-                    )
-
-                db = _get_database(db_name)
-                try:
-                    rows = _execute_on_db_with_timeout(db, sql, params)
-                    original_count = len(rows)
-                    limit = 500
-                    truncated = original_count > limit
-                    if truncated:
-                        rows = rows[:limit]
-                    return [
-                        types.TextContent(
-                            type="text",
-                            text=json.dumps(
-                                {
-                                    "rows": rows,
-                                    "row_count": len(rows),
-                                    "original_row_count": original_count,
-                                    "truncated": truncated,
-                                    "limit": limit,
-                                    "note": (
-                                        "Result truncated to first 500 rows"
-                                        if truncated
-                                        else None
-                                    ),
-                                },
-                                default=str,
-                                indent=2,
-                            ),
-                        )
-                    ]
-                finally:
-                    _close_db(db)
-
-            elif name == "list_tables":
-                db_name = _normalize_database(arguments.get("database"))
-                schema = arguments.get("schema", "dbo")
-                db = _get_database(db_name)
-                try:
-                    sql = """
-                        SELECT TABLE_NAME
-                        FROM INFORMATION_SCHEMA.TABLES
-                        WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = %s
-                        ORDER BY TABLE_NAME
-                    """
-                    rows = _execute_on_db_with_timeout(db, sql, (schema,))
-                    tables = [r.get("TABLE_NAME") or r.get("table_name") for r in rows]
-                    return [
-                        types.TextContent(
-                            type="text",
-                            text=json.dumps(
-                                {
-                                    "database": db_name,
-                                    "schema": schema,
-                                    "tables": tables,
-                                }
-                            ),
-                        )
-                    ]
-                finally:
-                    _close_db(db)
-
-            elif name == "describe_table":
-                table = arguments["table"]
-                db_name = _normalize_database(arguments.get("database"))
-                schema = arguments.get("schema", "dbo")
-                # M-NEW-4: validate table (and schema) identifier to prevent injection
-                if Database is not None:
-                    table = Database.validate_sql_identifier(table, "table")
-                    if schema:
-                        schema = Database.validate_sql_identifier(schema, "schema")
-                db = _get_database(db_name)
-                try:
-                    sql = """
-                        SELECT
-                            COLUMN_NAME as name,
-                            DATA_TYPE as type,
-                            IS_NULLABLE as nullable,
-                            CHARACTER_MAXIMUM_LENGTH as max_length,
-                            COLUMN_DEFAULT as default_value
-                        FROM INFORMATION_SCHEMA.COLUMNS
-                        WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
-                        ORDER BY ORDINAL_POSITION
-                    """
-                    rows = _execute_on_db_with_timeout(db, sql, (schema, table))
-                    # Normalize for consistency (M-5)
-                    normalized = []
-                    for r in rows:
-                        normalized.append(
-                            {
-                                "name": r.get("name") or r.get("COLUMN_NAME"),
-                                "type": r.get("type") or r.get("DATA_TYPE"),
-                                "nullable": (
-                                    r.get("nullable") or r.get("IS_NULLABLE") or "YES"
-                                ).upper()
-                                == "YES",
-                                "max_length": r.get("max_length")
-                                or r.get("CHARACTER_MAXIMUM_LENGTH"),
-                                "default": r.get("default_value")
-                                or r.get("COLUMN_DEFAULT"),
-                            }
-                        )
-                    return [
-                        types.TextContent(
-                            type="text",
-                            text=json.dumps(
-                                {
-                                    "database": db_name,
-                                    "table": f"{schema}.{table}",
-                                    "columns": normalized,
-                                },
-                                default=str,
-                                indent=2,
-                            ),
-                        )
-                    ]
-                finally:
-                    _close_db(db)
-
-            elif name == "query_smartbusiness":
-                base_sql: str = arguments["sql"]
-                params = tuple(arguments.get("params") or ())
-                excluded = getattr(
-                    CoreConfig, "EXCLUDED_DOCUMENT_CODES", None
-                ) or getattr(
-                    LegacyConfig,
-                    "EXCLUDED_DOCUMENT_CODES",
-                    ["XY", "AS", "TS", "YX", "ISC"],
+                    "Query rejected for safety. Only SELECT/WITH/EXEC allowed unless ALLOW_WRITE=1."
                 )
 
-                # CRITICAL: must call safety check to prevent bypass (C-NEW-1)
-                if not _is_safe_sql(base_sql):
-                    raise ValueError(
-                        "Query rejected for safety. Only SELECT/WITH/EXEC allowed unless ALLOW_WRITE=1."
-                    )
-
-                sql_lower = base_sql.lower()
-                applied = False
-                note = "SmartBusiness common document filter was applied where appropriate."
-
-                if "documentoscodigo" not in sql_lower and "banco_datos" in sql_lower:
-                    # H-2: strip comments and strings before clause detection to avoid false negatives
-                    def _sanitize_for_clause_check(s: str) -> str:
-                        # remove -- line comments
-                        s = re.sub(r"--.*?(?:\n|$)", " ", s, flags=re.MULTILINE)
-                        # remove /* */ block comments
-                        s = re.sub(r"/\*.*?\*/", " ", s, flags=re.DOTALL)
-                        # M1: improved string stripping for MSSQL:
-                        # - optional N prefix for unicode strings N'...'
-                        # - handle ''' (triple quote edge, e.g. 'foo''\'bar' or literal ''')
-                        # - roughly handle doubled quotes
-                        s = re.sub(r"(?i:N)?'(?:''|[^'])*(?:'(?!'))?", "'__STR__'", s)
-                        # replace double-quoted identifiers (optional N too, though rare)
-                        s = re.sub(r'(?i:N)?"(?:""|[^"])*(?:"(?!"))?', '"__ID__"', s)
-                        return " " + s.lower() + " "
-
-                    sanitized = _sanitize_for_clause_check(base_sql)
-                    # Check for clauses that would make blind WHERE append produce invalid SQL
-                    complex_clauses = [
-                        " group by ",
-                        " order by ",
-                        " having ",
-                        " limit ",
-                    ]
-                    has_complex = any(c in sanitized for c in complex_clauses)
-
-                    if has_complex:
-                        note = (
-                            "Complex query with GROUP BY/ORDER BY/HAVING/LIMIT detected. "
-                            "Auto-injection skipped to avoid invalid SQL. "
-                            "Include 'AND DocumentosCodigo NOT IN (...)' yourself in the WHERE clause."
-                        )
-                    else:
-                        base_sql = base_sql.rstrip().rstrip(";")
-                        if "where" in sql_lower:
-                            inject = f" AND DocumentosCodigo NOT IN ({', '.join(['%s'] * len(excluded))})"
-                            base_sql = base_sql + inject
-                        else:
-                            inject = f" WHERE DocumentosCodigo NOT IN ({', '.join(['%s'] * len(excluded))})"
-                            base_sql = base_sql + inject
-                        params = params + tuple(excluded)
-                        applied = True
-
-                db = _get_database("SmartBusiness")
-                try:
-                    rows = _execute_on_db_with_timeout(db, base_sql, params)
-                    original_count = len(rows)
-                    limit = 500
-                    truncated = original_count > limit
-                    if truncated:
-                        rows = rows[:limit]
-                    return [
-                        types.TextContent(
-                            type="text",
-                            text=json.dumps(
-                                {
-                                    "rows": rows,
-                                    "row_count": len(rows),
-                                    "original_row_count": original_count,
-                                    "truncated": truncated,
-                                    "limit": limit,
-                                    "applied_excludes": excluded if applied else [],
-                                    "note": note,
-                                },
-                                default=str,
-                                indent=2,
-                            ),
-                        )
-                    ]
-                finally:
-                    _close_db(db)
-
-            elif name == "health":
-                cfg = _get_db_config()
+            db = _get_database(db_name)
+            try:
+                rows = _execute_on_db_with_timeout(db, sql, params)
+                original_count = len(rows)
+                limit = 500
+                truncated = original_count > limit
+                if truncated:
+                    rows = rows[:limit]
                 return [
                     types.TextContent(
                         type="text",
                         text=json.dumps(
                             {
-                                "status": "ok",
-                                "server": "depotru-database-mcp",
-                                "primary_database": cfg["database"],
-                                "j3_database": cfg["j3_database"],
-                                "write_mode": _is_write_allowed(),
-                                "query_timeout_sec": QUERY_TIMEOUT_SEC,
+                                "rows": rows,
+                                "row_count": len(rows),
+                                "original_row_count": original_count,
+                                "truncated": truncated,
+                                "limit": limit,
+                                "note": (
+                                    "Result truncated to first 500 rows"
+                                    if truncated
+                                    else None
+                                ),
+                            },
+                            default=str,
+                            indent=2,
+                        ),
+                    )
+                ]
+            finally:
+                _close_db(db)
+
+        if name == "list_tables":
+            db_name = _normalize_database(arguments.get("database"))
+            schema = arguments.get("schema", "dbo")
+            db = _get_database(db_name)
+            try:
+                sql = """
+                    SELECT TABLE_NAME
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = %s
+                    ORDER BY TABLE_NAME
+                """
+                rows = _execute_on_db_with_timeout(db, sql, (schema,))
+                tables = [r.get("TABLE_NAME") or r.get("table_name") for r in rows]
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "database": db_name,
+                                "schema": schema,
+                                "tables": tables,
                             }
                         ),
                     )
                 ]
+            finally:
+                _close_db(db)
 
-            else:
-                raise ValueError(f"Unknown tool: {name}")
+        if name == "describe_table":
+            table = arguments["table"]
+            db_name = _normalize_database(arguments.get("database"))
+            schema = arguments.get("schema", "dbo")
+            # M-NEW-4: validate table (and schema) identifier to prevent injection
+            if Database is not None:
+                table = Database.validate_sql_identifier(table, "table")
+                if schema:
+                    schema = Database.validate_sql_identifier(schema, "schema")
+            db = _get_database(db_name)
+            try:
+                sql = """
+                    SELECT
+                        COLUMN_NAME as name,
+                        DATA_TYPE as type,
+                        IS_NULLABLE as nullable,
+                        CHARACTER_MAXIMUM_LENGTH as max_length,
+                        COLUMN_DEFAULT as default_value
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+                    ORDER BY ORDINAL_POSITION
+                """
+                rows = _execute_on_db_with_timeout(db, sql, (schema, table))
+                # Normalize for consistency (M-5)
+                normalized = []
+                for r in rows:
+                    normalized.append(
+                        {
+                            "name": r.get("name") or r.get("COLUMN_NAME"),
+                            "type": r.get("type") or r.get("DATA_TYPE"),
+                            "nullable": (
+                                r.get("nullable") or r.get("IS_NULLABLE") or "YES"
+                            ).upper()
+                            == "YES",
+                            "max_length": r.get("max_length")
+                            or r.get("CHARACTER_MAXIMUM_LENGTH"),
+                            "default": r.get("default_value")
+                            or r.get("COLUMN_DEFAULT"),
+                        }
+                    )
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "database": db_name,
+                                "table": f"{schema}.{table}",
+                                "columns": normalized,
+                            },
+                            default=str,
+                            indent=2,
+                        ),
+                    )
+                ]
+            finally:
+                _close_db(db)
 
-        except Exception as e:
+        if name == "query_smartbusiness":
+            base_sql: str = arguments["sql"]
+            params = tuple(arguments.get("params") or ())
+            excluded = getattr(CoreConfig, "EXCLUDED_DOCUMENT_CODES", None) or getattr(
+                LegacyConfig,
+                "EXCLUDED_DOCUMENT_CODES",
+                ["XY", "AS", "TS", "YX", "ISC"],
+            )
+
+            # CRITICAL: must call safety check to prevent bypass (C-NEW-1)
+            if not _is_safe_sql(base_sql):
+                raise ValueError(
+                    "Query rejected for safety. Only SELECT/WITH/EXEC allowed unless ALLOW_WRITE=1."
+                )
+
+            sql_lower = base_sql.lower()
+            applied = False
+            note = "SmartBusiness common document filter was applied where appropriate."
+
+            if "documentoscodigo" not in sql_lower and "banco_datos" in sql_lower:
+                # H-2: strip comments and strings before clause detection
+                def _sanitize_for_clause_check(s: str) -> str:
+                    s = re.sub(r"--.*?(?:\n|$)", " ", s, flags=re.MULTILINE)
+                    s = re.sub(r"/\*.*?\*/", " ", s, flags=re.DOTALL)
+                    s = re.sub(r"(?i:N)?'(?:''|[^'])*(?:'(?!'))?", "'__STR__'", s)
+                    s = re.sub(r'(?i:N)?"(?:""|[^"])*(?:"(?!"))?', '"__ID__"', s)
+                    return " " + s.lower() + " "
+
+                sanitized = _sanitize_for_clause_check(base_sql)
+                complex_clauses = [
+                    " group by ",
+                    " order by ",
+                    " having ",
+                    " limit ",
+                ]
+                has_complex = any(c in sanitized for c in complex_clauses)
+
+                if has_complex:
+                    note = (
+                        "Complex query with GROUP BY/ORDER BY/HAVING/LIMIT detected. "
+                        "Auto-injection skipped to avoid invalid SQL. "
+                        "Include 'AND DocumentosCodigo NOT IN (...)' yourself in the WHERE clause."
+                    )
+                else:
+                    base_sql = base_sql.rstrip().rstrip(";")
+                    if "where" in sql_lower:
+                        inject = (
+                            " AND DocumentosCodigo NOT IN ("
+                            + ", ".join(["%s"] * len(excluded))
+                            + ")"
+                        )
+                        base_sql = base_sql + inject
+                    else:
+                        inject = (
+                            " WHERE DocumentosCodigo NOT IN ("
+                            + ", ".join(["%s"] * len(excluded))
+                            + ")"
+                        )
+                        base_sql = base_sql + inject
+                    params = params + tuple(excluded)
+                    applied = True
+
+            db = _get_database("SmartBusiness")
+            try:
+                rows = _execute_on_db_with_timeout(db, base_sql, params)
+                original_count = len(rows)
+                limit = 500
+                truncated = original_count > limit
+                if truncated:
+                    rows = rows[:limit]
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "rows": rows,
+                                "row_count": len(rows),
+                                "original_row_count": original_count,
+                                "truncated": truncated,
+                                "limit": limit,
+                                "applied_excludes": excluded if applied else [],
+                                "note": note,
+                            },
+                            default=str,
+                            indent=2,
+                        ),
+                    )
+                ]
+            finally:
+                _close_db(db)
+
+        if name == "health":
+            cfg = _get_db_config()
             return [
                 types.TextContent(
-                    type="text", text=json.dumps({"error": str(e), "tool": name})
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "status": "ok",
+                            "server": "depotru-database-mcp",
+                            "primary_database": cfg["database"],
+                            "j3_database": cfg["j3_database"],
+                            "write_mode": _is_write_allowed(),
+                            "query_timeout_sec": QUERY_TIMEOUT_SEC,
+                        }
+                    ),
                 )
             ]
+
+        raise ValueError(f"Unknown tool: {name}")
+
+    except Exception as e:
+        return [
+            types.TextContent(
+                type="text", text=json.dumps({"error": str(e), "tool": name})
+            )
+        ]
+
+
+def _build_server():
+    """Construct the MCP server and register tools (MCP SDK 1.x and 2.x)."""
+    if not _mcp_available or Server is None:
+        raise RuntimeError(
+            "MCP SDK not available. Install with: pip install mcp (or use 'uv --with mcp ...')"
+        )
+
+    # MCP 1.x used decorator registration (list_tools / call_tool).
+    # MCP 2.x removed those decorators in favor of on_* constructor handlers.
+    if hasattr(Server, "list_tools") and hasattr(Server, "call_tool"):
+        srv = Server("depotru-database-mcp")
+
+        @srv.list_tools()
+        async def list_tools() -> List[Any]:
+            return _tool_definitions()
+
+        @srv.call_tool()
+        async def call_tool(name: str, arguments: Dict[str, Any]) -> List[Any]:
+            return await _dispatch_tool(name, arguments or {})
+
+        return srv
+
+    async def on_list_tools(_ctx: Any, _params: Any) -> Any:
+        return types.ListToolsResult(tools=_tool_definitions())
+
+    async def on_call_tool(_ctx: Any, params: Any) -> Any:
+        args = dict(getattr(params, "arguments", None) or {})
+        content = await _dispatch_tool(params.name, args)
+        return types.CallToolResult(content=content)
+
+    return Server(
+        "depotru-database-mcp",
+        on_list_tools=on_list_tools,
+        on_call_tool=on_call_tool,
+    )
+
+
+def _register_tools(srv: Any) -> None:
+    """Backward-compatible no-op: tools are registered inside ``_build_server``."""
+    _ = srv
 
 
 # ---------------------------------------------------------------------------

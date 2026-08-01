@@ -46,72 +46,56 @@ def cloudflared_bin() -> str:
 
 
 def sync_magento_base_url(url: str) -> None:
+    """Push quick-tunnel URL into Magento dt_assistant/general/base_url over SSH."""
     if os.getenv("BFF_SYNC_MAGENTO", "0").strip() not in ("1", "true", "yes"):
         return
+
+    # Reuse shared Magento SSH config (password via MAGENTO_SSH_PASSWORD or
+    # sibling depositotrujillo.co/config/env.php; key optional with passphrase).
+    src = REPO / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
     try:
-        import paramiko  # type: ignore[import-untyped]
-    except ImportError:
-        log("paramiko missing — skip Magento sync")
+        from business_analyzer.core.website_stock_magento_ssh import (  # noqa: WPS433
+            MagentoSshConfig,
+            _ssh_connect,
+            _ssh_exec,
+        )
+    except ImportError as exc:
+        log(f"Magento SSH helpers unavailable — skip base_url sync: {exc}")
         return
 
-    host = os.getenv("MAGENTO_SSH_HOST", "174.142.205.80")
-    user = os.getenv("MAGENTO_SSH_USER", "deptrujillob2c")
-    key_path = Path(
-        os.getenv(
-            "MAGENTO_SSH_KEY",
-            str(Path.home() / "Projects/depositotrujillo.co/.ssh/id_rsa"),
+    cfg = MagentoSshConfig.from_env()
+    if not cfg:
+        log(
+            "Magento SSH not configured "
+            "(set MAGENTO_SSH_PASSWORD or MAGENTO_ENV_PHP / config/env.php) "
+            "— skip base_url sync"
         )
-    )
-    pass_file = Path(
-        os.getenv(
-            "MAGENTO_SSH_KEY_PASSPHRASE_FILE",
-            str(Path.home() / "Projects/depositotrujillo.co/.ssh/MAGENTO_SSH_KEY.txt"),
-        )
-    )
-    passphrase = os.getenv("MAGENTO_SSH_KEY_PASSPHRASE", "").strip()
-    if not passphrase and pass_file.is_file():
-        for ln in [x.strip() for x in pass_file.read_text().splitlines() if x.strip()]:
-            if ln.upper().startswith("MAGENTO") or ln.startswith(
-                ("Generating", "Enter", "Your ", "The ", "SHA256", "+", "|")
-            ):
-                continue
-            if "key pair" in ln or ln.startswith("ssh-"):
-                continue
-            if len(ln) < 40:
-                passphrase = ln
-                break
-    if not key_path.is_file() or not passphrase:
-        log("Magento SSH key/passphrase not available — skip base_url sync")
         return
 
-    remote = "/home/deptrujillob2c/public_html"
+    # Basic URL safety: only allow https quick/named hostnames we control.
+    if not url.startswith("https://") or any(c in url for c in " \t\n\r'\";&|"):
+        log(f"Refusing to sync unsafe tunnel URL: {url!r}")
+        return
+
+    remote = cfg.magento_root
     try:
-        pkey = paramiko.RSAKey.from_private_key_file(str(key_path), password=passphrase)
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(
-            host,
-            username=user,
-            pkey=pkey,
-            allow_agent=False,
-            look_for_keys=False,
-            timeout=25,
-            auth_timeout=25,
-        )
+        client = _ssh_connect(cfg)
         cmds = [
-            f"cd {remote} && php bin/magento config:set dt_assistant/general/base_url '{url}'",
-            f"cd {remote} && php bin/magento config:set dt_assistant/general/enabled 1",
-            f"cd {remote} && php bin/magento cache:clean config full_page",
+            f"php bin/magento config:set dt_assistant/general/base_url '{url}'",
+            "php bin/magento config:set dt_assistant/general/enabled 1",
+            "php bin/magento cache:clean config full_page",
         ]
         for cmd in cmds:
-            _, stdout, stderr = client.exec_command(cmd, timeout=120)
-            code = stdout.channel.recv_exit_status()
+            _out, err, code = _ssh_exec(client, cmd, working_dir=remote, timeout=120)
             if code != 0:
-                log(f"Magento cmd failed ({code}): {stderr.read().decode()[-300:]}")
+                log(f"Magento cmd failed ({code}): {err[-300:]}")
             else:
-                log(
-                    f"Magento OK: {cmd.split('config:set')[-1][:60] if 'config:set' in cmd else 'cache'}"
+                label = (
+                    cmd.split("config:set")[-1][:60] if "config:set" in cmd else "cache"
                 )
+                log(f"Magento OK: {label}")
         client.close()
         log(f"Synced Magento base_url → {url}")
     except Exception as exc:  # noqa: BLE001

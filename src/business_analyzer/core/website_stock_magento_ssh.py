@@ -121,14 +121,19 @@ class MagentoSshConfig:
         passphrase = (os.getenv("MAGENTO_SSH_KEY_PASSPHRASE") or "").strip() or None
         pf = (os.getenv("MAGENTO_SSH_KEY_PASSPHRASE_FILE") or "").strip()
         if pf and Path(pf).is_file() and not passphrase:
-            passphrase = Path(pf).read_text(encoding="utf-8").strip() or None
+            passphrase = _read_passphrase_file(Path(pf))
         root = (
             os.getenv("MAGENTO_ROOT") or MAGENTO_ROOT_DEFAULT
         ).strip() or MAGENTO_ROOT_DEFAULT
         port = int(os.getenv("MAGENTO_SSH_PORT") or "22")
 
-        # Fallback: sibling depositotrujillo.co config/env.php
-        if (not password and not key) or not host or not user:
+        # Fill gaps from sibling depositotrujillo.co config/env.php.
+        # Always merge missing password even when a key path is set — the key may
+        # be encrypted, missing a passphrase, or not authorized on the host.
+        needs_env_php = (
+            not password or not host or not user or not key or not passphrase
+        )
+        if needs_env_php:
             env_php = os.getenv("MAGENTO_ENV_PHP") or os.path.expanduser(
                 "~/Projects/depositotrujillo.co/config/env.php"
             )
@@ -136,8 +141,9 @@ class MagentoSshConfig:
             if parsed:
                 host = host or parsed.get("host") or ""
                 user = user or parsed.get("username") or ""
-                password = password or parsed.get("password")
+                password = password or parsed.get("password") or None
                 key = key or parsed.get("key_filename")
+                passphrase = passphrase or parsed.get("key_passphrase") or None
                 root = parsed.get("magento_root") or root
 
         if not host or not user:
@@ -153,6 +159,31 @@ class MagentoSshConfig:
             port=port,
             magento_root=root,
         )
+
+
+def _read_passphrase_file(path: Path) -> Optional[str]:
+    """Extract a passphrase from a notes file (skip banners / public keys)."""
+    try:
+        lines = [
+            x.strip()
+            for x in path.read_text(encoding="utf-8").splitlines()
+            if x.strip()
+        ]
+    except OSError:
+        return None
+    for ln in lines:
+        if ln.upper().startswith("MAGENTO") or ln.startswith(
+            ("Generating", "Enter", "Your ", "The ", "SHA256", "+", "|")
+        ):
+            continue
+        if "key pair" in ln or ln.startswith("ssh-"):
+            continue
+        # Prefer short secrets; multi-line dumps are usually not the passphrase alone.
+        if 1 <= len(ln) < 200:
+            return ln
+    # Fallback: whole file (single-line passphrase files)
+    blob = path.read_text(encoding="utf-8").strip()
+    return blob or None
 
 
 def _load_env_php_ssh(path: str) -> Optional[Dict[str, Optional[str]]]:
@@ -173,11 +204,16 @@ def _load_env_php_ssh(path: str) -> Optional[Dict[str, Optional[str]]]:
         server = cfg.get("server") or {}
         magento = cfg.get("magento") or {}
         key_raw = str(server.get("key_filename") or "").strip()
+        password = str(
+            server.get("password") or server.get("ssh_password") or ""
+        ).strip()
+        key_pass = str(server.get("key_passphrase") or "").strip()
         return {
             "host": str(server.get("host") or ""),
             "username": str(server.get("username") or ""),
-            "password": str(server.get("password") or ""),
+            "password": password or None,
             "key_filename": key_raw or None,
+            "key_passphrase": key_pass or None,
             "magento_root": str(magento.get("root_path") or MAGENTO_ROOT_DEFAULT),
         }
     except Exception as exc:  # noqa: BLE001
@@ -205,26 +241,33 @@ def _ssh_connect(cfg: MagentoSshConfig):
         "allow_agent": False,
         "compress": True,
     }
-    if cfg.key_filename:
+    if cfg.key_filename and Path(cfg.key_filename).is_file():
         try:
-            pkey = paramiko.RSAKey.from_private_key_file(
-                cfg.key_filename, password=cfg.key_passphrase
-            )
-            kwargs["pkey"] = pkey
-        except Exception:
-            try:
-                pkey = paramiko.Ed25519Key.from_private_key_file(
+            # OpenSSH / RSA / Ed25519 — prefer modern loader when available.
+            if hasattr(paramiko, "PKey") and hasattr(paramiko.PKey, "from_path"):
+                pkey = paramiko.PKey.from_path(
                     cfg.key_filename, password=cfg.key_passphrase
                 )
-                kwargs["pkey"] = pkey
-            except Exception as exc:
-                if cfg.password:
-                    logger.warning("SSH key unusable (%s); using password", exc)
-                    kwargs["password"] = cfg.password
-                else:
-                    raise
+            else:
+                try:
+                    pkey = paramiko.RSAKey.from_private_key_file(
+                        cfg.key_filename, password=cfg.key_passphrase
+                    )
+                except Exception:
+                    pkey = paramiko.Ed25519Key.from_private_key_file(
+                        cfg.key_filename, password=cfg.key_passphrase
+                    )
+            kwargs["pkey"] = pkey
+        except Exception as exc:
+            if cfg.password:
+                logger.warning("SSH key unusable (%s); using password", exc)
+                kwargs["password"] = cfg.password
+            else:
+                raise
     elif cfg.password:
         kwargs["password"] = cfg.password
+    else:
+        raise RuntimeError("Magento SSH: no usable key file and no password configured")
     client.connect(**kwargs)
     return client
 

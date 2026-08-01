@@ -9,6 +9,7 @@ from business_analyzer.reports.kpi_control_board import (
     iso_weeks_in_year,
     last_completed_iso_week,
 )
+from business_analyzer.reports.rotacion_existencias import default_as_of_date
 
 MONTH_NAMES_ES: Dict[int, str] = {
     1: "Enero",
@@ -120,6 +121,16 @@ def get_recommended_report_templates() -> List[Dict[str, Any]]:
             "period_type": "week",
             "template": {"report_kind": "kpi_control_board"},
         },
+        {
+            "id": "rotacion-existencias",
+            "title": "Rotación de Existencias",
+            "description": (
+                "HTML/PDF con insights: quiebre, capital atrapado y traslados "
+                "(bodegas ALM/SUR/BD6/DIS/FLO; demanda por bodega)."
+            ),
+            "period_type": "as_of_date",
+            "template": {"report_kind": "rotacion_existencias"},
+        },
     ]
 
 
@@ -128,6 +139,7 @@ def get_recommended_reports(*, today: Optional[date] = None) -> List[Dict[str, A
     default_year, default_month = previous_calendar_month(today=today)
     reports: List[Dict[str, Any]] = []
     default_iso_year, default_iso_week = last_completed_iso_week(today=today)
+    as_of = default_as_of_date(today=today)
     for entry in get_recommended_report_templates():
         if entry.get("period_type") == "week":
             reports.append(
@@ -137,6 +149,17 @@ def get_recommended_reports(*, today: Optional[date] = None) -> List[Dict[str, A
                         "type": "generate_kpi_board",
                         "iso_year": default_iso_year,
                         "iso_week": default_iso_week,
+                    },
+                }
+            )
+            continue
+        if entry.get("period_type") == "as_of_date":
+            reports.append(
+                {
+                    **entry,
+                    "action": {
+                        "type": "generate_rotacion",
+                        "as_of_date": as_of,
                     },
                 }
             )
@@ -163,6 +186,7 @@ def recommended_reports_payload(*, today: Optional[date] = None) -> Dict[str, An
         "default_iso_year": default_iso_year,
         "default_iso_week": default_iso_week,
         "max_iso_week": iso_weeks_in_year(default_iso_year),
+        "default_as_of_date": default_as_of_date(today=today),
         "default_format": "html",
         "format_options": FORMAT_OPTIONS,
         "month_names": {str(k): v for k, v in MONTH_NAMES_ES.items()},
@@ -327,7 +351,7 @@ body.informes-layout #app {
 RECOMMENDED_REPORTS_PANEL_HTML = """
 <aside id="informes-recomendados" class="informes-recomendados" aria-label="Informes recomendados">
   <h2>Informes recomendados</h2>
-  <p class="informes-subtitle">Informes mensuales (mes/año/formato) o KPI semanal (año/semana ISO).</p>
+  <p class="informes-subtitle">Informes mensuales, KPI semanal o rotación de existencias (fecha).</p>
   <div id="informes-recomendados-list" class="informes-recomendados-list" role="list"></div>
   <p id="informes-recomendados-status" class="informes-recomendados-status" aria-live="polite"></p>
 </aside>
@@ -396,8 +420,24 @@ RECOMMENDED_REPORTS_JS = """
     return response.json();
   }
 
+  async function triggerRotacion(asOfDate, fmt) {
+    const response = await fetch("/api/v0/generate_rotacion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        as_of_date: asOfDate,
+        format: fmt || "html",
+      }),
+    });
+    return response.json();
+  }
+
   function handleGenerateResult(result) {
-    if (result.type === "manager_report" || result.type === "kpi_board") {
+    if (
+      result.type === "manager_report" ||
+      result.type === "kpi_board" ||
+      result.type === "rotacion"
+    ) {
       setStatus(shortStatus(result), false);
       if (result.download_url) window.open(result.download_url, "_blank");
       return;
@@ -411,6 +451,79 @@ RECOMMENDED_REPORTS_JS = """
       return;
     }
     setStatus("Respuesta inesperada del servidor.", true);
+  }
+
+  function renderAsOfDateCard(report, defaults) {
+    const card = document.createElement("div");
+    card.className = "informe-card";
+    card.setAttribute("role", "listitem");
+    card.dataset.reportId = report.id;
+
+    const title = document.createElement("span");
+    title.className = "informe-card-title";
+    title.textContent = report.title;
+
+    const desc = document.createElement("span");
+    desc.className = "informe-card-desc";
+    desc.textContent = report.description;
+
+    const period = document.createElement("div");
+    period.className = "informe-period";
+
+    const dateInput = document.createElement("input");
+    dateInput.type = "date";
+    dateInput.className = "informe-as-of";
+    dateInput.value = String(defaults.as_of_date || "");
+    dateInput.setAttribute("aria-label", "Fecha de referencia");
+
+    const formatSelect = document.createElement("select");
+    formatSelect.className = "informe-format";
+    formatSelect.setAttribute("aria-label", "Formato del informe de rotación");
+    [
+      { value: "html", label: "HTML" },
+      { value: "pdf", label: "PDF" },
+    ].forEach((opt) => {
+      const option = document.createElement("option");
+      option.value = opt.value;
+      option.textContent = opt.label;
+      if (opt.value === "html") option.selected = true;
+      formatSelect.appendChild(option);
+    });
+
+    const generateBtn = document.createElement("button");
+    generateBtn.type = "button";
+    generateBtn.className = "informe-generate-btn";
+    generateBtn.textContent = "Generar rotación";
+
+    period.appendChild(dateInput);
+    period.appendChild(formatSelect);
+    period.appendChild(generateBtn);
+
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(period);
+    listEl.appendChild(card);
+
+    generateBtn.addEventListener("click", async () => {
+      const asOf = (dateInput.value || "").trim();
+      if (!asOf || !/^\\d{4}-\\d{2}-\\d{2}$/.test(asOf)) {
+        setStatus("Indica una fecha válida (YYYY-MM-DD).", true);
+        return;
+      }
+      const fmt = formatSelect.value || "html";
+      card.classList.add("is-busy");
+      generateBtn.disabled = true;
+      setStatus("Generando rotación de existencias (" + fmt.toUpperCase() + ")…", false);
+      try {
+        const result = await triggerRotacion(asOf, fmt);
+        handleGenerateResult(result);
+      } catch (err) {
+        setStatus("No se pudo contactar el servidor.", true);
+      } finally {
+        card.classList.remove("is-busy");
+        generateBtn.disabled = false;
+      }
+    });
   }
 
   function renderWeekCard(report, defaults) {
@@ -485,6 +598,10 @@ RECOMMENDED_REPORTS_JS = """
   function renderCard(report, defaults, monthNames, formatOptions) {
     if (report.period_type === "week") {
       renderWeekCard(report, defaults);
+      return;
+    }
+    if (report.period_type === "as_of_date") {
+      renderAsOfDateCard(report, defaults);
       return;
     }
     const card = document.createElement("div");
@@ -590,6 +707,11 @@ RECOMMENDED_REPORTS_JS = """
         { value: "html", label: "HTML" },
         { value: "pdf", label: "PDF" },
       ];
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yyyy = yesterday.getFullYear();
+      const mm = String(yesterday.getMonth() + 1).padStart(2, "0");
+      const dd = String(yesterday.getDate()).padStart(2, "0");
       const defaults = {
         year: (data && data.default_year) || new Date().getFullYear(),
         month: (data && data.default_month) || new Date().getMonth() || 12,
@@ -597,6 +719,8 @@ RECOMMENDED_REPORTS_JS = """
         iso_year: (data && data.default_iso_year) || new Date().getFullYear(),
         iso_week: (data && data.default_iso_week) || 1,
         max_iso_week: (data && data.max_iso_week) || 53,
+        as_of_date:
+          (data && data.default_as_of_date) || yyyy + "-" + mm + "-" + dd,
       };
       if (!reports.length) {
         setStatus("No hay informes recomendados configurados.", true);

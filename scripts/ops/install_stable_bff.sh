@@ -24,7 +24,7 @@ if ! grep -q '^PLATFORM_API_KEYS=' "${BFF_DIR}/env.bff" 2>/dev/null; then
   echo "PLATFORM_API_KEYS=storefront-dt-assistant-2026:public" >> "${BFF_DIR}/env.bff"
 fi
 
-# Magento sync defaults for quick tunnel
+# Magento sync defaults for quick tunnel (password via env.php, same as stock sync)
 if ! grep -q '^BFF_SYNC_MAGENTO=' "${BFF_DIR}/env.bff" 2>/dev/null; then
   cat >> "${BFF_DIR}/env.bff" <<EOF
 
@@ -32,9 +32,13 @@ BFF_TUNNEL_MODE=quick
 BFF_SYNC_MAGENTO=1
 MAGENTO_SSH_HOST=174.142.205.80
 MAGENTO_SSH_USER=deptrujillob2c
-MAGENTO_SSH_KEY=${HOME}/Projects/depositotrujillo.co/.ssh/id_rsa
-MAGENTO_SSH_KEY_PASSPHRASE_FILE=${HOME}/Projects/depositotrujillo.co/.ssh/MAGENTO_SSH_KEY.txt
+MAGENTO_ENV_PHP=${HOME}/Projects/depositotrujillo.co/config/env.php
 EOF
+fi
+
+# Older installs pointed at a missing passphrase file — ensure env.php fallback exists
+if ! grep -q '^MAGENTO_ENV_PHP=' "${BFF_DIR}/env.bff" 2>/dev/null; then
+  echo "MAGENTO_ENV_PHP=${HOME}/Projects/depositotrujillo.co/config/env.php" >> "${BFF_DIR}/env.bff"
 fi
 
 install -m 644 "${BFF_DIR}/depotru-bff.service" "${UNIT_DIR}/depotru-bff.service"

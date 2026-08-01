@@ -455,6 +455,7 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         catalog = (
             "pavco",
             "euroceramica",
+            "alfa",
             "cemex",
             "sika",
             "acesco",
@@ -469,6 +470,12 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
             for name in catalog
             if name in lower and not (name == "sika" and branch_blocks_sika_brand)
         ]
+        marca_brand = re.search(r"\bmarcas?\s+([a-záéíóúñ][\wáéíóúñ]{2,})", lower)
+        if marca_brand:
+            token = marca_brand.group(1).upper()
+            if token not in {"MAS", "MÁS", "POR", "DE", "LA", "EL", "LOS", "LAS"}:
+                if token not in found:
+                    found.append(token)
         ventas_brand = re.search(
             r"ventas(?:\s+de|\s+del)?\s+(?:productos?\s+)?([a-záéíóúñ][\wáéíóúñ]{3,})",
             lower,
@@ -578,7 +585,18 @@ class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
         if not match:
             return None
         category = re.sub(r"\s+", " ", match.group(1).strip()).upper()
-        skip = {"SIKA", "ACESCO", "PAVCO", "CEMEX", "EUROCERAMICA", "HOLCIM"}
+        category_tokens = category.split()
+        if "MARCA" in category_tokens or "PROVEEDOR" in category_tokens:
+            return None
+        skip = {
+            "SIKA",
+            "ACESCO",
+            "PAVCO",
+            "CEMEX",
+            "EUROCERAMICA",
+            "ALFA",
+            "HOLCIM",
+        }
         if category in skip:
             return None
         return category or None
