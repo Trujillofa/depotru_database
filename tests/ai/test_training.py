@@ -283,7 +283,10 @@ class TestJ3SystemTraining:
         examples = dict(get_j3system_training_examples())
         inv_sql = examples["SKUs con inventario crítico y alta rotación en J3System"]
         assert "InvDetalleExistencias" in inv_sql
-        assert "banco_datos" in inv_sql
+        # Warehouse-level demand (not company-wide banco_datos) avoids false quiebres.
+        assert "InvVentasDetalle" in inv_sql
+        assert "AlmacenCodigo" in inv_sql
+        assert "banco_datos" not in inv_sql
         assert "Dias_Cobertura" in inv_sql
 
     def test_j3system_examples_include_otif(self):
