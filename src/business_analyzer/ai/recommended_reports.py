@@ -131,6 +131,16 @@ def get_recommended_report_templates() -> List[Dict[str, Any]]:
             "period_type": "as_of_date",
             "template": {"report_kind": "rotacion_existencias"},
         },
+        {
+            "id": "cartera-aging",
+            "title": "Cartera / Aging",
+            "description": (
+                "HTML/PDF: cartera total, mora por buckets, top vencidos, "
+                "concentración, sobre cupo y plan de cobranza 7 días."
+            ),
+            "period_type": "as_of_date",
+            "template": {"report_kind": "cartera_aging"},
+        },
     ]
 
 
@@ -154,11 +164,16 @@ def get_recommended_reports(*, today: Optional[date] = None) -> List[Dict[str, A
             )
             continue
         if entry.get("period_type") == "as_of_date":
+            kind = (entry.get("template") or {}).get("report_kind")
+            if kind == "cartera_aging":
+                action_type = "generate_cartera"
+            else:
+                action_type = "generate_rotacion"
             reports.append(
                 {
                     **entry,
                     "action": {
-                        "type": "generate_rotacion",
+                        "type": action_type,
                         "as_of_date": as_of,
                     },
                 }
@@ -351,7 +366,7 @@ body.informes-layout #app {
 RECOMMENDED_REPORTS_PANEL_HTML = """
 <aside id="informes-recomendados" class="informes-recomendados" aria-label="Informes recomendados">
   <h2>Informes recomendados</h2>
-  <p class="informes-subtitle">Informes mensuales, KPI semanal o rotación de existencias (fecha).</p>
+  <p class="informes-subtitle">Informes mensuales, KPI semanal, rotación o cartera (fecha).</p>
   <div id="informes-recomendados-list" class="informes-recomendados-list" role="list"></div>
   <p id="informes-recomendados-status" class="informes-recomendados-status" aria-live="polite"></p>
 </aside>
@@ -432,11 +447,24 @@ RECOMMENDED_REPORTS_JS = """
     return response.json();
   }
 
+  async function triggerCartera(asOfDate, fmt) {
+    const response = await fetch("/api/v0/generate_cartera", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        as_of_date: asOfDate,
+        format: fmt || "html",
+      }),
+    });
+    return response.json();
+  }
+
   function handleGenerateResult(result) {
     if (
       result.type === "manager_report" ||
       result.type === "kpi_board" ||
-      result.type === "rotacion"
+      result.type === "rotacion" ||
+      result.type === "cartera"
     ) {
       setStatus(shortStatus(result), false);
       if (result.download_url) window.open(result.download_url, "_blank");
@@ -459,6 +487,13 @@ RECOMMENDED_REPORTS_JS = """
     card.setAttribute("role", "listitem");
     card.dataset.reportId = report.id;
 
+    const kind =
+      (report.template && report.template.report_kind) ||
+      (report.action && report.action.type === "generate_cartera"
+        ? "cartera_aging"
+        : "rotacion_existencias");
+    const isCartera = kind === "cartera_aging";
+
     const title = document.createElement("span");
     title.className = "informe-card-title";
     title.textContent = report.title;
@@ -478,7 +513,10 @@ RECOMMENDED_REPORTS_JS = """
 
     const formatSelect = document.createElement("select");
     formatSelect.className = "informe-format";
-    formatSelect.setAttribute("aria-label", "Formato del informe de rotación");
+    formatSelect.setAttribute(
+      "aria-label",
+      isCartera ? "Formato del informe de cartera" : "Formato del informe de rotación"
+    );
     [
       { value: "html", label: "HTML" },
       { value: "pdf", label: "PDF" },
@@ -493,7 +531,7 @@ RECOMMENDED_REPORTS_JS = """
     const generateBtn = document.createElement("button");
     generateBtn.type = "button";
     generateBtn.className = "informe-generate-btn";
-    generateBtn.textContent = "Generar rotación";
+    generateBtn.textContent = isCartera ? "Generar cartera" : "Generar rotación";
 
     period.appendChild(dateInput);
     period.appendChild(formatSelect);
@@ -513,9 +551,16 @@ RECOMMENDED_REPORTS_JS = """
       const fmt = formatSelect.value || "html";
       card.classList.add("is-busy");
       generateBtn.disabled = true;
-      setStatus("Generando rotación de existencias (" + fmt.toUpperCase() + ")…", false);
+      setStatus(
+        isCartera
+          ? "Generando cartera / aging (" + fmt.toUpperCase() + ")…"
+          : "Generando rotación de existencias (" + fmt.toUpperCase() + ")…",
+        false
+      );
       try {
-        const result = await triggerRotacion(asOf, fmt);
+        const result = isCartera
+          ? await triggerCartera(asOf, fmt)
+          : await triggerRotacion(asOf, fmt);
         handleGenerateResult(result);
       } catch (err) {
         setStatus("No se pudo contactar el servidor.", true);

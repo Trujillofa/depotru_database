@@ -155,6 +155,34 @@ def rotacion_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any
     }
 
 
+def cartera_status_text(result: Dict[str, Any]) -> str:
+    as_of = result.get("as_of_date")
+    filename = Path(result["path"]).name if result.get("path") else None
+    if filename:
+        return f"✓ Cartera / aging lista — {as_of} ({filename})"
+    return f"✓ Cartera / aging — {as_of}"
+
+
+def cartera_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
+    status = result.get("status")
+    if status == "error":
+        return {
+            "type": "error",
+            "id": cache_id,
+            "error": result.get("message", "Error generando cartera / aging"),
+        }
+    return {
+        "type": "cartera",
+        "id": cache_id,
+        "text": result.get("message", ""),
+        "status_text": cartera_status_text(result),
+        "download_url": manager_report_download_path(result.get("path")),
+        "format": result.get("format", "html"),
+        "as_of_date": result.get("as_of_date"),
+        "insights_count": result.get("insights_count"),
+    }
+
+
 def manager_report_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
     """Serialize a manager report routing result for the Vanna web UI."""
     status = result.get("status")
@@ -485,6 +513,66 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             cache.set(id=cache_id, field="rotacion", value=result)
             return jsonify(rotacion_api_payload(result, cache_id))
 
+        @requires_auth
+        def generate_cartera(user):
+            as_of_date = flask.request.args.get("as_of_date")
+            top_n = flask.request.args.get("top_n", type=int)
+            fmt = flask.request.args.get("format", "html")
+            dso_days = flask.request.args.get("dso_days", type=int)
+
+            if flask.request.method == "POST":
+                body = flask.request.get_json(silent=True) or {}
+                as_of_date = body.get("as_of_date", as_of_date)
+                top_n = body.get("top_n", top_n)
+                fmt = body.get("format", fmt)
+                dso_days = body.get("dso_days", dso_days)
+
+            if not as_of_date:
+                return jsonify(
+                    {
+                        "type": "error",
+                        "error": "Indica as_of_date (YYYY-MM-DD) para cartera.",
+                    }
+                )
+
+            top_n = int(top_n) if top_n is not None else 25
+            dso_days = int(dso_days) if dso_days is not None else 30
+            fmt = str(fmt or "html").strip().lower()
+            cache_id = cache.generate_id(
+                as_of_date=as_of_date,
+                top_n=top_n,
+                dso_days=dso_days,
+                format=fmt,
+                report="cartera",
+            )
+
+            try:
+                from business_analyzer.reports.cartera_aging import build_cartera_result
+
+                result = build_cartera_result(
+                    as_of_date=str(as_of_date),
+                    top_n=top_n,
+                    dso_days=dso_days,
+                    fmt=fmt,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "generate_cartera failed as_of=%s fmt=%s", as_of_date, fmt
+                )
+                result = {
+                    "status": "error",
+                    "message": (
+                        "Error generando cartera / aging. "
+                        "Revise la fecha/formato o los logs del servidor."
+                    ),
+                }
+
+            if result.get("status") == "error":
+                return jsonify(cartera_api_payload(result, cache_id))
+
+            cache.set(id=cache_id, field="cartera", value=result)
+            return jsonify(cartera_api_payload(result, cache_id))
+
         @self.flask_app.route("/api/v0/recommended_reports", methods=["GET"])
         def recommended_reports():
             return jsonify(recommended_reports_payload())
@@ -519,6 +607,12 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             "/api/v0/generate_rotacion",
             endpoint="smart_generate_rotacion",
             view_func=generate_rotacion,
+            methods=["GET", "POST"],
+        )
+        self.flask_app.add_url_rule(
+            "/api/v0/generate_cartera",
+            endpoint="smart_generate_cartera",
+            view_func=generate_cartera,
             methods=["GET", "POST"],
         )
         self._patch_assets_js()
