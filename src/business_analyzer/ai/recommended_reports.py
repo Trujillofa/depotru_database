@@ -141,6 +141,16 @@ def get_recommended_report_templates() -> List[Dict[str, Any]]:
             "period_type": "as_of_date",
             "template": {"report_kind": "cartera_aging"},
         },
+        {
+            "id": "resumen-facturas",
+            "title": "Resumen de facturas",
+            "description": (
+                "Resumen comercial para el cliente: pega números de factura. "
+                "Totales, IVA, saldo y detalle de líneas (HTML/PDF)."
+            ),
+            "period_type": "invoices",
+            "template": {"report_kind": "invoice_summary"},
+        },
     ]
 
 
@@ -175,6 +185,17 @@ def get_recommended_reports(*, today: Optional[date] = None) -> List[Dict[str, A
                     "action": {
                         "type": action_type,
                         "as_of_date": as_of,
+                    },
+                }
+            )
+            continue
+        if entry.get("period_type") == "invoices":
+            reports.append(
+                {
+                    **entry,
+                    "action": {
+                        "type": "generate_invoice_summary",
+                        "format": "html",
                     },
                 }
             )
@@ -293,13 +314,22 @@ body.dark #informes-recomendados {
 .informe-month,
 .informe-year,
 .informe-week,
-.informe-format {
+.informe-format,
+.informe-sede,
+.informe-invoices {
   font-size: 0.78rem;
   border: 1px solid #cbd5e1;
   border-radius: 0.4rem;
   padding: 0.3rem 0.45rem;
   background: #f8fafc;
   color: #1e293b;
+}
+.informe-invoices {
+  width: 100%;
+  min-height: 4.2rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1.35;
 }
 .informe-month { flex: 1 1 6.5rem; min-width: 0; }
 .informe-year { width: 4.5rem; }
@@ -308,7 +338,9 @@ body.dark #informes-recomendados {
 .dark .informe-month,
 .dark .informe-year,
 .dark .informe-week,
-.dark .informe-format {
+.dark .informe-format,
+.dark .informe-sede,
+.dark .informe-invoices {
   background: #0f172a;
   border-color: #475569;
   color: #e2e8f0;
@@ -366,7 +398,7 @@ body.informes-layout #app {
 RECOMMENDED_REPORTS_PANEL_HTML = """
 <aside id="informes-recomendados" class="informes-recomendados" aria-label="Informes recomendados">
   <h2>Informes recomendados</h2>
-  <p class="informes-subtitle">Informes mensuales, KPI semanal, rotación o cartera (fecha).</p>
+  <p class="informes-subtitle">Informes mensuales, KPI, rotación, cartera o resumen de facturas.</p>
   <div id="informes-recomendados-list" class="informes-recomendados-list" role="list"></div>
   <p id="informes-recomendados-status" class="informes-recomendados-status" aria-live="polite"></p>
 </aside>
@@ -459,12 +491,27 @@ RECOMMENDED_REPORTS_JS = """
     return response.json();
   }
 
+  async function triggerInvoiceSummary(invoices, fmt, documentCode) {
+    const payload = {
+      invoices: invoices,
+      format: fmt || "html",
+    };
+    if (documentCode) payload.document_code = documentCode;
+    const response = await fetch("/api/v0/generate_invoice_summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.json();
+  }
+
   function handleGenerateResult(result) {
     if (
       result.type === "manager_report" ||
       result.type === "kpi_board" ||
       result.type === "rotacion" ||
-      result.type === "cartera"
+      result.type === "cartera" ||
+      result.type === "invoice_summary"
     ) {
       setStatus(shortStatus(result), false);
       if (result.download_url) window.open(result.download_url, "_blank");
@@ -571,6 +618,96 @@ RECOMMENDED_REPORTS_JS = """
     });
   }
 
+  function renderInvoicesCard(report) {
+    const card = document.createElement("div");
+    card.className = "informe-card";
+    card.setAttribute("role", "listitem");
+    card.dataset.reportId = report.id;
+
+    const title = document.createElement("span");
+    title.className = "informe-card-title";
+    title.textContent = report.title;
+
+    const desc = document.createElement("span");
+    desc.className = "informe-card-desc";
+    desc.textContent = report.description;
+
+    const period = document.createElement("div");
+    period.className = "informe-period";
+
+    const invoicesInput = document.createElement("textarea");
+    invoicesInput.className = "informe-invoices";
+    invoicesInput.rows = 4;
+    invoicesInput.placeholder = "447748, 447777, 448060…";
+    invoicesInput.setAttribute("aria-label", "Números de factura");
+
+    const sedeSelect = document.createElement("select");
+    sedeSelect.className = "informe-sede";
+    sedeSelect.setAttribute("aria-label", "Sede de las facturas");
+    [
+      { value: "", label: "Todas las sedes" },
+      { value: "FED", label: "Almacén Principal" },
+      { value: "FEF", label: "Sika Center" },
+      { value: "FET", label: "Calle 5" },
+    ].forEach((opt) => {
+      const option = document.createElement("option");
+      option.value = opt.value;
+      option.textContent = opt.label;
+      sedeSelect.appendChild(option);
+    });
+
+    const formatSelect = document.createElement("select");
+    formatSelect.className = "informe-format";
+    formatSelect.setAttribute("aria-label", "Formato del resumen");
+    [
+      { value: "html", label: "HTML" },
+      { value: "pdf", label: "PDF" },
+    ].forEach((opt) => {
+      const option = document.createElement("option");
+      option.value = opt.value;
+      option.textContent = opt.label;
+      if (opt.value === "html") option.selected = true;
+      formatSelect.appendChild(option);
+    });
+
+    const generateBtn = document.createElement("button");
+    generateBtn.type = "button";
+    generateBtn.className = "informe-generate-btn";
+    generateBtn.textContent = "Generar resumen";
+
+    period.appendChild(invoicesInput);
+    period.appendChild(sedeSelect);
+    period.appendChild(formatSelect);
+    period.appendChild(generateBtn);
+
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(period);
+    listEl.appendChild(card);
+
+    generateBtn.addEventListener("click", async () => {
+      const invoices = (invoicesInput.value || "").trim();
+      if (!invoices) {
+        setStatus("Pega al menos un número de factura.", true);
+        return;
+      }
+      const fmt = formatSelect.value || "html";
+      const documentCode = (sedeSelect.value || "").trim();
+      card.classList.add("is-busy");
+      generateBtn.disabled = true;
+      setStatus("Generando resumen de facturas (" + fmt.toUpperCase() + ")…", false);
+      try {
+        const result = await triggerInvoiceSummary(invoices, fmt, documentCode);
+        handleGenerateResult(result);
+      } catch (err) {
+        setStatus("No se pudo contactar el servidor.", true);
+      } finally {
+        card.classList.remove("is-busy");
+        generateBtn.disabled = false;
+      }
+    });
+  }
+
   function renderWeekCard(report, defaults) {
     const card = document.createElement("div");
     card.className = "informe-card";
@@ -647,6 +784,10 @@ RECOMMENDED_REPORTS_JS = """
     }
     if (report.period_type === "as_of_date") {
       renderAsOfDateCard(report, defaults);
+      return;
+    }
+    if (report.period_type === "invoices") {
+      renderInvoicesCard(report);
       return;
     }
     const card = document.createElement("div");

@@ -80,7 +80,7 @@ class TestRecommendedReportsCatalog:
     def test_payload_includes_period_defaults_and_month_names(self):
         payload = recommended_reports_payload(today=date(2024, 12, 15))
         assert "reports" in payload
-        assert len(payload["reports"]) == 8
+        assert len(payload["reports"]) == 9
         assert payload["default_year"] == 2024
         assert payload["default_month"] == 11
         assert payload["month_names"]["12"] == "Diciembre"
@@ -124,7 +124,9 @@ class TestRecommendedReportsCatalog:
         assert "generate_kpi_board" in patched
         assert "generate_rotacion" in patched
         assert "generate_cartera" in patched
+        assert "generate_invoice_summary" in patched
         assert "informe-as-of" in patched
+        assert "informe-invoices" in patched
 
 
 @pytest.fixture
@@ -181,6 +183,9 @@ class TestRecommendedReportsFlaskRoutes:
         assert car_entry["period_type"] == "as_of_date"
         assert car_entry["action"]["type"] == "generate_cartera"
         assert "as_of_date" in car_entry["action"]
+        inv_entry = next(r for r in payload["reports"] if r["id"] == "resumen-facturas")
+        assert inv_entry["period_type"] == "invoices"
+        assert inv_entry["action"]["type"] == "generate_invoice_summary"
 
         evidence = tmp_path / "recommended-reports.json"
         evidence.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
