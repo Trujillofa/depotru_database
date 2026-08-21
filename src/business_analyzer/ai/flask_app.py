@@ -183,6 +183,38 @@ def cartera_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]
     }
 
 
+def invoice_summary_status_text(result: Dict[str, Any]) -> str:
+    filename = Path(result["path"]).name if result.get("path") else None
+    customer = result.get("customer_name") or "cliente"
+    count = result.get("invoice_count") or 0
+    if filename:
+        return f"✓ Resumen de facturas listo — {customer} ({count} docs, {filename})"
+    return f"✓ Resumen de facturas — {customer} ({count} docs)"
+
+
+def invoice_summary_api_payload(
+    result: Dict[str, Any], cache_id: str
+) -> Dict[str, Any]:
+    status = result.get("status")
+    if status == "error":
+        return {
+            "type": "error",
+            "id": cache_id,
+            "error": result.get("message", "Error generando resumen de facturas"),
+        }
+    return {
+        "type": "invoice_summary",
+        "id": cache_id,
+        "text": result.get("message", ""),
+        "status_text": invoice_summary_status_text(result),
+        "download_url": manager_report_download_path(result.get("path")),
+        "format": result.get("format", "html"),
+        "invoice_count": result.get("invoice_count"),
+        "customer_name": result.get("customer_name"),
+        "missing": result.get("missing") or [],
+    }
+
+
 def manager_report_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
     """Serialize a manager report routing result for the Vanna web UI."""
     status = result.get("status")
@@ -573,6 +605,68 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             cache.set(id=cache_id, field="cartera", value=result)
             return jsonify(cartera_api_payload(result, cache_id))
 
+        @requires_auth
+        def generate_invoice_summary(user):
+            invoices = flask.request.args.get("invoices")
+            fmt = flask.request.args.get("format", "html")
+            document_code = flask.request.args.get("document_code")
+
+            if flask.request.method == "POST":
+                body = flask.request.get_json(silent=True) or {}
+                invoices = body.get("invoices", invoices)
+                fmt = body.get("format", fmt)
+                document_code = body.get("document_code", document_code)
+
+            if isinstance(invoices, list):
+                invoices_text = " ".join(str(n) for n in invoices)
+            else:
+                invoices_text = str(invoices or "").strip()
+
+            if not invoices_text:
+                return jsonify(
+                    {
+                        "type": "error",
+                        "error": "Pega al menos un número de factura.",
+                    }
+                )
+
+            fmt = str(fmt or "html").strip().lower()
+            code = str(document_code or "").strip().upper() or None
+            cache_id = cache.generate_id(
+                invoices=invoices_text,
+                format=fmt,
+                document_code=code or "",
+                report="invoice_summary",
+            )
+
+            try:
+                from business_analyzer.reports.invoice_summary import (
+                    build_invoice_summary_result,
+                )
+
+                result = build_invoice_summary_result(
+                    invoices=invoices_text,
+                    document_code=code,
+                    fmt=fmt,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "generate_invoice_summary failed fmt=%s", fmt
+                )
+                result = {
+                    "status": "error",
+                    "message": (
+                        "Error generando el resumen de facturas. "
+                        "Revise los números o los logs del servidor."
+                    ),
+                }
+
+            if result.get("status") == "error":
+                return jsonify(invoice_summary_api_payload(result, cache_id))
+
+            cache.set(id=cache_id, field="invoice_summary", value=result)
+            return jsonify(invoice_summary_api_payload(result, cache_id))
+
         @self.flask_app.route("/api/v0/recommended_reports", methods=["GET"])
         def recommended_reports():
             return jsonify(recommended_reports_payload())
@@ -613,6 +707,12 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             "/api/v0/generate_cartera",
             endpoint="smart_generate_cartera",
             view_func=generate_cartera,
+            methods=["GET", "POST"],
+        )
+        self.flask_app.add_url_rule(
+            "/api/v0/generate_invoice_summary",
+            endpoint="smart_generate_invoice_summary",
+            view_func=generate_invoice_summary,
             methods=["GET", "POST"],
         )
         self._patch_assets_js()

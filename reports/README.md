@@ -9,6 +9,7 @@ This directory contains generated analysis reports and their supporting data.
 - `DATABASE_TABLE_ANALYSIS_RECOMMENDATIONS.md` - Strategic recommendations companion (2026-07-07 baseline)
 - `ROTACION_EXISTENCIAS_<date>.html` (also `.pdf` / `.md` via CLI) - Commercial warehouse inventory turnover (quiebre, muerto, transfers); CLI or **Vanna UI → Informes recomendados** at `http://127.0.0.1:8084/`
 - `CARTERA_AGING_<date>.html` (also `.pdf` / `.md` / `.json` via CLI) - AR aging from `banco_cartera` (mora, buckets, top vencidos, cupos); CLI `scripts/analysis/run_cartera_aging.py` or **Informes recomendados → Cartera / Aging**
+- `RESUMEN_FACTURAS_<cliente>.html` (also `.pdf`) - Customer invoice summary from pasted invoice numbers; **Informes recomendados → Resumen de facturas**
 - `CRITICAL_INVENTORY_<date>.md` - Risk shortlist (Q13); commercial WH + warehouse demand
 - `ANALYSIS_REPORT.md` - Comprehensive analysis across all categories
 - `KPI_CONTROL_BOARD_TEMPLATE.md` - Weekly KPI operating template (scorecard + actions)
