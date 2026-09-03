@@ -11,6 +11,7 @@ Run: python src/vanna_grok.py → http://localhost:8084
 Supported AI Providers (set via AI_PROVIDER env var):
 - grok (default): xAI Grok via OpenAI-compatible API
 - openai: OpenAI GPT-4
+- deepseek: DeepSeek via OpenAI-compatible API
 - anthropic: Anthropic Claude
 - ollama: Local Ollama (free, private)
 """

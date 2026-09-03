@@ -13,7 +13,7 @@
 
 ### 🤖 AI-Powered Natural Language Queries
 - **Ask in plain English** — "What are my top 10 selling products?"
-- **Vanna AI** with support for OpenAI GPT-4, Grok (xAI), Anthropic Claude, Ollama (local)
+- **Vanna AI** with support for OpenAI GPT-4, Grok (xAI), DeepSeek, Anthropic Claude, Ollama (local)
 - **Auto-generated SQL** from natural language
 - **Web chat interface** at http://localhost:8084
 - **Spanish-optimized** for Colombian business context
@@ -234,6 +234,7 @@ PORT=8084
 | Provider | Cost | Speed | Quality | Best For |
 |----------|------|-------|---------|----------|
 | **Grok (xAI)** | $$ | Fast | ⭐⭐⭐⭐ | Production, Spanish queries |
+| **DeepSeek** | $ | Fast | ⭐⭐⭐⭐ | Low cost, OpenAI-compatible API |
 | **OpenAI GPT-4** | $$ | Fast | ⭐⭐⭐⭐⭐ | Best accuracy |
 | **Anthropic Claude** | $$ | Fast | ⭐⭐⭐⭐⭐ | Complex reasoning |
 | **Ollama (Local)** | Free | Medium | ⭐⭐⭐ | Privacy, no API costs |

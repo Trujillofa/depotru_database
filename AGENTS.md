@@ -7,7 +7,7 @@
 ## Project Essence
 
 **Business Intelligence + multi-module platform** for Colombian hardware store operations.
-- AI natural language → SQL (Vanna AI with Grok/OpenAI/Claude/Ollama)
+- AI natural language → SQL (Vanna AI with Grok/OpenAI/DeepSeek/Claude/Ollama)
 - Colombian number formatting: `$1.234.567,89` and `45,6%`
 - Database: SmartBusiness MSSQL (`banco_datos` table)
 - **CRITICAL**: Always exclude test docs in SQL: `WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')` (canonical: `depotru_kernel.documents`)
@@ -49,7 +49,7 @@ src/
 ├── business_analyzer/            # Modular package (preferred)
 │   ├── core/                   # config.py, database.py, validation.py
 │   ├── analysis/               # customer.py, financial.py, product.py, inventory.py, unified.py
-│   └── ai/                     # base.py, formatting.py, providers/{grok,openai,anthropic,ollama}.py
+│   └── ai/                     # base.py, formatting.py, providers/{grok,openai,deepseek,anthropic,ollama}.py
 └── config.py                   # Shared config (env vars, DB settings)
 ```
 
@@ -209,7 +209,7 @@ CREATE TABLE banco_datos (
 
 ```bash
 # Choose provider (default: grok)
-export AI_PROVIDER=grok           # or: openai, anthropic, ollama
+export AI_PROVIDER=grok           # or: openai, deepseek, anthropic, ollama
 
 # Set corresponding API key
 export GROK_API_KEY=xai-your-key
