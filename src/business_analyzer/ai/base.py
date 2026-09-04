@@ -58,7 +58,7 @@ from .circuit_breaker import CircuitBreakerError, with_circuit_breaker
 MAX_STACK_FRAME_DEPTH = 20
 
 # Supported AI providers
-SUPPORTED_PROVIDERS = ["grok", "openai", "anthropic", "ollama"]
+SUPPORTED_PROVIDERS = ["grok", "openai", "deepseek", "anthropic", "ollama"]
 DEFAULT_PROVIDER = "grok"
 
 
@@ -170,6 +170,59 @@ def get_env_or_test_default(
         return require_env(name, validation_func, error_msg)
 
 
+def resolve_database_settings():
+    """Resolve direct database variables or a local Navicat NCX export."""
+    if _is_testing_env():
+        return {
+            "host": get_env_or_test_default("DB_HOST", test_default="test-host"),
+            "port": int(get_env_or_test_default("DB_PORT", "1433")),
+            "name": get_env_or_test_default("DB_NAME", test_default="TestDB"),
+            "user": get_env_or_test_default("DB_USER", test_default="test_user"),
+            "password": get_env_or_test_default(
+                "DB_PASSWORD", test_default="test_password"
+            ),
+        }
+
+    direct_requested = any(
+        os.getenv(name) for name in ("DB_HOST", "DB_USER", "DB_PASSWORD")
+    )
+    if direct_requested:
+        return {
+            "host": require_env("DB_HOST"),
+            "port": int(os.getenv("DB_PORT", "1433")),
+            "name": require_env("DB_NAME"),
+            "user": require_env("DB_USER"),
+            "password": require_env("DB_PASSWORD"),
+        }
+
+    ncx_file_path = os.getenv("NCX_FILE_PATH")
+    if ncx_file_path:
+        from business_analyzer.core.database import load_connections
+
+        expanded_path = os.path.expanduser(ncx_file_path)
+        connections = load_connections(expanded_path)
+        if not connections:
+            print(f"❌ ERROR: No se encontró una conexión válida en {expanded_path}")
+            sys.exit(1)
+
+        details = connections[0]
+        return {
+            "host": details["Host"],
+            "port": int(details.get("Port", 1433)),
+            "name": os.getenv("DB_NAME") or details.get("Database", "master"),
+            "user": details["UserName"],
+            "password": details["Password"],
+        }
+
+    return {
+        "host": require_env("DB_HOST"),
+        "port": int(os.getenv("DB_PORT", "1433")),
+        "name": require_env("DB_NAME"),
+        "user": require_env("DB_USER"),
+        "password": require_env("DB_PASSWORD"),
+    }
+
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -178,7 +231,7 @@ def get_env_or_test_default(
 class Config:
     """Configuration class for AI providers and database connections."""
 
-    # AI Provider selection (grok, openai, anthropic, ollama)
+    # AI Provider selection (grok, openai, deepseek, anthropic, ollama)
     AI_PROVIDER = os.getenv("AI_PROVIDER", DEFAULT_PROVIDER).lower()
 
     # Validate provider
@@ -190,6 +243,11 @@ class Config:
 
     # Provider-specific API keys (only required for chosen provider)
     # Only load the API key for the selected provider to avoid requiring all keys
+    GROK_API_KEY = None
+    OPENAI_API_KEY = None
+    DEEPSEEK_API_KEY = None
+    ANTHROPIC_API_KEY = None
+
     if AI_PROVIDER == "grok":
         GROK_API_KEY = get_env_or_test_default(
             "GROK_API_KEY",
@@ -198,8 +256,6 @@ class Config:
             error_msg="La clave de Grok debe comenzar con 'xai-'",
             warn_on_test_default=True,
         )
-        OPENAI_API_KEY = None
-        ANTHROPIC_API_KEY = None
     elif AI_PROVIDER == "openai":
         OPENAI_API_KEY = get_env_or_test_default(
             "OPENAI_API_KEY",
@@ -208,8 +264,12 @@ class Config:
             error_msg="La clave de OpenAI debe comenzar con 'sk-'",
             warn_on_test_default=True,
         )
-        GROK_API_KEY = None
-        ANTHROPIC_API_KEY = None
+    elif AI_PROVIDER == "deepseek":
+        DEEPSEEK_API_KEY = get_env_or_test_default(
+            "DEEPSEEK_API_KEY",
+            test_default="sk-test-key-for-ci-only",
+            warn_on_test_default=True,
+        )
     elif AI_PROVIDER == "anthropic":
         ANTHROPIC_API_KEY = get_env_or_test_default(
             "ANTHROPIC_API_KEY",
@@ -218,23 +278,22 @@ class Config:
             error_msg="La clave de Anthropic debe comenzar con 'sk-ant-'",
             warn_on_test_default=True,
         )
-        GROK_API_KEY = None
-        OPENAI_API_KEY = None
-    else:  # ollama
-        GROK_API_KEY = None
-        OPENAI_API_KEY = None
-        ANTHROPIC_API_KEY = None
 
     # Ollama configuration (local, no API key needed)
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
 
-    # Database configuration - using same names as core config
-    DB_HOST = get_env_or_test_default("DB_HOST", test_default="test-host")
-    DB_PORT = int(get_env_or_test_default("DB_PORT", "1433"))
-    DB_NAME = get_env_or_test_default("DB_NAME", test_default="TestDB")
-    DB_USER = get_env_or_test_default("DB_USER", test_default="test_user")
-    DB_PASSWORD = get_env_or_test_default("DB_PASSWORD", test_default="test_password")
+    # DeepSeek uses an OpenAI-compatible API.
+    DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+
+    # Database configuration: direct variables take precedence over NCX.
+    _DB_SETTINGS = resolve_database_settings()
+    DB_HOST = _DB_SETTINGS["host"]
+    DB_PORT = _DB_SETTINGS["port"]
+    DB_NAME = _DB_SETTINGS["name"]
+    DB_USER = _DB_SETTINGS["user"]
+    DB_PASSWORD = _DB_SETTINGS["password"]
 
     # Server configuration
     PORT = int(os.getenv("PORT", "8084"))
@@ -329,6 +388,17 @@ def create_ai_client(provider: str = None):
         config = {"model": "gpt-4", "api_key": Config.OPENAI_API_KEY}
         return client, config, "openai"
 
+    elif provider == "deepseek":
+        client = OpenAI(
+            api_key=Config.DEEPSEEK_API_KEY,
+            base_url=Config.DEEPSEEK_BASE_URL,
+        )
+        config = {
+            "model": Config.DEEPSEEK_MODEL,
+            "base_url": Config.DEEPSEEK_BASE_URL,
+        }
+        return client, config, "openai"
+
     elif provider == "anthropic":
         config = {
             "api_key": Config.ANTHROPIC_API_KEY,
@@ -351,11 +421,13 @@ def create_ai_client(provider: str = None):
 
 class AIVanna(ChromaDB_VectorStore, OpenAI_Chat):
     """
-    Multi-provider Vanna AI class supporting Grok, OpenAI, Anthropic, and Ollama.
+    Multi-provider Vanna AI class supporting Grok, OpenAI, DeepSeek, Anthropic,
+    and Ollama.
 
     Provider selection via AI_PROVIDER environment variable:
     - grok (default): xAI Grok
     - openai: OpenAI GPT-4
+    - deepseek: DeepSeek's OpenAI-compatible API
     - anthropic: Anthropic Claude
     - ollama: Local Ollama instance
     """
@@ -2764,7 +2836,7 @@ ORDER BY Dia_Orden
 
     def get_ai_client(self):
         """Get the AI client for insights generation."""
-        if self.provider in ["grok", "openai"]:
+        if self.provider in ["grok", "openai", "deepseek"]:
             return self.ai_client
         elif self.provider == "anthropic":
             try:

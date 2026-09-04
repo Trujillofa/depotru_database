@@ -159,3 +159,6 @@ data/assistant/
 # SQL schema/mart scripts (override global *.sql ignore)
 !data/sql/
 !data/sql/**
+
+# Session logs
+codex-session-*.md

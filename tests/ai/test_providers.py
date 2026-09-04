@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
 from business_analyzer.ai.providers import (
     AnthropicProvider,
+    DeepSeekProvider,
     GrokProvider,
     OllamaProvider,
     OpenAIProvider,
@@ -62,6 +63,23 @@ class TestOpenAIProvider:
         assert OpenAIProvider.validate_api_key("invalid-key") is False
 
 
+class TestDeepSeekProvider:
+    """Test DeepSeek provider."""
+
+    def test_provider_name(self):
+        assert DeepSeekProvider.NAME == "deepseek"
+
+    def test_default_model(self):
+        assert DeepSeekProvider.DEFAULT_MODEL == "deepseek-v4-flash"
+
+    def test_base_url(self):
+        assert DeepSeekProvider.BASE_URL == "https://api.deepseek.com"
+
+    def test_validate_api_key(self):
+        assert DeepSeekProvider.validate_api_key("configured-key") is True
+        assert DeepSeekProvider.validate_api_key("") is False
+
+
 class TestAnthropicProvider:
     """Test Anthropic provider."""
 
@@ -105,6 +123,7 @@ class TestProviderExports:
         """Test that all providers can be imported."""
         from business_analyzer.ai.providers import (
             AnthropicProvider,
+            DeepSeekProvider,
             GrokProvider,
             OllamaProvider,
             OpenAIProvider,
@@ -112,6 +131,7 @@ class TestProviderExports:
 
         assert GrokProvider is not None
         assert OpenAIProvider is not None
+        assert DeepSeekProvider is not None
         assert AnthropicProvider is not None
         assert OllamaProvider is not None
 
