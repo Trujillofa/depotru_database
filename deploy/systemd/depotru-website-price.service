@@ -1,0 +1,10 @@
+[Unit]
+Description=Apply J3 ArticulosVenta x 1.19 to Magento list prices
+# Never cache:flush. Script defaults to dry-run unless --apply is passed.
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/depotru_database
+Environment=PYTHONPATH=src
+Environment=MAGENTO_ENV_PHP=%h/Projects/depositotrujillo.co/config/env.php
+ExecStart=%h/Projects/depotru_database/.venv/bin/python scripts/ops/run_website_price_sync.py --apply
