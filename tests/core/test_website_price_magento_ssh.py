@@ -18,6 +18,12 @@ def test_fetch_php_reads_price_and_special_price():
     assert "attribute_code='price'" in FETCH_PHP
     assert "special_price" in FETCH_PHP
     assert "cache:flush" not in FETCH_PHP
+    # Must not cartesian every store-0 decimal row (weight/cost would look like special_price).
+    assert "special.attribute_id = sa.attribute_id" in FETCH_PHP
+    assert (
+        "sa.attribute_code='special_price'" in FETCH_PHP
+        or "attribute_code='special_price'" in FETCH_PHP
+    )
 
 
 def test_magento_update_rows_maps_target_to_price():

@@ -41,14 +41,18 @@ SELECT cpe.sku AS sku,
        price.value AS price,
        special.value AS special_price
 FROM catalog_product_entity cpe
-INNER JOIN catalog_product_entity_decimal price
-        ON price.entity_id = cpe.entity_id AND price.store_id = 0
 INNER JOIN eav_attribute pa
-        ON pa.attribute_id = price.attribute_id AND pa.attribute_code='price'
-LEFT JOIN catalog_product_entity_decimal special
-       ON special.entity_id = cpe.entity_id AND special.store_id = 0
+        ON pa.attribute_code='price'
+INNER JOIN catalog_product_entity_decimal price
+        ON price.entity_id = cpe.entity_id
+       AND price.store_id = 0
+       AND price.attribute_id = pa.attribute_id
 LEFT JOIN eav_attribute sa
-       ON sa.attribute_id = special.attribute_id AND sa.attribute_code='special_price'
+       ON sa.attribute_code='special_price'
+LEFT JOIN catalog_product_entity_decimal special
+       ON special.entity_id = cpe.entity_id
+       AND special.store_id = 0
+       AND special.attribute_id = sa.attribute_id
 ";
 foreach ($conn->fetchAll($sql) as $row) {
     $sp = $row['special_price'];
