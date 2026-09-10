@@ -1,10 +1,17 @@
 [Unit]
-Description=Apply J3 ArticulosVenta x 1.19 to Magento list prices
-# Never cache:flush. Script defaults to dry-run unless --apply is passed.
+Description=Depotru: Magento list prices from J3 ArticulosVenta x 1.19
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=%h/Projects/depotru_database
+EnvironmentFile=-%h/.config/depotru/website-stock.env
 Environment=PYTHONPATH=src
 Environment=MAGENTO_ENV_PHP=%h/Projects/depositotrujillo.co/config/env.php
 ExecStart=%h/Projects/depotru_database/.venv/bin/python scripts/ops/run_website_price_sync.py --apply
+Nice=10
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target
