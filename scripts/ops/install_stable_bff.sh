@@ -30,9 +30,9 @@ if ! grep -q '^BFF_SYNC_MAGENTO=' "${BFF_DIR}/env.bff" 2>/dev/null; then
 
 BFF_TUNNEL_MODE=quick
 BFF_SYNC_MAGENTO=1
-MAGENTO_SSH_HOST=174.142.205.80
-MAGENTO_SSH_USER=deptrujillob2c
-MAGENTO_ENV_PHP=${HOME}/Projects/depositotrujillo.co/config/env.php
+MAGENTO_SSH_HOST=${MAGENTO_SSH_HOST:-}
+MAGENTO_SSH_USER=${MAGENTO_SSH_USER:-}
+MAGENTO_ENV_PHP=${MAGENTO_ENV_PHP:-${HOME}/Projects/depositotrujillo.co/config/env.php}
 EOF
 fi
 

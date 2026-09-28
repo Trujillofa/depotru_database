@@ -100,7 +100,7 @@ def main():
     print("\n\nStep 2: Attempting to run fix directly...")
 
     fix_commands = [
-        "cd /home/deptrujillob2c/public_html",
+        f"cd {MAGENTO_ROOT}",
         "/usr/local/bin/php bin/magento cache:clean",
         "rm -rf pub/static/frontend/Olegnax/*",
         "rm -rf var/view_preprocessed/*",

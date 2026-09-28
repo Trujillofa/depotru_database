@@ -29,16 +29,25 @@ if [[ ! -f "${ENV_FILE}" ]]; then
       source "${REPO}/.env" 2>/dev/null || true
       set +a
       # Export common DB vars if present
-      for v in NCX_FILE_PATH DB_HOST DB_SERVER DB_PORT DB_USER DB_PASSWORD DB_NAME DB_NAME_J3SYSTEM; do
+      for v in NCX_FILE_PATH DB_HOST DB_SERVER DB_PORT DB_USER DB_PASSWORD DB_NAME DB_NAME_J3SYSTEM \
+               MAGENTO_SSH_HOST MAGENTO_SSH_USER MAGENTO_ROOT MAGENTO_ENV_PHP; do
         if [[ -n "${!v:-}" ]]; then
           printf '%s=%s\n' "$v" "${!v}"
         fi
       done
     fi
-    echo "MAGENTO_SSH_HOST=174.142.205.80"
-    echo "MAGENTO_SSH_USER=deptrujillob2c"
-    echo "MAGENTO_ROOT=/home/deptrujillob2c/public_html"
-    echo "MAGENTO_ENV_PHP=${DEPO_ENV}"
+    if [[ -z "${MAGENTO_SSH_HOST:-}" ]]; then
+      echo "# MAGENTO_SSH_HOST=<MAGENTO_SSH_HOST>"
+    fi
+    if [[ -z "${MAGENTO_SSH_USER:-}" ]]; then
+      echo "# MAGENTO_SSH_USER=<MAGENTO_SSH_USER>"
+    fi
+    if [[ -z "${MAGENTO_ROOT:-}" ]]; then
+      echo "# MAGENTO_ROOT=<MAGENTO_ROOT>"
+    fi
+    if [[ -z "${MAGENTO_ENV_PHP:-}" ]]; then
+      echo "MAGENTO_ENV_PHP=${DEPO_ENV}"
+    fi
   } > "${ENV_FILE}"
   chmod 600 "${ENV_FILE}"
   echo "Wrote ${ENV_FILE} (mode 600). Edit if needed."

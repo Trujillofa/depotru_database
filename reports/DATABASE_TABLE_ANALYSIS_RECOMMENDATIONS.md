@@ -1,7 +1,7 @@
 # Análisis de Tablas y Recomendaciones — SmartBusiness & J3System
 
 **Fecha:** 2026-07-07
-**Servidor:** 190.60.235.209:1433 (conexión verificada en vivo)
+**Servidor:** `<DB_SERVER>:1433` (conexión verificada en vivo)
 **Método:** Ranking por espacio asignado (`sys.tables` + `sys.partitions`); conteos de filas aproximados vía particiones heap/clustered.
 
 **Evidencia capturada:** `smartbusiness_table_sizes.json`, `j3system_table_sizes.json`, `top_tables_schema.json` (scratch del análisis).

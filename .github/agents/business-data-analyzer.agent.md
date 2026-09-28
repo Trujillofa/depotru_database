@@ -112,7 +112,7 @@ pytest tests/ -v
 ```python
 # ❌ NEVER DO THIS
 DB_PASSWORD = "MySecret123"
-api_key = "xai-1234567890"
+api_key = "xai-your-key-here"
 
 # ✅ ALWAYS DO THIS
 DB_PASSWORD = require_env("DB_PASSWORD")

@@ -80,7 +80,7 @@ format_number(1234, "Cantidad")            # → "1.234"
 API_KEY = require_env("GROK_API_KEY")
 
 # ❌ Never hardcode
-API_KEY = "xai-1234567890"  # WRONG!
+API_KEY = "xai-your-key-here"  # WRONG!
 ```
 
 ## 🐛 Debugging

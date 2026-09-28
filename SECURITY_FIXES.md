@@ -76,13 +76,16 @@ Multiple scripts contained hardcoded database credentials and server passwords, 
 - `scripts/utils/upload_and_fix.py`
 
 #### Credentials Removed
-- Database server IP: `190.60.235.209`
-- Database username: `Consulta`
-- Database password: `Control*01`
-- Magento server IP: `174.142.205.80`
-- Magento username: `deptrujillob2c`
-- Magento password: `RX}MUWwSnK5G`
-- Hardcoded file paths: `/home/deptrujillob2c/public_html`
+Concrete SQL Server and Magento host, username, password, and document-root
+literals were removed from source. Use environment variables only:
+
+- Database server: `<DB_SERVER>` via `DB_SERVER` / `DB_HOST`
+- Database username: `<DB_USER>` via `DB_USER`
+- Database password: `<DB_PASSWORD>` via `DB_PASSWORD`
+- Magento server: `<MAGENTO_HOST>` via `MAGENTO_HOST` / `MAGENTO_SSH_HOST`
+- Magento username: `<MAGENTO_USER>` via `MAGENTO_USER` / `MAGENTO_SSH_USER`
+- Magento password: `<MAGENTO_PASSWORD>` via `MAGENTO_PASSWORD` / `MAGENTO_SSH_PASSWORD`
+- Magento document root: `<MAGENTO_ROOT>` via `MAGENTO_ROOT`
 
 #### Fixes Applied
 All scripts now:
@@ -101,10 +104,10 @@ All scripts now:
 
 Example transformation:
 ```python
-# BEFORE (insecure):
-db_host = "190.60.235.209"
-db_user = "Consulta"
-db_password = "Control*01"
+# BEFORE (insecure — never commit real values):
+db_host = "<DB_SERVER>"
+db_user = "<DB_USER>"
+db_password = "<DB_PASSWORD>"
 
 # AFTER (secure):
 db_host = os.environ.get('DB_SERVER')

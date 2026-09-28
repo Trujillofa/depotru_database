@@ -2,7 +2,7 @@
 
 **Live inventory date:** 2026-07-29
 **Capture timestamps (UTC):** SmartBusiness `2026-07-29T17:37:55.028028+00:00` · J3System `2026-07-29T17:37:55.028028+00:00`
-**Server:** 190.60.235.209:1433 (verified live via `scripts/utils/introspect_table_sizes.py`)
+**Server:** `<DB_SERVER>:1433` (verified live via `scripts/utils/introspect_table_sizes.py`)
 **Method:** `sys.partitions` heap/clustered **row counts** (no allocation-unit multiplication); space via separate `sys.allocation_units` aggregate
 **Raw evidence (scratch):** `smartbusiness_table_sizes.json`, `j3system_table_sizes.json`, `schemas_smartbusiness_all.json`, `schemas_j3_critical.json`, `j3system_domain_catalog.json`
 

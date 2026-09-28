@@ -1,0 +1,38 @@
+# Gitleaks configuration for depotru_database.
+# Scans the working tree / staged diffs. Git history is out of scope here;
+# historical secrets require owner rotation + filter-repo (see SECURITY.md).
+
+title = "depotru_database"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented placeholders and test fixtures (not live secrets)"
+regexes = [
+  '''<DB_SERVER>''',
+  '''<DB_HOST>''',
+  '''<DB_USER>''',
+  '''<DB_PASSWORD>''',
+  '''<MAGENTO_HOST>''',
+  '''<MAGENTO_USER>''',
+  '''<MAGENTO_PASSWORD>''',
+  '''<MAGENTO_ROOT>''',
+  '''<MAGENTO_SSH_HOST>''',
+  '''<MAGENTO_SSH_USER>''',
+  '''<VANNA_API_KEY>''',
+  '''your-password''',
+  '''your-username''',
+  '''your-user''',
+  '''your-server''',
+  '''test-password''',
+  '''test-user''',
+  '''MySecret123''',
+  '''xai-your-key-here''',
+]
+
+[[rules]]
+id = "hardcoded-db-or-ssh-host-ip"
+description = "Hardcoded IPv4 assigned to a database or Magento SSH host variable"
+regex = '''(?i)(DB_HOST|DB_SERVER|MAGENTO_SSH_HOST|MAGENTO_HOST)\s*[=:]\s*["']?\d{1,3}(?:\.\d{1,3}){3}'''
+tags = ["credential", "host"]
