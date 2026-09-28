@@ -365,10 +365,10 @@ brew install msodbcsql17
 # 3. Configure .env
 cat >> .env << EOF
 GROK_API_KEY=xai-your-key-here
-DB_SERVER=190.60.235.209
+DB_SERVER=<DB_SERVER>
 DB_NAME=SmartBusiness
-DB_USER=Consulta
-DB_PASSWORD=Control*01
+DB_USER=<DB_USER>
+DB_PASSWORD=<DB_PASSWORD>
 EOF
 
 # 4a. Run (Development mode - simpler, good for testing)
@@ -439,10 +439,10 @@ python src/vanna_chat.py
 GROK_API_KEY=xai-your-key-here
 
 # Database Connection (Required)
-DB_SERVER=190.60.235.209
+DB_SERVER=<DB_SERVER>
 DB_NAME=SmartBusiness
-DB_USER=Consulta
-DB_PASSWORD=Control*01
+DB_USER=<DB_USER>
+DB_PASSWORD=<DB_PASSWORD>
 
 # Server Configuration (Optional)
 HOST=0.0.0.0           # Listen on all interfaces

@@ -82,7 +82,9 @@ business_reports/
 *.jpg
 *.jpeg
 *.pdf
-!reports/report_*.pdf
+# Generated report dumps (HTML/PDF). Keep generators/templates/README tracked.
+reports/**/*.html
+reports/**/*.pdf
 # Ignore analysis JSONs in root only, not in reports/data/
 /*.json
 /analysis_*.json

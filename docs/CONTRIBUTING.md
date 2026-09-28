@@ -435,7 +435,7 @@ def test_database_connection():
 ```python
 # ❌ NEVER DO THIS
 DB_PASSWORD = "MySecret123"
-API_KEY = "xai-1234567890"
+API_KEY = "xai-your-key-here"
 
 # ✅ ALWAYS DO THIS
 DB_PASSWORD = os.getenv("DB_PASSWORD")

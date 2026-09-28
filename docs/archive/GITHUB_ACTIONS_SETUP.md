@@ -79,12 +79,12 @@ Once the workflow is in place, configure these secrets in your repository:
 2. Add these secrets:
 
 ```
-DB_HOST=190.60.235.209
+DB_HOST=<DB_HOST>
 DB_PORT=1433
-DB_USER=Consulta
-DB_PASSWORD=Control*01
+DB_USER=<DB_USER>
+DB_PASSWORD=<DB_PASSWORD>
 DB_NAME=SmartBusiness
-VANNA_API_KEY=your_vanna_api_key_here
+VANNA_API_KEY=<VANNA_API_KEY>
 ```
 
 ## ✅ Testing Locally

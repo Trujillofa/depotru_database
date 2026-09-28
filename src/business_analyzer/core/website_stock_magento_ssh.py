@@ -21,7 +21,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
-MAGENTO_ROOT_DEFAULT = "/home/deptrujillob2c/public_html"
+# Document root must come from MAGENTO_ROOT or sibling env.php — never a repo literal.
+MAGENTO_ROOT_DEFAULT = ""
 
 # PHP applier uploaded to the Magento host (SourceItemsSaveInterface).
 _APPLY_PHP = r"""<?php

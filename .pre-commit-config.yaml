@@ -132,6 +132,16 @@ repos:
         # Exclude tests from strict type checking (they often use mocks)
         exclude: ^tests/
 
+  # ==========================================================================
+  # gitleaks - Secret scanning
+  # ==========================================================================
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+        name: gitleaks
+        description: Detect hardcoded secrets before they are committed
+
 # ============================================================================
 # Local Hooks (Optional - Uncomment if needed)
 # ============================================================================
