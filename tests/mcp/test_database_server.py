@@ -7,9 +7,6 @@ without a real database or the mcp package installed.
 import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 # Ensure src is importable
 src_path = Path(__file__).parent.parent.parent / "src"

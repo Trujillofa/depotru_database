@@ -12,7 +12,6 @@ from business_analyzer.analysis.cotizaciones_celular import (
     enrichment_summary,
     export_enriched_xlsx,
     find_header_row_index,
-    format_enriched_rows,
     merge_celular_lookup,
     normalize_cedula,
     parse_cotizaciones_rows,

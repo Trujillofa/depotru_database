@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from business_analyzer.ai.base import AIVanna
 
 PINTUCO_UI_BAD_SQL = """

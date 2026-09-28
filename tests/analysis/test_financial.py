@@ -4,11 +4,7 @@ Tests for financial analysis module.
 
 import pytest
 
-from src.business_analyzer.analysis.financial import (
-    FinancialAnalyzer,
-    extract_value,
-    safe_divide,
-)
+from src.business_analyzer.analysis.financial import FinancialAnalyzer
 
 
 class TestFinancialAnalyzer:

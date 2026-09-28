@@ -1,17 +1,18 @@
 """Tests that marca sales prefer productos_adicional over banco_datos.marca."""
 
 from decimal import Decimal
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from business_analyzer.analysis.manager_report import ManagerSalesReport
+from business_analyzer.core.database import QueryError
 
 
 class TestMarcaSalesMaster:
     def _setup_runner(self, mock_runner_class, sales_data, product_map):
         runner = mock_runner_class.return_value
         runner.fetch_sales_data.return_value = sales_data
-        runner.fetch_sql_aggregations.side_effect = RuntimeError("sql off")
-        runner.fetch_ytd_sql_aggregations.side_effect = RuntimeError("ytd off")
+        runner.fetch_sql_aggregations.side_effect = QueryError("sql off")
+        runner.fetch_ytd_sql_aggregations.side_effect = QueryError("ytd off")
         runner.fetch_year_to_date_data.return_value = sales_data
         runner.fetch_sb_product_map.return_value = product_map
         runner.fetch_j3system_inventory.return_value = {}

@@ -3,7 +3,7 @@ Tests for manager report module.
 """
 
 from decimal import Decimal
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -13,6 +13,7 @@ from business_analyzer.analysis.manager_report import (
     _to_float,
     safe_divide,
 )
+from business_analyzer.core.database import QueryError
 
 
 class TestSafeDivide:
@@ -170,10 +171,8 @@ class TestManagerSalesReport:
         """Configure mock SalesQueryRunner."""
         runner = mock_runner_class.return_value
         runner.fetch_sales_data.return_value = sales_data
-        runner.fetch_sql_aggregations.side_effect = RuntimeError(
-            "sql disabled in tests"
-        )
-        runner.fetch_ytd_sql_aggregations.side_effect = RuntimeError(
+        runner.fetch_sql_aggregations.side_effect = QueryError("sql disabled in tests")
+        runner.fetch_ytd_sql_aggregations.side_effect = QueryError(
             "ytd sql disabled in tests"
         )
         runner.fetch_year_to_date_data.return_value = sales_data
@@ -522,7 +521,7 @@ class TestManagerSalesReport:
         self, MockRunner, MockContabilidad, sample_sales_data
     ):
         """Report includes Q17 contabilidad when J3 runner returns data."""
-        runner = self._setup_mock_runner(MockRunner, sample_sales_data)
+        self._setup_mock_runner(MockRunner, sample_sales_data)
         cont_runner = MockContabilidad.return_value
         cont_runner.build_report.return_value = (
             self._sample_contabilidad_runner_report()

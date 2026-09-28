@@ -17,6 +17,7 @@ from business_analyzer.ai.flask_app import (
     cartera_api_payload,
     cartera_status_text,
 )
+from business_analyzer.core.database import QueryError
 from business_analyzer.reports.cartera_aging import (
     build_cartera_result,
     cartera_output_basename,
@@ -166,6 +167,37 @@ class TestCarteraHelpers:
     def test_build_cartera_result_invalid_date(self):
         result = build_cartera_result(as_of_date="bad")
         assert result["status"] == "error"
+
+    def test_build_cartera_result_does_not_swallow_type_error(self, tmp_path):
+        class Boom:
+            def __init__(self, *a, **k):
+                pass
+
+            def build_report(self, as_of):
+                raise TypeError("aging bug")
+
+        with patch(
+            "business_analyzer.reports.cartera_aging.CarteraAgingRunner",
+            Boom,
+        ):
+            with pytest.raises(TypeError, match="aging bug"):
+                build_cartera_result(as_of_date="2026-07-28", output_dir=tmp_path)
+
+    def test_build_cartera_result_query_error_is_status_error(self, tmp_path):
+        class Boom:
+            def __init__(self, *a, **k):
+                pass
+
+            def build_report(self, as_of):
+                raise QueryError("timeout")
+
+        with patch(
+            "business_analyzer.reports.cartera_aging.CarteraAgingRunner",
+            Boom,
+        ):
+            result = build_cartera_result(as_of_date="2026-07-28", output_dir=tmp_path)
+        assert result["status"] == "error"
+        assert "timeout" in result["message"]
 
     def test_build_cartera_result_writes_file(self, tmp_path):
         class FakeRunner:
