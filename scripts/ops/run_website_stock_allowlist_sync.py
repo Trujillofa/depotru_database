@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Do not write Magento; still build payload",
+        help="Local preview only: no SSH and no Magento writes",
     )
     parser.add_argument(
         "--min-excluded",

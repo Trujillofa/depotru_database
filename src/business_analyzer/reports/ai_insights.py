@@ -13,15 +13,11 @@ Usage:
     result = insights.generate()
 """
 
-import os
 from typing import Any, Dict, List, Optional
-
-import pandas as pd
 
 try:
     from ..ai.base import Config as AIConfig
-    from ..ai.base import create_ai_client, retry_on_failure
-    from ..ai.circuit_breaker import CircuitBreakerError, with_circuit_breaker
+    from ..ai.base import create_ai_client
     from ..ai.formatting import (
         format_currency,
         format_integer,
@@ -36,11 +32,7 @@ except ImportError:
     if str(src_path) not in sys.path:
         sys.path.insert(0, str(src_path))
     from business_analyzer.ai.base import Config as AIConfig
-    from business_analyzer.ai.base import create_ai_client, retry_on_failure
-    from business_analyzer.ai.circuit_breaker import (
-        CircuitBreakerError,
-        with_circuit_breaker,
-    )
+    from business_analyzer.ai.base import create_ai_client
     from business_analyzer.ai.formatting import (
         format_currency,
         format_integer,
@@ -122,7 +114,6 @@ class ReportAIInsights:
         insights = []
 
         revenue = summary.get("total_revenue_without_iva", 0)
-        profit = summary.get("gross_profit", 0)
         margin = summary.get("gross_margin_pct", 0)
         orders = summary.get("order_count", 0)
         aov = summary.get("average_order_value", 0)
@@ -226,7 +217,6 @@ class ReportAIInsights:
         recs: List[Dict[str, str]] = []
 
         margin = summary.get("gross_margin_pct", 0)
-        revenue = summary.get("total_revenue_without_iva", 0)
 
         # Margin-based recommendations
         if margin < 15:

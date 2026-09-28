@@ -13,7 +13,6 @@ is added (the SKU simply has fewer related products).
 """
 
 import logging
-from collections import OrderedDict
 from typing import Any, Dict, List, Set
 
 from .engines import EngineResult

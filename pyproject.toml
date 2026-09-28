@@ -235,6 +235,9 @@ omit = [
 precision = 2
 show_missing = true
 skip_covered = false
+# Overall fail_under is not set (repo-wide coverage is below 80%).
+# Money-path floor (80%) is enforced in CI for monthly.py, cartera_pdf.py,
+# manager_report/queries.py, and website_stock_magento_ssh.py — see docs/TESTING.md.
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",

@@ -18,6 +18,18 @@ import json
 import sys
 from typing import Any, Dict
 
+from business_analyzer.core.database import DatabaseError
+
+_REPORT_FAILURES = (DatabaseError, OSError, ValueError, RuntimeError)
+_OPTIONAL_RENDER_FAILURES = (
+    OSError,
+    ValueError,
+    RuntimeError,
+    ImportError,
+    KeyError,
+    TypeError,
+)
+
 try:
     from ..analysis.manager_report import ManagerSalesReport
     from ..core.database import ConnectionType
@@ -26,7 +38,6 @@ try:
     from .matplotlib_charts import ReportChartGenerator
     from .pdf_generator import PDFReportGenerator
 except ImportError:
-    import sys
     from pathlib import Path
 
     src_path = Path(__file__).parent.parent.parent
@@ -534,7 +545,7 @@ def main() -> None:
         )
         data = report.generate()
         print(f"✓ Datos cargados: {data['metadata']['record_count']:,} registros")
-    except Exception as e:
+    except _REPORT_FAILURES as e:
         print(f"❌ Error generando el informe: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -549,7 +560,7 @@ def main() -> None:
                 print("✓ Análisis narrativo de IA generado")
             else:
                 print("ℹ️ Insights computados sin análisis narrativo")
-        except Exception as e:
+        except _OPTIONAL_RENDER_FAILURES as e:
             print(f"⚠️ Error generando insights de IA: {e}")
             ai_data = {}
 
@@ -561,7 +572,7 @@ def main() -> None:
             chart_gen = ReportChartGenerator(data, output_dir=args.chart_dir)
             chart_paths = chart_gen.generate_all()
             print(f"✓ {len(chart_paths)} gráficos generados")
-        except Exception as e:
+        except _OPTIONAL_RENDER_FAILURES as e:
             print(f"⚠️ Error generando gráficos: {e}")
 
     # Output based on format
@@ -581,7 +592,7 @@ def main() -> None:
             html_gen = HTMLReportGenerator(data, chart_paths, ai_data)
             html_path = html_gen.generate(args.output)
             print(f"✓ Informe HTML guardado en: {html_path}")
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError, ImportError) as e:
             print(f"❌ Error generando HTML: {e}", file=sys.stderr)
             sys.exit(1)
 
@@ -591,7 +602,7 @@ def main() -> None:
             pdf_gen = PDFReportGenerator(data, chart_paths, ai_data)
             pdf_path = pdf_gen.generate(args.output)
             print(f"✓ Informe PDF guardado en: {pdf_path}")
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError, ImportError) as e:
             print(f"❌ Error generando PDF: {e}", file=sys.stderr)
             sys.exit(1)
 

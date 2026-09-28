@@ -1,7 +1,6 @@
 """Recommendation and enrichment calculations for manager reports."""
 
-import statistics
-from collections import Counter, defaultdict
+from collections import defaultdict
 from typing import Any, Dict, List
 
 from business_analyzer.core.product_attrs import resolve_effective_marca

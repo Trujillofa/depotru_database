@@ -21,10 +21,10 @@ from typing import (
 )
 
 # Ownership card + Factura map live in vendor_ownership (single source of truth).
+from business_analyzer.core import vendor_ownership as _vendor_ownership
 from business_analyzer.core.vendor_ownership import (
     DEFAULT_CODE_MERGES,
     OFFICIAL_CODE_NAMES,
-    OFFICIAL_FACTURA_OWNERS,
 )
 from business_analyzer.core.vendor_ownership import (
     official_owner_for_factura as _official_owner_for_factura,
@@ -32,6 +32,9 @@ from business_analyzer.core.vendor_ownership import (
 from business_analyzer.core.vendor_ownership import (
     parse_asignado_code as _parse_asignado_code_vo,
 )
+
+# Historical import path used by tests/scripts.
+OFFICIAL_FACTURA_OWNERS = _vendor_ownership.OFFICIAL_FACTURA_OWNERS
 
 DEFAULT_GROWTH = 0.25
 DEFAULT_NEWCOMER_GROWTH = 0.10

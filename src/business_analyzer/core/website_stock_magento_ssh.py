@@ -5,6 +5,9 @@ REST token is available. Sets each existing MSI source row for affected SKUs
 to ``website_qty`` (allowlist sum). Denylist-only SKUs become qty 0 / OOS.
 
 Requires paramiko + Magento SSH credentials (password or key).
+
+Dry-run (``dry_run=True`` / ops ``--dry-run``) stays local: it never opens
+SSH, never uploads PHP/JSON, and never writes Magento MSI.
 """
 
 from __future__ import annotations
@@ -321,6 +324,25 @@ def build_excluded_payload(
     return payload
 
 
+def local_dry_run_result(payload: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Preview a Magento MSI apply without SSH or remote writes."""
+    skus = [row for row in payload if str(row.get("sku") or "").strip()]
+    would_zero = sum(1 for row in skus if float(row.get("website_qty") or 0) <= 0)
+    return {
+        "mode": "dry-run",
+        "ssh": False,
+        "sku_count": len(skus),
+        "updated_skus": 0,
+        "updated_items": 0,
+        "errors": [],
+        "batches": 0,
+        "would_update_skus": len(skus),
+        "would_zero_skus": would_zero,
+        "sample": skus[:5],
+        "note": "dry-run local: no SSH and no Magento writes",
+    }
+
+
 def apply_payload_via_ssh(
     payload: List[Dict[str, Any]],
     *,
@@ -329,7 +351,13 @@ def apply_payload_via_ssh(
     batch_size: int = 40,
     reindex: bool = True,
 ) -> Dict[str, Any]:
-    """Upload payload and apply in batches on Magento host."""
+    """Upload payload and apply in batches on Magento host.
+
+    ``dry_run=True`` never connects or writes; use it to inspect payload
+    impact. Live apply still requires Magento SSH credentials.
+    """
+    if dry_run:
+        return local_dry_run_result(payload)
     cfg = cfg or MagentoSshConfig.from_env()
     if not cfg:
         raise RuntimeError(
@@ -338,7 +366,7 @@ def apply_payload_via_ssh(
         )
     if not payload:
         return {
-            "mode": "dry-run" if dry_run else "apply",
+            "mode": "apply",
             "updated_skus": 0,
             "updated_items": 0,
             "errors": [],

@@ -13,9 +13,8 @@ Usage:
     paths = gen.generate_all()
 """
 
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -476,7 +475,7 @@ class ReportChartGenerator:
         sizes = [max(50, min(800, q * 2)) for q in quantities]
         colors = plt.cm.viridis(np.linspace(0, 1, len(products)))
 
-        scatter = ax.scatter(
+        ax.scatter(
             revenue,
             margins,
             s=sizes,

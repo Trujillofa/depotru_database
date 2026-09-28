@@ -71,6 +71,16 @@ jobs:
         env:
           PYTHONPATH: src
 
+      # Phase 1 / issue #63: each money-path module has its own 80% floor
+      # so a high-coverage file cannot hide a regression in another.
+      # Documented in docs/TESTING.md (Money-path coverage floor).
+      - name: Enforce money-path coverage floor
+        run: |
+          coverage report --include='src/business_analyzer/reports/monthly.py' --fail-under=80 --show-missing
+          coverage report --include='src/business_analyzer/reports/cartera_pdf.py' --fail-under=80 --show-missing
+          coverage report --include='src/business_analyzer/analysis/manager_report/queries.py' --fail-under=80 --show-missing
+          coverage report --include='src/business_analyzer/core/website_stock_magento_ssh.py' --fail-under=80 --show-missing
+
       - name: Upload coverage artifact
         if: matrix.python-version == '3.11'
         uses: actions/upload-artifact@v4
@@ -135,6 +145,7 @@ jobs:
         run: |
           echo "::group::Flake8 linting"
           flake8 src/ tests/ examples/ --exclude src/business_analyzer/analysis/customer_optimized.py --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 src/ tests/ examples/ --exclude src/business_analyzer/analysis/customer_optimized.py --count --select=F811,F841,F401 --show-source --statistics
           flake8 src/ tests/ examples/ --exclude src/business_analyzer/analysis/customer_optimized.py --count --exit-zero --statistics
           echo "::endgroup::"
 

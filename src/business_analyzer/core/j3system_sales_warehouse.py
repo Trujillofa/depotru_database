@@ -5,7 +5,6 @@ See docs/reference/j3system-sales-warehouse-query.md for schema notes.
 
 from __future__ import annotations
 
-import os
 import re
 from typing import Optional, Tuple
 

@@ -272,6 +272,35 @@ Coverage reports are automatically generated in GitHub Actions:
 - Reports retained for 30 days
 - Access via Actions tab → Artifacts
 
+### Money-path coverage floor (Phase 1 / issue #63)
+
+Each of these revenue-critical and production-mutating modules has a **CI
+floor of 80%** (checked per file, so one module cannot hide a drop in another).
+The CI-safe suite (`-m "not requires_db and not requires_api"`) must cover them
+with fixtures/mocks so they cannot regress silently:
+
+| Module | Why it is money-path |
+|--------|----------------------|
+| `src/business_analyzer/reports/monthly.py` | `depotru-report` CLI that prints manager numbers |
+| `src/business_analyzer/reports/cartera_pdf.py` | Cartera / AR aging PDF export |
+| `src/business_analyzer/analysis/manager_report/queries.py` | SQL that feeds manager KPIs (must exclude test docs) |
+| `src/business_analyzer/core/website_stock_magento_ssh.py` | Can write production Magento MSI |
+
+```bash
+# After pytest --cov=src (same .coverage file CI uses)
+coverage report --include='src/business_analyzer/reports/monthly.py' --fail-under=80
+coverage report --include='src/business_analyzer/reports/cartera_pdf.py' --fail-under=80
+coverage report --include='src/business_analyzer/analysis/manager_report/queries.py' --fail-under=80
+coverage report --include='src/business_analyzer/core/website_stock_magento_ssh.py' --fail-under=80
+```
+
+Magento dry-run (no SSH, no storefront writes):
+
+```bash
+PYTHONPATH=src python scripts/ops/run_website_stock_allowlist_sync.py --dry-run
+# or in code: apply_payload_via_ssh(payload, dry_run=True)
+```
+
 ## Troubleshooting
 
 ### "No module named 'pymssql'"

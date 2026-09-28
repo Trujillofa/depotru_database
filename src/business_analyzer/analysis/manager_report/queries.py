@@ -13,7 +13,7 @@ except ImportError:
         sys.path.insert(0, str(src_path))
     from config import Config
 
-from business_analyzer.core.database import ConnectionType, Database
+from business_analyzer.core.database import ConnectionType, Database, DatabaseError
 from business_analyzer.core.j3system_sales_warehouse import (
     build_one_warehouse_per_sale_for_period_sql,
     build_warehouse_breakdown_for_period_sql,
@@ -522,13 +522,13 @@ class SalesQueryRunner:
             cursor.execute(detail_sql)
             sales = list(cursor)
             cursor.close()
-        except Exception:
+        except DatabaseError:
             return {"breakdown": [], "sales": []}
         finally:
             if j3_conn:
                 try:
                     j3_conn.close()
-                except Exception:
+                except OSError:
                     pass
         return {"breakdown": breakdown, "sales": sales}
 
@@ -549,13 +549,13 @@ class SalesQueryRunner:
             )
             rows = list(cursor)
             cursor.close()
-        except Exception:
+        except DatabaseError:
             return {}
         finally:
             if j3_conn:
                 try:
                     j3_conn.close()
-                except Exception:
+                except OSError:
                     pass
         inventory: Dict[str, Dict[str, Any]] = {}
         for row in rows:
@@ -592,13 +592,13 @@ class SalesQueryRunner:
             )
             rows = list(cursor)
             cursor.close()
-        except Exception:
+        except DatabaseError:
             return {}, {}
         finally:
             if j3_conn:
                 try:
                     j3_conn.close()
-                except Exception:
+                except OSError:
                     pass
 
         from .helpers import to_float

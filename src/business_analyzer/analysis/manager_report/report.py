@@ -9,7 +9,7 @@ import calendar
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional
 
-from business_analyzer.core.database import ConnectionType, Database
+from business_analyzer.core.database import ConnectionType, Database, DatabaseError
 from business_analyzer.core.j3system_contabilidad import ContabilidadRunner
 from business_analyzer.core.product_attrs import (
     is_bad_attr_value,
@@ -205,12 +205,12 @@ class ManagerSalesReport(ReportRecommendationsMixin):
         if self._sales_data:
             try:
                 self._sql_aggregations = self._queries.fetch_sql_aggregations()
-            except Exception:
+            except DatabaseError:
                 self._sql_aggregations = {}
             try:
                 self._ytd_sql_aggregations = self._queries.fetch_ytd_sql_aggregations()
                 self._ytd_sales_data = []
-            except Exception:
+            except DatabaseError:
                 self._ytd_sql_aggregations = {}
                 self._ytd_sales_data = self._queries.fetch_year_to_date_data()
             self._sb_product_map = self._queries.fetch_sb_product_map()
@@ -262,7 +262,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
     def _calculate_budget_vs_actual(self) -> Dict[str, Any]:
         try:
             payload = self._queries.fetch_budget_vs_actual()
-        except Exception:
+        except DatabaseError:
             return {
                 "available": False,
                 "note": "No fue posible consultar presupuesto vs real.",
@@ -290,7 +290,7 @@ class ManagerSalesReport(ReportRecommendationsMixin):
             runner = ContabilidadRunner(Database())
             raw = runner.build_report(self.start_date, self.end_date)
             return contabilidad_from_runner_report(raw)
-        except Exception:
+        except (DatabaseError, OSError, ValueError):
             return {
                 "available": False,
                 "note": "No fue posible consultar contabilidad ERP (ConMovimiento*).",
