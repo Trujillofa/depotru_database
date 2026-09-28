@@ -378,9 +378,7 @@ def apply_payload_via_ssh(
     # Unique remote names under /tmp (Magento host jailshell; no shared sticky issues)
     remote_php = f"/tmp/dt_wsa_{token}.php"  # nosec B108
     remote_payload = f"/tmp/dt_wsa_{token}.json"  # nosec B108
-    mode = "dry-run" if dry_run else "apply"
-    if mode not in ("dry-run", "apply"):
-        raise ValueError(f"invalid mode: {mode}")
+    mode = "apply"
     batch_size = max(1, min(int(batch_size), 100))
     result: Dict[str, Any] = {
         "mode": mode,

@@ -7,6 +7,10 @@ configured. Safe to run repeatedly (idempotent target qty from J3).
 Usage:
   PYTHONPATH=src python scripts/ops/run_website_stock_allowlist_sync.py
   PYTHONPATH=src python scripts/ops/run_website_stock_allowlist_sync.py --dry-run
+
+``--dry-run`` skips the J3 payload query and never SSH/writes Magento.
+To inspect a payload locally, call ``build_excluded_payload`` /
+``apply_payload_via_ssh(..., dry_run=True)`` instead.
 """
 
 from __future__ import annotations
@@ -40,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Local preview only: no SSH and no Magento writes",
+        help="Skip J3 payload build and Magento SSH/writes (local only)",
     )
     parser.add_argument(
         "--min-excluded",
@@ -78,48 +82,54 @@ def main(argv: list[str] | None = None) -> int:
     )
     log = logging.getLogger("website_stock_sync")
 
-    cfg = MagentoSshConfig.from_env()
-    if not cfg and not args.dry_run:
-        log.error("Magento SSH not configured (MAGENTO_SSH_* or MAGENTO_ENV_PHP)")
-        return 2
-
-    log.info("Building J3 payload (denylist-affected SKUs)...")
-    payload = build_excluded_payload(top_n=args.top_n, min_excluded=args.min_excluded)
-    log.info(
-        "payload_skus=%s only_denylist=%s",
-        len(payload),
-        sum(1 for p in payload if float(p.get("website_qty") or 0) <= 0),
-    )
-
-    if not payload:
-        log.info("Nothing to apply")
+    # --dry-run is a local no-op: skip the expensive J3 query and never SSH.
+    if args.dry_run:
+        log.info("Dry-run: skipping J3 payload build and Magento SSH")
         result = {
             "ts": datetime.now(timezone.utc).isoformat(),
+            "mode": "dry-run",
+            "ssh": False,
             "updated_skus": 0,
-            "note": "empty payload",
+            "updated_items": 0,
+            "errors": [],
+            "note": "dry-run: skipped J3 payload build; no SSH and no Magento writes",
             "policy": policy_summary(),
         }
-    elif args.dry_run and not cfg:
-        log.info("Dry-run without Magento SSH: payload only")
-        result = {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "mode": "dry-run-payload-only",
-            "updated_skus": 0,
-            "payload_skus": len(payload),
-            "policy_denylist": policy_summary()["denylist"],
-            "sample": payload[:5],
-        }
     else:
-        result = apply_payload_via_ssh(
-            payload,
-            cfg=cfg,
-            dry_run=args.dry_run,
-            batch_size=args.batch_size,
-            reindex=not args.no_reindex and not args.dry_run,
+        cfg = MagentoSshConfig.from_env()
+        if not cfg:
+            log.error("Magento SSH not configured (MAGENTO_SSH_* or MAGENTO_ENV_PHP)")
+            return 2
+
+        log.info("Building J3 payload (denylist-affected SKUs)...")
+        payload = build_excluded_payload(
+            top_n=args.top_n, min_excluded=args.min_excluded
         )
-        result["ts"] = datetime.now(timezone.utc).isoformat()
-        result["policy_denylist"] = policy_summary()["denylist"]
-        result["payload_skus"] = len(payload)
+        log.info(
+            "payload_skus=%s only_denylist=%s",
+            len(payload),
+            sum(1 for p in payload if float(p.get("website_qty") or 0) <= 0),
+        )
+
+        if not payload:
+            log.info("Nothing to apply")
+            result = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "updated_skus": 0,
+                "note": "empty payload",
+                "policy": policy_summary(),
+            }
+        else:
+            result = apply_payload_via_ssh(
+                payload,
+                cfg=cfg,
+                dry_run=False,
+                batch_size=args.batch_size,
+                reindex=not args.no_reindex,
+            )
+            result["ts"] = datetime.now(timezone.utc).isoformat()
+            result["policy_denylist"] = policy_summary()["denylist"]
+            result["payload_skus"] = len(payload)
 
     log.info(
         "done mode=%s updated_skus=%s updated_items=%s errors=%s",

@@ -294,7 +294,9 @@ coverage report --include='src/business_analyzer/analysis/manager_report/queries
 coverage report --include='src/business_analyzer/core/website_stock_magento_ssh.py' --fail-under=80
 ```
 
-Magento dry-run (no SSH, no storefront writes):
+Magento dry-run (no SSH, no storefront writes). Ops ``--dry-run`` also
+skips the J3 payload query; ``apply_payload_via_ssh(..., dry_run=True)``
+previews a payload you already built.
 
 ```bash
 PYTHONPATH=src python scripts/ops/run_website_stock_allowlist_sync.py --dry-run
