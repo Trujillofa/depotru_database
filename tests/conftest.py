@@ -45,6 +45,7 @@ mock_config.Config.DB_PORT = 1433
 mock_config.Config.DB_USER = "test-user"
 mock_config.Config.DB_PASSWORD = "test-password"
 mock_config.Config.DB_NAME = "TestDB"
+mock_config.Config.DB_NAME_J3SYSTEM = "J3System"
 mock_config.Config.DB_TABLE = "test_table"
 mock_config.Config.NCX_FILE_PATH = "/test/connections.ncx"
 mock_config.Config.DB_LOGIN_TIMEOUT = 10
@@ -53,16 +54,29 @@ mock_config.Config.DB_TDS_VERSION = "7.4"
 mock_config.Config.DEFAULT_LIMIT = 1000
 mock_config.Config.EXCLUDED_DOCUMENT_CODES = ["XY", "AS"]
 mock_config.Config.LOG_LEVEL = "INFO"  # Must be string for getattr(logging, ...)
+mock_config.Config.OUTPUT_DIR = Path("/tmp")
+mock_config.Config.REPORT_DPI = 300
 mock_config.Config.has_direct_db_config = Mock(return_value=True)
 mock_config.Config.ensure_output_dir = Mock(return_value=Path("/tmp"))
+mock_config.Config.reload = Mock()
+mock_config.Config._DB_SETTINGS = {
+    "host": "test-host",
+    "port": 1433,
+    "name": "TestDB",
+    "user": "test-user",
+    "password": "test-password",
+}
 
 # AI package config attributes
 mock_config.Config.AI_PROVIDER = "grok"
 mock_config.Config.GROK_API_KEY = "xai-test-key"
 mock_config.Config.OPENAI_API_KEY = "sk-test-key"
+mock_config.Config.DEEPSEEK_API_KEY = "sk-test-key"
 mock_config.Config.ANTHROPIC_API_KEY = "sk-ant-test-key"
 mock_config.Config.OLLAMA_HOST = "http://localhost:11434"
 mock_config.Config.OLLAMA_MODEL = "mistral"
+mock_config.Config.DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+mock_config.Config.DEEPSEEK_MODEL = "deepseek-v4-flash"
 mock_config.Config.HOST = "0.0.0.0"
 mock_config.Config.PORT = 8084
 mock_config.Config.ENABLE_AI_INSIGHTS = True
@@ -70,8 +84,22 @@ mock_config.Config.INSIGHTS_MAX_ROWS = 15
 mock_config.Config.MAX_DISPLAY_ROWS = 100
 
 # AI package module-level constants
-mock_config.SUPPORTED_PROVIDERS = ["grok", "openai", "anthropic", "ollama"]
+mock_config.SUPPORTED_PROVIDERS = [
+    "grok",
+    "openai",
+    "deepseek",
+    "anthropic",
+    "ollama",
+]
 mock_config.DEFAULT_PROVIDER = "grok"
+mock_config.MAX_STACK_FRAME_DEPTH = 20
+mock_config.hydrate_ai_config = Mock()
+mock_config.require_env = Mock()
+mock_config.get_env_or_test_default = Mock(return_value="xai-test-key")
+mock_config.resolve_database_settings = Mock(
+    return_value=mock_config.Config._DB_SETTINGS
+)
+mock_config._is_testing_env = Mock(return_value=True)
 
 # Customer segmentation thresholds
 mock_config.CustomerSegmentation = Mock()
@@ -92,7 +120,7 @@ mock_config.ProfitabilityConfig.LOW_MARGIN_THRESHOLD = 10
 mock_config.ProfitabilityConfig.STAR_PRODUCT_MARGIN = 30
 mock_config.ProfitabilityConfig.CRITICAL_MARGIN = 0
 
-# Insert the mock config into sys.modules BEFORE importing business_analyzer
+# Insert the mock config into sys.modules BEFORE importing business_analyzer.
 sys.modules["config"] = mock_config
 
 # =============================================================================
@@ -121,8 +149,32 @@ HAS_PANDAS = check_dependency("pandas")
 # =============================================================================
 
 
+def _sanitize_real_config_secrets():
+    """Wipe secret-bearing Config attrs if the unified module can be imported.
+
+    Modules that import ``business_analyzer.core.config`` (database, db_factory,
+    queries, predictive) must not see a local .env. Do not invent a configured
+    DB, so ``Database()`` still fails closed (ConnectionError) the same way CI
+    does without credentials.
+
+    Skipped when pydantic-settings is missing so ``tests/test_basic.py`` can
+    run in the no-dependencies workflow.
+    """
+    try:
+        from business_analyzer.core.config import Config as real_config
+    except ImportError:
+        return
+    real_config.DB_HOST = None
+    real_config.DB_USER = None
+    real_config.DB_PASSWORD = None
+    real_config.GROK_API_KEY = None
+    real_config.OPENAI_API_KEY = None
+    real_config.DEEPSEEK_API_KEY = None
+    real_config.ANTHROPIC_API_KEY = None
+
+
 def pytest_configure(config):
-    """Register custom markers."""
+    """Register custom markers and sanitize real Config when available."""
     config.addinivalue_line("markers", "unit: Unit tests")
     config.addinivalue_line(
         "markers", "integration: Integration tests requiring database"
@@ -132,6 +184,7 @@ def pytest_configure(config):
         "markers", "requires_db: Tests that require database connection"
     )
     config.addinivalue_line("markers", "requires_api: Tests that require API keys")
+    _sanitize_real_config_secrets()
 
 
 # =============================================================================

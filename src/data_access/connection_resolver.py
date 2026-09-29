@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET  # nosec B405 - NCX files are local trusted c
 from collections.abc import Callable
 from typing import Any, Optional
 
-from ..config import Config
+from business_analyzer.core.config import Config
 
 logger = logging.getLogger(__name__)
 

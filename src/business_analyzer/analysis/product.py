@@ -23,7 +23,7 @@ from typing import Any, Dict, List
 
 # Handle imports for both package and direct execution contexts
 try:
-    from ...config import ProfitabilityConfig
+    from business_analyzer.core.config import ProfitabilityConfig
 except ImportError:
     # Fallback for direct execution
     import sys

@@ -8,7 +8,7 @@ from typing import Dict, Optional
 from business_analyzer.core.database import ConnectionType, Database
 
 try:
-    from config import Config
+    from business_analyzer.core.config import Config
 except ImportError:
     import sys
     from pathlib import Path

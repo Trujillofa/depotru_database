@@ -6,6 +6,7 @@
 # ============================================================================
 pymssql>=2.2.8              # SQL Server database connection
 python-dotenv>=0.19.0       # Environment variable management
+pydantic-settings>=2.2.0    # Unified env-backed Settings (core.config)
 pyodbc>=4.0.0               # ODBC database connectivity (for Vanna + SQL Server)
 
 # Data Analysis & Processing

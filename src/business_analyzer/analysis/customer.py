@@ -23,7 +23,7 @@ from typing import Any, Dict, List
 
 # Handle imports for both package and direct execution contexts
 try:
-    from ...config import CustomerSegmentation
+    from business_analyzer.core.config import CustomerSegmentation
 except ImportError:
     # Fallback for direct execution
     import sys

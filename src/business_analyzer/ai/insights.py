@@ -8,7 +8,9 @@ from typing import Any
 
 import pandas as pd
 
-from .base import Config, retry_on_failure
+from business_analyzer.core.config import Config
+
+from .base import retry_on_failure
 from .circuit_breaker import CircuitBreakerError, with_circuit_breaker
 from .formatting import format_dataframe, format_number
 

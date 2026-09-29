@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from ..config import Config
+from business_analyzer.core.config import Config
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
-from business_analyzer.ai.base import Config
+from business_analyzer.core.config import Config
 from business_analyzer.core.database import Database
 from business_analyzer.core.inventory_turnover import (
     DEMAND_MODE_COMPANY,

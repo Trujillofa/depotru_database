@@ -9,7 +9,9 @@ try:
 except ImportError:
     OpenAI = None
 
-from ..base import Config
+from business_analyzer.core.config import Config, hydrate_ai_config
+
+hydrate_ai_config()
 
 
 class OpenAIProvider:

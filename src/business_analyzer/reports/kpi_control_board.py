@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from business_analyzer.ai.base import Config
+from business_analyzer.core.config import Config
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 

@@ -49,7 +49,7 @@ except ImportError:
     CRYPTO_AVAILABLE = False
 
 try:
-    from config import Config
+    from business_analyzer.core.config import Config
 except ImportError:
     from pathlib import Path
 

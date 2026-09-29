@@ -20,7 +20,6 @@ from flask import Response, jsonify, send_from_directory
 from vanna.legacy.flask import VannaFlaskApp
 from vanna.legacy.flask.assets import html_content, js_content
 
-from business_analyzer.ai.base import Config
 from business_analyzer.ai.charts import (
     build_plotly_code,
     build_smart_figure,
@@ -33,6 +32,7 @@ from business_analyzer.ai.recommended_reports import (
     inject_recommended_reports_ui,
     recommended_reports_payload,
 )
+from business_analyzer.core.config import Config
 
 _MANAGER_REPORT_JS_SNIPPET = (
     'if(n.type==="manager_report"){'

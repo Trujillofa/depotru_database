@@ -30,12 +30,14 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # Import from the new modular ai package
-from business_analyzer.ai import (  # noqa: E402
+from business_analyzer.ai import (  # noqa: E402, F401
     AIVanna,
     Config,
     format_dataframe,
     full_training,
     generate_insights,
+    require_env,
+    retry_on_failure,
 )
 from business_analyzer.ai.charts import (  # noqa: E402
     _normalize_chart_dtypes,
