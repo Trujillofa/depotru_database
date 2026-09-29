@@ -219,7 +219,11 @@ class TestTrainingExamples:
     def test_sika_center_runtime_template_uses_branch_document_code(self):
         """Runtime SQL repair template protects SIKA CENTER branch prompts."""
         source = (
-            Path(__file__).parents[2] / "src" / "business_analyzer" / "ai" / "base.py"
+            Path(__file__).parents[2]
+            / "src"
+            / "business_analyzer"
+            / "ai"
+            / "sql_routing.py"
         )
         base_code = source.read_text(encoding="utf-8")
 
@@ -246,7 +250,11 @@ class TestTrainingExamples:
     def test_sika_center_bad_customer_sql_repair_is_wired_before_execution(self):
         """Stale UI SQL with SIKA as customer must be repaired before run_sql executes."""
         source = (
-            Path(__file__).parents[2] / "src" / "business_analyzer" / "ai" / "base.py"
+            Path(__file__).parents[2]
+            / "src"
+            / "business_analyzer"
+            / "ai"
+            / "sql_routing.py"
         )
         base_code = source.read_text(encoding="utf-8")
         repair_code = base_code.split("def _repair_sika_center_customer_sql", 1)[1]
