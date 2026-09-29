@@ -1,5 +1,10 @@
 # GitHub Actions Workflow Cleanup Guide
 
+> **Phase 2c update:** `proposed-test-workflow.yml` and `.github/workflows/tests.yml`
+> were deleted. The single test/lint/security/build pipeline is `.github/workflows/ci.yml`
+> (Python 3.11–3.12). CodeQL remains in `codeql-analysis.yml`. Gitleaks stays in
+> pre-commit and now also runs as a CI job. Historical steps below are obsolete.
+
 ## Summary
 This guide provides step-by-step instructions to clean up and optimize your GitHub Actions workflows.
 

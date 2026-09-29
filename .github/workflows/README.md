@@ -4,34 +4,25 @@ This directory contains CI/CD workflows for automated testing and code quality.
 
 ## Available Workflows
 
-### 1. General Tests (`tests.yml`)
+### 1. Unified CI (`ci.yml`)
 
 **Triggers:**
-- Push to `main` or `copilot/**` branches
-- Pull requests to `main`
+- Push to `main`, `master`, or `copilot/**` branches
+- Pull requests to `main` / `master`
 - Manual workflow dispatch
 
 **Jobs:**
-- **test-basic**: Runs basic tests without dependencies
-- **test-with-dependencies**: Runs all tests with optional dependencies installed
-  - Tests on Python 3.10, 3.11, 3.12
-  - Installs pandas, vanna, matplotlib, pymssql (when possible)
-  - Generates coverage reports
+- **test-basic**: Runs basic tests without project dependencies
+- **test**: CI-safe suite with coverage on Python 3.11 and 3.12
+- **lint**: black, isort 5.13.2, flake8
+- **type-check**: mypy on the CI subset
+- **security-scan**: bandit (fails on HIGH)
+- **gitleaks**: Phase 0 secret scan
+- **build**: package build + twine
 
-### 2. Vanna Grok Tests (`test-vanna-grok.yml`)
+CodeQL stays in its own workflow.
 
-**Triggers:**
-- Push/PR when `src/vanna_grok.py` or `tests/test_vanna_grok.py` changes
-- Manual workflow dispatch
-
-**Jobs:**
-- **test-vanna-grok**: Specifically tests vanna_grok.py
-  - Tests on Python 3.10, 3.11, 3.12
-  - Installs pandas, vanna, openai, chromadb
-  - Tests number formatting, AI insights, configuration
-  - Generates coverage reports for vanna_grok.py
-
-### 3. Code Quality & Security
+### 2. Code Quality & Security
 
 **CodeQL Analysis (`codeql-analysis.yml`)**
 - Automated security vulnerability scanning
@@ -41,7 +32,7 @@ This directory contains CI/CD workflows for automated testing and code quality.
 - Scans for vulnerable dependencies in PRs
 - Prevents introduction of known security issues
 
-### 4. AI-Assisted Development
+### 3. AI-Assisted Development
 
 **Claude Code (`claude.yml`)**
 - Triggered by @claude mentions in issues/PRs
@@ -55,8 +46,7 @@ This directory contains CI/CD workflows for automated testing and code quality.
 
 The workflows are organized to minimize redundancy:
 
-- **tests.yml**: General test suite for all code changes
-- **test-vanna-grok.yml**: Focused testing for Vanna integration (only runs when relevant files change)
+- **ci.yml**: Tests, lint, types, bandit, gitleaks, and package build
 - **codeql-analysis.yml** & **dependency-review.yml**: Security and dependency scanning
 - **claude.yml** & **claude-code-review.yml**: AI-assisted development tools
 
@@ -72,7 +62,7 @@ The workflows are organized to minimize redundancy:
 To manually run a workflow:
 
 1. Go to **Actions** tab
-2. Select the workflow (e.g., "Tests" or "Test Vanna Grok")
+2. Select the workflow (e.g., "CI")
 3. Click **"Run workflow"** button
 4. Select branch and click **"Run workflow"**
 
@@ -117,7 +107,7 @@ The workflows use GitHub repository secrets for sensitive data:
 ## Coverage Reports
 
 Coverage reports are uploaded to Codecov:
-- Overall test coverage (from tests.yml, Python 3.12 only)
+- Overall test coverage (from ci.yml, Python 3.12 only)
 - vanna_grok.py specific coverage (from test-vanna-grok.yml, Python 3.12 only)
 
 View coverage at: `https://codecov.io/gh/Trujillofa/depotru_database`
@@ -132,8 +122,8 @@ View coverage at: `https://codecov.io/gh/Trujillofa/depotru_database`
 
 ### Tests Failing in CI but Passing Locally
 
-- Check Python version (CI uses 3.10, 3.11, 3.12)
-- Ensure all dependencies are correctly specified in requirements.txt
+- Check Python version (CI uses 3.11 and 3.12)
+- Ensure all dependencies are correctly specified in pyproject.toml
 - Review workflow logs for environment differences
 - Check if tests depend on local configuration or files
 
@@ -151,6 +141,7 @@ If workflows fail with permission errors:
 - Use caching for pip packages to speed up builds
 - Skip tests gracefully when optional dependencies are unavailable
 - Generate coverage reports only once (Python 3.12) to save resources
+- Treat `pyproject.toml` + `uv.lock` as the dependency source of truth
 - Use `workflow_dispatch` for manual testing flexibility
 - Add informative test summaries using `$GITHUB_STEP_SUMMARY`
 - Use path filters to run workflows only when relevant files change

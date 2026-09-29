@@ -32,7 +32,7 @@ A comprehensive security audit was performed using [Bandit](https://bandit.readt
 #### MEDIUM Severity (Fixed)
 
 1. **B104: Hardcoded Bind to All Interfaces**
-   - **File:** `src/business_analyzer/ai/base.py`
+   - **File:** `src/business_analyzer/core/config.py` (historical note: `ai/base.py` is now a facade)
    - **Issue:** Default HOST value of `0.0.0.0` binds to all network interfaces
    - **Resolution:** Added `# nosec B104` comment with justification:
      - Intentional design for web server accessibility

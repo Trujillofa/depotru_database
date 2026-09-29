@@ -92,8 +92,8 @@ pip install pytest pytest-cov
 
 ### Full (for all tests)
 ```bash
-# Install from requirements.txt
-pip install -r requirements.txt
+# Install from pyproject.toml (source of truth; uv.lock pins versions)
+pip install -e ".[dev]"
 
 # Or install individually
 pip install pytest pytest-cov pymssql python-dotenv pandas matplotlib
@@ -115,17 +115,14 @@ The repository includes GitHub Actions workflows for automated testing:
 
 ### Available Workflows
 
-1. **Basic Tests** (`.github/workflows/tests.yml`)
+1. **Unified CI** (`.github/workflows/ci.yml`)
    - Runs on every push and pull request
-   - Tests basic functionality without dependencies
-   - Tests with full dependencies (when available)
-   - Runs on Python 3.10, 3.11, and 3.12
+   - Basic tests without dependencies plus the full CI-safe suite
+   - Tests with full dependencies on Python 3.11 and 3.12
+   - Lint, type-check, bandit, gitleaks, and package build
 
-2. **Vanna Grok Tests** (`.github/workflows/test-vanna-grok.yml`)
-   - Specifically tests vanna_grok.py functionality
-   - Installs vanna, pandas, and related dependencies
-   - Runs on multiple Python versions
-   - Generates coverage reports
+2. **CodeQL** (`.github/workflows/codeql-analysis.yml`)
+   - Separate security analysis workflow (not merged into `ci.yml`)
 
 ### GitHub Actions Status
 
@@ -143,8 +140,8 @@ To replicate CI environment locally:
 pip install pytest pytest-cov
 python run_tests.py --quick
 
-# Full tests (like CI with-dependencies job)
-pip install -r requirements.txt
+# Full tests (like CI test job)
+pip install -e ".[dev]"
 pytest tests/ -v --cov=src
 ```
 
@@ -222,7 +219,7 @@ def test_with_dependency():
 | src/business_analyzer_combined.py | 43.38% | ❌ | Legacy module, needs tests |
 | src/business_analyzer/ai/insights.py | 20.59% | ❌ | Needs comprehensive tests |
 | src/vanna_grok.py | 14.52% | ❌ | CLI wrapper, needs tests |
-| src/business_analyzer/ai/base.py | 0.00% | ❌ | Core AI module, needs tests |
+| src/business_analyzer/ai/base.py | facade | ✅ | Compat re-exports; logic lives in llm/sql_*/summaries/vanna |
 | src/business_analyzer/analysis/customer_optimized.py | 0.00% | ❌ | Optimized version needs tests |
 | src/business_analyzer/analysis/financial_optimized.py | 0.00% | ❌ | Optimized version needs tests |
 | src/business_analyzer/analysis/unified.py | 0.00% | ❌ | Unified analyzer needs tests |
@@ -268,7 +265,7 @@ View the HTML report by opening `htmlcov/index.html` in your browser.
 ### Coverage in CI
 
 Coverage reports are automatically generated in GitHub Actions:
-- Coverage artifacts uploaded for Python 3.11 runs
+- Coverage artifacts uploaded for Python 3.12 runs
 - Reports retained for 30 days
 - Access via Actions tab → Artifacts
 
@@ -276,6 +273,8 @@ Coverage reports are automatically generated in GitHub Actions:
 
 Each of these revenue-critical and production-mutating modules has a **CI
 floor of 80%** (checked per file, so one module cannot hide a drop in another).
+Phase 1 measured coverage to keep in review: monthly 91.79%, cartera_pdf 98.06%,
+manager_report queries 93.78%, website_stock_magento_ssh 94.44%.
 The CI-safe suite (`-m "not requires_db and not requires_api"`) must cover them
 with fixtures/mocks so they cannot regress silently:
 
@@ -308,7 +307,7 @@ PYTHONPATH=src python scripts/ops/run_website_stock_allowlist_sync.py --dry-run
 ### "No module named 'pymssql'"
 This is expected if you haven't installed the full dependencies. Tests requiring pymssql will be automatically skipped.
 
-**Solution**: Either run only basic tests (`python run_tests.py --quick`) or install dependencies (`pip install -r requirements.txt`)
+**Solution**: Either run only basic tests (`python run_tests.py --quick`) or install dependencies (`pip install -e ".[dev]"`)
 
 ### "No tests collected"
 Make sure you're in the repository root directory and pytest can find the `tests/` folder.

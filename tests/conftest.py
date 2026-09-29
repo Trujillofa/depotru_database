@@ -4,6 +4,7 @@ Pytest Configuration and Shared Fixtures
 This file configures pytest for the Business Data Analyzer test suite.
 """
 
+import os
 import sys
 from pathlib import Path
 from unittest.mock import Mock
@@ -13,6 +14,39 @@ import pytest
 # =============================================================================
 # Path Setup
 # =============================================================================
+
+# Snapshot process env BEFORE any app import can call load_dotenv().
+# Keys that a local .env commonly injects; CI-provided values stay.
+_DOTENV_SENSITIVE_KEYS = (
+    "DB_HOST",
+    "DB_PORT",
+    "DB_USER",
+    "DB_PASSWORD",
+    "DB_NAME",
+    "DB_NAME_J3SYSTEM",
+    "NCX_FILE_PATH",
+    "GROK_API_KEY",
+    "OPENAI_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "API_KEY",
+    "PLATFORM_API_KEYS",
+    "MAGENTO_ACCESS_TOKEN",
+    "CLOUDFLARE_TUNNEL_TOKEN",
+    "REDIS_URL",
+)
+_ENV_BEFORE_APP_IMPORT = {key: os.environ.get(key) for key in _DOTENV_SENSITIVE_KEYS}
+
+
+def isolate_dotenv_from_test_environ():
+    """Drop keys that load_dotenv injected; keep process/CI-provided values."""
+    for key in _DOTENV_SENSITIVE_KEYS:
+        original = _ENV_BEFORE_APP_IMPORT.get(key)
+        if original is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = original
+
 
 # Add src to path for imports
 src_path = Path(__file__).parent.parent / "src"
@@ -185,6 +219,7 @@ def pytest_configure(config):
     )
     config.addinivalue_line("markers", "requires_api: Tests that require API keys")
     _sanitize_real_config_secrets()
+    isolate_dotenv_from_test_environ()
 
 
 # =============================================================================

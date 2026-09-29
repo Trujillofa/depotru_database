@@ -117,13 +117,62 @@ def create_ai_client(provider: str = None):
         raise ValueError(f"Proveedor no soportado: {provider}")
 
 
-def _resolve_create_ai_client():
-    """Use the facade attribute when loaded so historical patches still apply."""
-    import sys
+def _iter_loaded_ai_base_modules():
+    """Yield loaded ``ai.base`` facade modules, including ``src.*`` aliases."""
+    suffix = "business_analyzer.ai.base"
+    names = {suffix}
+    package = __package__
+    if package:
+        names.add(f"{package}.base")
+        if package.startswith("src."):
+            names.add(f"{package[len('src.') :]}.base")
+        else:
+            names.add(f"src.{package}.base")
+    yielded = set()
+    for name, mod in sys.modules.items():
+        if mod is None:
+            continue
+        if name == suffix or name.endswith(f".{suffix}"):
+            if name not in yielded:
+                yielded.add(name)
+                yield mod
+    for name in names:
+        if name in yielded:
+            continue
+        mod = sys.modules.get(name)
+        if mod is not None:
+            yielded.add(name)
+            yield mod
 
-    facade = sys.modules.get("business_analyzer.ai.base")
-    if facade is not None:
-        return getattr(facade, "create_ai_client", create_ai_client)
+
+def _original_create_ai_client_functions():
+    """``create_ai_client`` objects from every loaded ``ai.llm`` copy."""
+    originals = {create_ai_client}
+    suffix = "business_analyzer.ai.llm"
+    for name, mod in sys.modules.items():
+        if mod is None:
+            continue
+        if name == suffix or name.endswith(f".{suffix}"):
+            factory = getattr(mod, "create_ai_client", None)
+            if factory is not None:
+                originals.add(factory)
+    return originals
+
+
+def _resolve_create_ai_client():
+    """Use any loaded ai.base facade so historical patches still apply.
+
+    Looks up ``create_ai_client`` on every loaded module named
+    ``business_analyzer.ai.base`` or ``*.business_analyzer.ai.base`` (covers
+    ``src.business_analyzer.ai.base``) and on the sibling ``base`` module
+    implied by ``__package__``. A patched factory (not one of the
+    implementation-module originals) wins.
+    """
+    originals = _original_create_ai_client_functions()
+    for facade in _iter_loaded_ai_base_modules():
+        factory = getattr(facade, "create_ai_client", None)
+        if factory is not None and factory not in originals:
+            return factory
     return create_ai_client
 
 

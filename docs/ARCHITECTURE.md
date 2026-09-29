@@ -104,8 +104,9 @@ depotru_database/
 │   └── database_explained.json           # Schema documentation
 │
 ├── .env.example                            # Environment template
-├── requirements.txt                        # Python dependencies
-├── pyproject.toml                          # Modern Python packaging
+├── pyproject.toml                          # Dependency source of truth
+├── uv.lock                                 # Locked dependency versions
+├── requirements.txt                        # Thin shim → pyproject.toml
 ├── pytest.ini                              # Test configuration
 └── README.md                               # Main documentation
 ```
@@ -465,8 +466,10 @@ cd depotru_database
 # Install in development mode (recommended)
 pip install -e ".[dev]"
 
-# Or install from requirements.txt
+# Or install from the compatibility shim (still reads pyproject.toml)
 pip install -r requirements.txt
+# Preferred:
+pip install -e ".[dev]"
 
 # Configure environment
 cp .env.example .env
@@ -494,11 +497,12 @@ PRODUCTION_MODE=true python src/vanna_grok.py
 ### Option 3: Docker Deployment
 
 ```dockerfile
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml uv.lock ./
+COPY src/ ./src/
+RUN pip install --no-cache-dir .
 
 COPY src/ ./src/
 COPY .env .

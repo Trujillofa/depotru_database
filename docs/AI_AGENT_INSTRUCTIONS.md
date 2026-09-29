@@ -5,7 +5,7 @@
 You are an AI agent working on a **Business Intelligence platform for a Colombian hardware store**. The project combines traditional Python data analysis with AI-powered natural language SQL queries using **Vanna AI + Grok (xAI)**.
 
 **Primary Technologies:**
-- Python 3.8-3.11
+- Python 3.11+
 - MSSQL Server (SmartBusiness database)
 - Vanna AI 2.0.1 (legacy, stable)
 - Grok API (xAI) for natural language → SQL
@@ -23,7 +23,7 @@ Develop, debug, refactor, and fix code while maintaining production stability, s
 ### 1. **Developing New Features**
 - Implement features from `docs/ROADMAP.md` (currently on Path A → Path B)
 - Maintain backward compatibility with Vanna 2.0.1 legacy APIs
-- Ensure all new code works across Python 3.8-3.11
+- Ensure all new code works across Python 3.11-3.12
 - Add tests for every new feature
 - Update documentation immediately
 
@@ -85,9 +85,10 @@ coding_omarchy/
 │   └── dependency-review.yml    # Vulnerability checks
 │
 ├── .env.example                # Template for environment variables
-├── requirements.txt            # Python dependencies
-├── environment.yml             # Conda environment spec
-├── setup.py                    # Package configuration
+├── pyproject.toml              # Dependency source of truth
+├── uv.lock                     # Locked versions
+├── requirements.txt            # Thin shim → pyproject.toml
+├── environment.yml             # Thin conda shim → pyproject.toml
 └── README.md                   # Project overview
 ```
 
@@ -99,7 +100,7 @@ coding_omarchy/
 | **tests/*.py** | Test suite | High - Add tests for every change |
 | **docs/ROADMAP.md** | Development plan | Medium - Update after milestones |
 | **README.md** | User-facing docs | Medium - Update for major features |
-| **setup.py** | Package config | Low - Only for new dependencies |
+| **pyproject.toml** | Package config | Low - Only for new dependencies |
 | **.env.example** | Config template | Low - Only for new env vars |
 
 ---
@@ -250,9 +251,9 @@ pytest tests/test_formatting.py -v
 pytest tests/ --cov=src --cov-report=html
 
 # 4. Test on multiple Python versions (if major change)
-conda create -n test-py310 python=3.10 -y
-conda activate test-py310
-pip install -r requirements.txt
+conda create -n test-py312 python=3.12 -y
+conda activate test-py312
+pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
@@ -735,7 +736,7 @@ isort src/ tests/ examples/
 # Check with flake8
 flake8 src/ tests/ --max-line-length=127
 
-# Type hints (Python 3.8+)
+# Type hints (Python 3.11+)
 from typing import Optional, List, Dict, Any
 
 def process_data(
@@ -938,7 +939,7 @@ Examples:
 - refactor: Extract formatting logic to utils module
 - docs: Update ANACONDA_TESTING.md with troubleshooting
 - test: Add edge cases for Colombian peso formatting
-- chore: Update dependencies in requirements.txt
+- chore: Update dependencies in pyproject.toml
 ```
 
 ### Commit Best Practices

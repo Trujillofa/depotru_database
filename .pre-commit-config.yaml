@@ -123,7 +123,7 @@ repos:
         name: mypy type checker
         description: Static type checking for Python
         args:
-          - "--python-version=3.9"
+          - "--python-version=3.11"
           - "--follow-imports=skip"
           - "--ignore-missing-imports"
           - "--show-error-codes"

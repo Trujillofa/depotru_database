@@ -25,7 +25,7 @@ Thank you for considering contributing! This document covers setup, workflow, co
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.11 or higher
 - Git
 - ODBC driver for SQL Server (for database features)
 
@@ -40,11 +40,8 @@ cd depotru_database
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# 3. Install dependencies
-pip install -r requirements.txt
-
-# 4. Install development dependencies
-pip install black flake8 mypy isort pytest pytest-cov
+# 3. Install dependencies (pyproject.toml is the source of truth)
+pip install -e ".[dev]"
 
 # 5. Install pre-commit hooks (optional but recommended)
 pip install pre-commit
@@ -158,10 +155,10 @@ The project uses the following hooks (configured in `.pre-commit-config.yaml`):
 - **mixed-line-ending** - Normalizes line endings to LF
 
 **Python Code Quality:**
-- **Black** (v23.12.1) - Code formatting (line length: 88, Python 3.8-3.11)
+- **Black** (v23.12.1) - Code formatting (line length: 88, Python 3.11-3.12)
 - **isort** (v5.13.2) - Import sorting (black profile)
 - **flake8** (v7.0.0) - Linting with pyproject.toml support
-- **mypy** (v1.8.0) - Static type checking (Python 3.8)
+- **mypy** (v1.8.0) - Static type checking (Python 3.11)
 - **bandit** (v1.7.7) - Security vulnerability scanning
 
 All tool configurations are synchronized with `pyproject.toml` settings.
@@ -537,7 +534,7 @@ Update these files when making changes:
 | Bug fix | Commit message, CHANGELOG.md (if exists) |
 | Configuration | .env.example, ARCHITECTURE.md |
 | API change | All affected documentation |
-| New dependency | requirements.txt, pyproject.toml, README.md |
+| New dependency | pyproject.toml (then `uv lock`), README.md |
 
 ### Documentation Standards
 
@@ -637,7 +634,7 @@ Tests requiring pymssql will be automatically skipped. To run all tests:
 ```bash
 pip install pymssql
 # Or install all dependencies:
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 #### Tests pass locally but fail in CI

@@ -123,6 +123,29 @@ def test_create_ai_client_patch_target_remains_on_base():
     assert "create_ai_client" in facade.__all__
 
 
+def test_resolve_create_ai_client_honors_src_base_patch(monkeypatch):
+    """patch('src.business_analyzer.ai.base.create_ai_client') must take effect."""
+    src_base = importlib.import_module("src.business_analyzer.ai.base")
+    from business_analyzer.ai import llm
+
+    def fake_factory(provider=None):
+        return object(), {"model": "patched"}, "openai"
+
+    monkeypatch.setattr(src_base, "create_ai_client", fake_factory)
+    assert llm._resolve_create_ai_client() is fake_factory
+
+
+def test_resolve_create_ai_client_honors_package_base_patch(monkeypatch):
+    from business_analyzer.ai import base as facade
+    from business_analyzer.ai import llm
+
+    def fake_factory(provider=None):
+        return object(), {"model": "patched"}, "openai"
+
+    monkeypatch.setattr(facade, "create_ai_client", fake_factory)
+    assert llm._resolve_create_ai_client() is fake_factory
+
+
 _SPLIT_NAMES = {
     "llm",
     "sql_routing",

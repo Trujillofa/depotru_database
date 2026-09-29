@@ -3,7 +3,7 @@
 > **AI-powered business intelligence for hardware store operations.** Ask questions in plain English, get SQL queries and visualizations automatically.
 
 [![CI](https://github.com/Trujillofa/depotru_database/actions/workflows/ci.yml/badge.svg)](https://github.com/Trujillofa/depotru_database/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
@@ -143,8 +143,14 @@ depotru_database/
 │   │   │   ├── product.py                  # Product performance
 │   │   │   ├── inventory.py                # Inventory velocity
 │   │   │   └── unified.py                    # Combined analyzer
-│   │   ├── ai/                             # AI integration
-│   │   │   ├── base.py                     # AIVanna base class
+│   │   ├── ai/                             # AI integration (split modules)
+│   │   │   ├── base.py                     # Compat facade (re-exports)
+│   │   │   ├── llm.py                      # Provider client + LLMMixin
+│   │   │   ├── sql_routing.py              # SQL classifiers / templates
+│   │   │   ├── sql_runtime.py              # generate_sql / run_sql
+│   │   │   ├── manager_report_routing.py   # Manager-report routing
+│   │   │   ├── summaries.py                # generate_summary
+│   │   │   ├── vanna.py                    # Composed AIVanna
 │   │   │   ├── formatting.py               # Colombian number formatting
 │   │   │   ├── insights.py                 # AI insights generation
 │   │   │   ├── training.py                 # Schema training
@@ -191,9 +197,11 @@ depotru_database/
 ├── .github/workflows/                      # CI/CD pipelines
 │   └── ci.yml                              # Unified CI workflow
 │
+├── deploy/                                 # systemd units and ops templates
 ├── .env.example                            # Environment template
-├── requirements.txt                        # Python dependencies
-├── pyproject.toml                          # Modern Python packaging
+├── pyproject.toml                          # Dependency source of truth
+├── uv.lock                                 # Locked dependency versions
+├── requirements.txt                        # Thin shim → pyproject.toml
 ├── pytest.ini                              # Test configuration
 └── README.md                               # This file
 ```

@@ -8,7 +8,7 @@ cp .env.example .env
 # Edit .env with real credentials
 
 # 2. Install dependencies
-pip install -r requirements.txt
+pip install -e ".[dev]"
 
 # 3. Run tests
 pytest tests/ -v
