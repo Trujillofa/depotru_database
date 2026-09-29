@@ -437,6 +437,7 @@ def default_attachment_writer(
         write_cartera_pdf(report, pdf_path, insights=insights)
         paths.append(pdf_path)
     except (OSError, RuntimeError, ValueError, ImportError):
+        # Optional PDF; the HTML draft is enough if ReportLab is missing.
         pass
     return paths
 
@@ -469,6 +470,7 @@ def build_live_pack(
         )
         attachments.append(Path(written))
     except (OSError, RuntimeError, ValueError, ImportError):
+        # KPI markdown is optional; the email body still has north-star numbers.
         pass
     return build_pack(
         run_date=run_date,
