@@ -123,20 +123,6 @@ mock_config.ProfitabilityConfig.CRITICAL_MARGIN = 0
 # Insert the mock config into sys.modules BEFORE importing business_analyzer.
 sys.modules["config"] = mock_config
 
-# Modules that import ``business_analyzer.core.config`` (database, db_factory,
-# queries, predictive) must not see a local .env. Wipe secret-bearing attrs
-# without inventing a "configured" DB, so Database() still fails closed
-# (ConnectionError) the same way CI does without credentials.
-from business_analyzer.core.config import Config as _RealConfig  # noqa: E402
-
-_RealConfig.DB_HOST = None
-_RealConfig.DB_USER = None
-_RealConfig.DB_PASSWORD = None
-_RealConfig.GROK_API_KEY = None
-_RealConfig.OPENAI_API_KEY = None
-_RealConfig.DEEPSEEK_API_KEY = None
-_RealConfig.ANTHROPIC_API_KEY = None
-
 # =============================================================================
 # Dependency Checks
 # =============================================================================
@@ -163,8 +149,32 @@ HAS_PANDAS = check_dependency("pandas")
 # =============================================================================
 
 
+def _sanitize_real_config_secrets():
+    """Wipe secret-bearing Config attrs if the unified module can be imported.
+
+    Modules that import ``business_analyzer.core.config`` (database, db_factory,
+    queries, predictive) must not see a local .env. Do not invent a configured
+    DB, so ``Database()`` still fails closed (ConnectionError) the same way CI
+    does without credentials.
+
+    Skipped when pydantic-settings is missing so ``tests/test_basic.py`` can
+    run in the no-dependencies workflow.
+    """
+    try:
+        from business_analyzer.core.config import Config as real_config
+    except ImportError:
+        return
+    real_config.DB_HOST = None
+    real_config.DB_USER = None
+    real_config.DB_PASSWORD = None
+    real_config.GROK_API_KEY = None
+    real_config.OPENAI_API_KEY = None
+    real_config.DEEPSEEK_API_KEY = None
+    real_config.ANTHROPIC_API_KEY = None
+
+
 def pytest_configure(config):
-    """Register custom markers."""
+    """Register custom markers and sanitize real Config when available."""
     config.addinivalue_line("markers", "unit: Unit tests")
     config.addinivalue_line(
         "markers", "integration: Integration tests requiring database"
@@ -174,6 +184,7 @@ def pytest_configure(config):
         "markers", "requires_db: Tests that require database connection"
     )
     config.addinivalue_line("markers", "requires_api: Tests that require API keys")
+    _sanitize_real_config_secrets()
 
 
 # =============================================================================
