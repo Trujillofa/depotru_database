@@ -28,6 +28,7 @@ from business_analyzer.core.config import (  # noqa: F401
     MAX_STACK_FRAME_DEPTH,
     SUPPORTED_PROVIDERS,
     Config,
+    _is_testing_env,
     get_env_or_test_default,
     hydrate_ai_config,
     require_env,
@@ -46,6 +47,21 @@ from .circuit_breaker import CircuitBreakerError, with_circuit_breaker
 
 # Preserve historical import-time AI provider validation / key loading.
 hydrate_ai_config()
+
+__all__ = [
+    "AIVanna",
+    "Config",
+    "DEFAULT_PROVIDER",
+    "MAX_STACK_FRAME_DEPTH",
+    "SUPPORTED_PROVIDERS",
+    "create_ai_client",
+    "get_env_or_test_default",
+    "hydrate_ai_config",
+    "require_env",
+    "resolve_database_settings",
+    "retry_on_failure",
+    "_is_testing_env",
+]
 
 
 # =============================================================================

@@ -16,7 +16,10 @@ if TYPE_CHECKING:
 
 def _excluded_docs_placeholders() -> tuple[str, tuple[str, ...]]:
     """Build parameterized NOT IN clause from Config.EXCLUDED_DOCUMENT_CODES."""
-    from business_analyzer.core.config import Config
+    try:
+        from config import Config
+    except ImportError:
+        from business_analyzer.core.config import Config
 
     codes = tuple(Config.EXCLUDED_DOCUMENT_CODES)
     clause = ", ".join(["%s"] * len(codes))

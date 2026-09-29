@@ -9,6 +9,21 @@ import os
 
 import pytest
 
+from business_analyzer.core import config as config_mod
+from business_analyzer.core.config import (
+    Config,
+    CustomerSegmentation,
+    InventoryConfig,
+    ProfitabilityConfig,
+    Settings,
+    get_env_or_test_default,
+    hydrate_ai_config,
+    require_env,
+    resolve_database_settings,
+)
+
+_MISSING = object()
+
 CONFIG_ENV_KEYS = (
     "NCX_FILE_PATH",
     "DB_HOST",
@@ -42,6 +57,20 @@ CONFIG_ENV_KEYS = (
 )
 
 
+@pytest.fixture(autouse=True)
+def restore_config_class_state():
+    """Snapshot/restore Config attrs so reload() cannot leak across tests."""
+    names = list(config_mod._SETTINGS_FIELD_NAMES) + ["OUTPUT_DIR", "_DB_SETTINGS"]
+    snapshot = {name: getattr(Config, name, _MISSING) for name in names}
+    yield
+    for name, value in snapshot.items():
+        if value is _MISSING:
+            if hasattr(Config, name):
+                delattr(Config, name)
+        else:
+            setattr(Config, name, value)
+
+
 @pytest.fixture
 def isolated_config_env(monkeypatch):
     """Drop known config env vars so documented defaults apply."""
@@ -51,8 +80,6 @@ def isolated_config_env(monkeypatch):
 
 
 def test_settings_defaults_without_env(isolated_config_env):
-    from business_analyzer.core.config import Settings
-
     settings = Settings()
     assert settings.DB_HOST is None
     assert settings.DB_USER is None
@@ -98,8 +125,6 @@ def test_settings_env_overrides(isolated_config_env):
     isolated_config_env.setenv("PORT", "9090")
     isolated_config_env.setenv("LOG_LEVEL", "DEBUG")
 
-    from business_analyzer.core.config import Settings
-
     settings = Settings()
     assert settings.DB_HOST == "db.example.test"
     assert settings.DB_PORT == 1444
@@ -120,8 +145,6 @@ def test_blank_db_strings_use_legacy_defaults(isolated_config_env):
     isolated_config_env.setenv("DB_NAME", "  ")
     isolated_config_env.setenv("DB_PORT", " ")
 
-    from business_analyzer.core.config import Settings
-
     settings = Settings()
     assert settings.DB_HOST is None
     assert settings.DB_USER is None
@@ -131,22 +154,24 @@ def test_blank_db_strings_use_legacy_defaults(isolated_config_env):
 
 
 def test_enable_ai_insights_only_true_is_truthy(isolated_config_env):
-    from business_analyzer.core.config import Settings
-
     isolated_config_env.setenv("ENABLE_AI_INSIGHTS", "yes")
     assert Settings().ENABLE_AI_INSIGHTS is False
     isolated_config_env.setenv("ENABLE_AI_INSIGHTS", "TRUE")
     assert Settings().ENABLE_AI_INSIGHTS is True
 
 
-def test_config_reload_applies_settings_and_thresholds(isolated_config_env):
-    from business_analyzer.core.config import (
-        Config,
-        CustomerSegmentation,
-        InventoryConfig,
-        ProfitabilityConfig,
-    )
+def test_settings_tolerates_invalid_port_and_row_limits(isolated_config_env):
+    isolated_config_env.setenv("PORT", "not-a-port")
+    isolated_config_env.setenv("INSIGHTS_MAX_ROWS", "abc")
+    isolated_config_env.setenv("MAX_DISPLAY_ROWS", "")
 
+    settings = Settings()
+    assert settings.PORT == 8084
+    assert settings.INSIGHTS_MAX_ROWS == 15
+    assert settings.MAX_DISPLAY_ROWS == 100
+
+
+def test_config_reload_applies_settings_and_thresholds(isolated_config_env):
     Config.reload()
     assert Config.DB_NAME == "SmartBusiness"
     assert Config.EXCLUDED_DOCUMENT_CODES == ["XY", "AS", "TS", "YX", "ISC"]
@@ -165,8 +190,6 @@ def test_config_reload_applies_settings_and_thresholds(isolated_config_env):
 
 
 def test_validate_missing_required_db_and_ncx(isolated_config_env, tmp_path):
-    from business_analyzer.core.config import Config
-
     Config.reload()
     Config.NCX_FILE_PATH = str(tmp_path / "missing-connections.ncx")
     with pytest.raises(ValueError, match="No valid database configuration"):
@@ -178,8 +201,6 @@ def test_validate_accepts_direct_db_config(isolated_config_env, caplog):
     isolated_config_env.setenv("DB_USER", "placeholder_user")
     isolated_config_env.setenv("DB_PASSWORD", "placeholder_password")
 
-    from business_analyzer.core.config import Config
-
     Config.reload()
     assert Config.has_direct_db_config() is True
     with caplog.at_level("WARNING"):
@@ -188,8 +209,6 @@ def test_validate_accepts_direct_db_config(isolated_config_env, caplog):
 
 
 def test_require_env_missing_exits(isolated_config_env):
-    from business_analyzer.core.config import require_env
-
     with pytest.raises(SystemExit) as excinfo:
         require_env("GROK_API_KEY")
     assert excinfo.value.code == 1
@@ -197,7 +216,6 @@ def test_require_env_missing_exits(isolated_config_env):
 
 def test_require_env_invalid_value_exits(isolated_config_env):
     isolated_config_env.setenv("GROK_API_KEY", "not-an-xai-key")
-    from business_analyzer.core.config import require_env
 
     with pytest.raises(SystemExit) as excinfo:
         require_env(
@@ -210,14 +228,10 @@ def test_require_env_invalid_value_exits(isolated_config_env):
 
 def test_require_env_returns_valid_placeholder(isolated_config_env):
     isolated_config_env.setenv("GROK_API_KEY", "xai-placeholder-key")
-    from business_analyzer.core.config import require_env
-
     assert require_env("GROK_API_KEY") == "xai-placeholder-key"
 
 
 def test_get_env_or_test_default_uses_placeholder_under_pytest(isolated_config_env):
-    from business_analyzer.core.config import get_env_or_test_default
-
     value = get_env_or_test_default(
         "GROK_API_KEY",
         test_default="xai-test-key-for-ci-only",
@@ -229,8 +243,6 @@ def test_get_env_or_test_default_uses_placeholder_under_pytest(isolated_config_e
 def test_get_env_or_test_default_missing_in_production_exits(
     isolated_config_env, monkeypatch
 ):
-    from business_analyzer.core import config as config_mod
-
     monkeypatch.setattr(config_mod, "_is_testing_env", lambda: False)
     with pytest.raises(SystemExit):
         config_mod.get_env_or_test_default(
@@ -241,16 +253,45 @@ def test_get_env_or_test_default_missing_in_production_exits(
 
 def test_hydrate_ai_invalid_provider_exits(isolated_config_env):
     isolated_config_env.setenv("AI_PROVIDER", "not-a-provider")
-    from business_analyzer.core.config import hydrate_ai_config
 
     with pytest.raises(SystemExit) as excinfo:
         hydrate_ai_config()
     assert excinfo.value.code == 1
 
 
-def test_resolve_database_settings_test_defaults(isolated_config_env):
-    from business_analyzer.core.config import resolve_database_settings
+def test_hydrate_ai_missing_db_host_fails_fast_in_production(
+    isolated_config_env, monkeypatch, capsys
+):
+    isolated_config_env.setenv("AI_PROVIDER", "grok")
+    isolated_config_env.setenv("GROK_API_KEY", "xai-placeholder-key")
+    Config.reload()
+    before_host = Config.DB_HOST
+    monkeypatch.setattr(config_mod, "_is_testing_env", lambda: False)
 
+    with pytest.raises(SystemExit) as excinfo:
+        hydrate_ai_config()
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert "Variable de entorno requerida faltante: DB_HOST" in captured.out
+    assert Config.DB_HOST is before_host
+
+
+def test_hydrate_ai_stores_db_settings_off_config_db_attrs(isolated_config_env):
+    isolated_config_env.setenv("AI_PROVIDER", "grok")
+    isolated_config_env.setenv("GROK_API_KEY", "xai-placeholder-key")
+    Config.reload()
+    assert Config.DB_HOST is None
+
+    hydrate_ai_config()
+    assert Config._DB_SETTINGS["host"] == "test-host"
+    assert Config._DB_SETTINGS["name"] == "TestDB"
+    assert Config.DB_HOST is None
+    assert Config.DB_USER is None
+    assert Config.DB_PASSWORD is None
+    assert Config.DB_NAME == "SmartBusiness"
+
+
+def test_resolve_database_settings_test_defaults(isolated_config_env):
     settings = resolve_database_settings()
     assert settings["host"] == "test-host"
     assert settings["port"] == 1433
@@ -261,8 +302,6 @@ def test_resolve_database_settings_test_defaults(isolated_config_env):
 
 def test_ensure_output_dir_creates_path(isolated_config_env, tmp_path):
     isolated_config_env.setenv("OUTPUT_DIR", str(tmp_path / "business_reports"))
-    from business_analyzer.core.config import Config
-
     Config.reload()
     path = Config.ensure_output_dir()
     assert path == (tmp_path / "business_reports").resolve()
@@ -271,7 +310,6 @@ def test_ensure_output_dir_creates_path(isolated_config_env, tmp_path):
 
 
 def test_src_config_shim_reexports_canonical_config():
-    from business_analyzer.core.config import Config, CustomerSegmentation
     from src.config import Config as ShimConfig
     from src.config import CustomerSegmentation as ShimSegments
 
@@ -281,9 +319,13 @@ def test_src_config_shim_reexports_canonical_config():
 
 def test_ai_base_shim_reexports_canonical_config():
     pytest.importorskip("vanna")
+    from business_analyzer.ai import base as ai_base
     from business_analyzer.ai.base import Config as AIConfig
+    from business_analyzer.ai.base import _is_testing_env as ai_is_testing
     from business_analyzer.ai.base import require_env as ai_require_env
-    from business_analyzer.core.config import Config, require_env
 
+    assert "Config" in ai_base.__all__
+    assert "_is_testing_env" in ai_base.__all__
     assert AIConfig is Config
     assert ai_require_env is require_env
+    assert ai_is_testing is config_mod._is_testing_env

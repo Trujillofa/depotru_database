@@ -2,8 +2,21 @@
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from business_analyzer.core.config import Config
 from business_analyzer.core.database import ConnectionType, Database, DatabaseError
+
+try:
+    from config import Config
+except ImportError:
+    import sys
+    from pathlib import Path
+
+    src_path = Path(__file__).parent.parent.parent.parent
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+    try:
+        from config import Config
+    except ImportError:
+        from business_analyzer.core.config import Config
 from business_analyzer.core.j3system_sales_warehouse import (
     build_one_warehouse_per_sale_for_period_sql,
     build_warehouse_breakdown_for_period_sql,

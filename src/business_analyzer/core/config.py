@@ -94,6 +94,42 @@ def _blank_to_none(value: Any) -> Optional[str]:
     return value
 
 
+def _coerce_optional_int(value: Any, default: int) -> int:
+    """Parse an int for Settings; invalid or blank values use ``default``.
+
+    This keeps a malformed ``PORT`` / row-limit env var from breaking BI
+    imports of ``core.config``. The AI hydrate path still uses strict
+    ``int(os.getenv(...))`` so invalid values fail there as before.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned:
+            return default
+        try:
+            return int(cleaned, 10)
+        except ValueError:
+            try:
+                as_float = float(cleaned)
+            except ValueError:
+                return default
+            if not as_float.is_integer():
+                return default
+            try:
+                return int(as_float)
+            except (OverflowError, ValueError):
+                return default
+    try:
+        return int(value)
+    except (OverflowError, TypeError, ValueError):
+        return default
+
+
 class Settings(BaseSettings):
     """Environment-backed settings. Missing secrets do not fail construction."""
 
@@ -179,6 +215,21 @@ class Settings(BaseSettings):
             return value
         return str(value).lower() == "true"
 
+    @field_validator("PORT", mode="before")
+    @classmethod
+    def _port(cls, value: Any) -> int:
+        return _coerce_optional_int(value, 8084)
+
+    @field_validator("INSIGHTS_MAX_ROWS", mode="before")
+    @classmethod
+    def _insights_max_rows(cls, value: Any) -> int:
+        return _coerce_optional_int(value, 15)
+
+    @field_validator("MAX_DISPLAY_ROWS", mode="before")
+    @classmethod
+    def _max_display_rows(cls, value: Any) -> int:
+        return _coerce_optional_int(value, 100)
+
 
 def get_settings() -> Settings:
     """Build a fresh Settings snapshot from the current process environment."""
@@ -241,6 +292,7 @@ def _is_testing_env() -> bool:
             frame = frame.f_back
             depth += 1
     except (AttributeError, ValueError):
+        # Stack frames can disappear while walking; treat as not-testing.
         pass
     finally:
         if current_frame is not None:
@@ -332,8 +384,10 @@ def resolve_database_settings() -> Dict[str, Any]:
 def hydrate_ai_config() -> None:
     """Apply ``ai/base.py`` import-time AI provider validation and key loading.
 
-    Does not overwrite BI ``DB_*`` attributes. AI callers that need resolved
-    credentials should use :func:`resolve_database_settings`.
+    Calls :func:`resolve_database_settings` so a missing production DB config
+    still fail-fast with the Spanish ``require_env`` message (same timing as
+    the historical ``ai/base.py`` class body). The resolved mapping is stored
+    on ``Config._DB_SETTINGS`` and is not copied onto BI ``Config.DB_*``.
     """
     provider = os.getenv("AI_PROVIDER", DEFAULT_PROVIDER).lower()
     if provider not in SUPPORTED_PROVIDERS:
@@ -385,6 +439,8 @@ def hydrate_ai_config() -> None:
         "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
     )
     Config.DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    # Fail-fast on missing production DB, same as historical ai/base.py Config.
+    Config._DB_SETTINGS = resolve_database_settings()
     Config.PORT = int(os.getenv("PORT", "8084"))
     Config.HOST = os.getenv("HOST", "0.0.0.0")  # nosec B104
     Config.ENABLE_AI_INSIGHTS = (
@@ -400,6 +456,8 @@ class Config:
 
     EXCLUDED_DOCUMENT_CODES = ["XY", "AS", "TS", "YX", "ISC"]
     REPORT_FIGURE_SIZE = (20, 24)
+    # Resolved AI/NCX credentials. Not copied onto optional BI ``DB_*``.
+    _DB_SETTINGS: Optional[Dict[str, Any]] = None
 
     @classmethod
     def reload(cls) -> Settings:

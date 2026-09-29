@@ -21,7 +21,16 @@ from collections import defaultdict
 from decimal import Decimal
 from typing import Any, Dict, List
 
-from business_analyzer.core.config import CustomerSegmentation
+# Handle imports for both package and direct execution contexts
+try:
+    from business_analyzer.core.config import CustomerSegmentation
+except ImportError:
+    # Fallback for direct execution
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from config import CustomerSegmentation
 
 
 def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:

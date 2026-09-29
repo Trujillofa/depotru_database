@@ -15,11 +15,19 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-from business_analyzer.core.config import (
-    CustomerSegmentation,
-    InventoryConfig,
-    ProfitabilityConfig,
-)
+# Handle imports for both package and direct execution contexts
+try:
+    from business_analyzer.core.config import (
+        CustomerSegmentation,
+        InventoryConfig,
+        ProfitabilityConfig,
+    )
+except ImportError:
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from config import CustomerSegmentation, InventoryConfig, ProfitabilityConfig
 
 try:
     from .alerts import InventoryAlerts
