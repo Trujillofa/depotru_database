@@ -121,9 +121,21 @@ mock_config.ProfitabilityConfig.STAR_PRODUCT_MARGIN = 30
 mock_config.ProfitabilityConfig.CRITICAL_MARGIN = 0
 
 # Insert the mock config into sys.modules BEFORE importing business_analyzer.
-# database / db_factory / queries / predictive import ``from config import Config``
-# so this mock still blocks a local .env from reaching those tests.
 sys.modules["config"] = mock_config
+
+# Modules that import ``business_analyzer.core.config`` (database, db_factory,
+# queries, predictive) must not see a local .env. Wipe secret-bearing attrs
+# without inventing a "configured" DB, so Database() still fails closed
+# (ConnectionError) the same way CI does without credentials.
+from business_analyzer.core.config import Config as _RealConfig  # noqa: E402
+
+_RealConfig.DB_HOST = None
+_RealConfig.DB_USER = None
+_RealConfig.DB_PASSWORD = None
+_RealConfig.GROK_API_KEY = None
+_RealConfig.OPENAI_API_KEY = None
+_RealConfig.DEEPSEEK_API_KEY = None
+_RealConfig.ANTHROPIC_API_KEY = None
 
 # =============================================================================
 # Dependency Checks

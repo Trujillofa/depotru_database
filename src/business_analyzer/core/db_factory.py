@@ -8,7 +8,7 @@ from typing import Dict, Optional
 from business_analyzer.core.database import ConnectionType, Database
 
 try:
-    from config import Config
+    from business_analyzer.core.config import Config
 except ImportError:
     import sys
     from pathlib import Path
@@ -16,10 +16,7 @@ except ImportError:
     src_path = Path(__file__).parent.parent.parent
     if str(src_path) not in sys.path:
         sys.path.insert(0, str(src_path))
-    try:
-        from config import Config
-    except ImportError:
-        from business_analyzer.core.config import Config
+    from config import Config
 
 _thread_local = threading.local()
 

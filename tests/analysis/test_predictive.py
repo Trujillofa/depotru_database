@@ -7,7 +7,7 @@ from business_analyzer.analysis.predictive import (
     forecast_demand,
     get_top_products,
 )
-from config import Config
+from business_analyzer.core.config import Config
 
 
 class TestLinearForecast:
