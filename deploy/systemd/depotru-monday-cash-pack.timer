@@ -1,0 +1,11 @@
+[Unit]
+Description=Timer: Monday cash pack draft (08:45 America/Bogota)
+# Host timezone should be America/Bogota, or adjust OnCalendar.
+
+[Timer]
+OnCalendar=Mon *-*-* 08:45:00
+Persistent=true
+Unit=depotru-monday-cash-pack.service
+
+[Install]
+WantedBy=timers.target

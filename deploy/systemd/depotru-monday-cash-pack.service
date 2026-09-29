@@ -1,0 +1,17 @@
+[Unit]
+Description=Depotru: Monday cash pack draft (cartera + margen negativo/SIKA + KPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/depotru_database
+EnvironmentFile=-%h/.config/depotru/monday-cash-pack.env
+Environment=PYTHONPATH=src
+# Draft only. Never pass --send here; review the .eml first.
+ExecStart=%h/Projects/depotru_database/.venv/bin/python scripts/reports/run_monday_cash_pack.py
+Nice=10
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target
