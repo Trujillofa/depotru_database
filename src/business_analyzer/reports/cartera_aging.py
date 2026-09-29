@@ -8,9 +8,9 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
-from business_analyzer.ai.base import Config
 from business_analyzer.ai.formatting import format_currency
 from business_analyzer.core.cartera_aging import CarteraAgingRunner
+from business_analyzer.core.config import Config
 from business_analyzer.core.database import Database, DatabaseError
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")

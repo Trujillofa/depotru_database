@@ -15,30 +15,14 @@ Usage:
 
 from typing import Any, Dict, List, Optional
 
-try:
-    from ..ai.base import Config as AIConfig
-    from ..ai.base import create_ai_client
-    from ..ai.formatting import (
-        format_currency,
-        format_integer,
-        format_number,
-        format_percentage,
-    )
-except ImportError:
-    import sys
-    from pathlib import Path
-
-    src_path = Path(__file__).parent.parent.parent
-    if str(src_path) not in sys.path:
-        sys.path.insert(0, str(src_path))
-    from business_analyzer.ai.base import Config as AIConfig
-    from business_analyzer.ai.base import create_ai_client
-    from business_analyzer.ai.formatting import (
-        format_currency,
-        format_integer,
-        format_number,
-        format_percentage,
-    )
+from business_analyzer.ai.base import create_ai_client
+from business_analyzer.ai.formatting import (
+    format_currency,
+    format_integer,
+    format_number,
+    format_percentage,
+)
+from business_analyzer.core.config import Config as AIConfig
 
 
 def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:

@@ -9,7 +9,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence
 
-from business_analyzer.ai.base import Config
+from business_analyzer.core.config import Config
 from business_analyzer.core.database import Database
 from business_analyzer.core.invoice_summary import (
     InvoiceSummaryRunner,

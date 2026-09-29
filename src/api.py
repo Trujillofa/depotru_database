@@ -19,8 +19,8 @@ from business_analyzer.ai.circuit_breaker import breakers
 from business_analyzer.analysis import UnifiedAnalyzer
 from business_analyzer.analysis.predictive import forecast_demand, get_top_products
 from business_analyzer.core.api_auth import require_api_key
+from business_analyzer.core.config import Config
 from business_analyzer.core.database import Database
-from config import Config
 
 app = FastAPI(
     title="Business Data Analyzer API",

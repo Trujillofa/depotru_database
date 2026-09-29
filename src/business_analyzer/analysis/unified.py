@@ -15,22 +15,22 @@ from typing import Any, Dict, List
 
 import pandas as pd
 
-# Handle imports for both package and direct execution contexts
+from business_analyzer.core.config import (
+    CustomerSegmentation,
+    InventoryConfig,
+    ProfitabilityConfig,
+)
+
 try:
-    from ...config import CustomerSegmentation, InventoryConfig, ProfitabilityConfig
     from .alerts import InventoryAlerts
 except ImportError:
-    # Fallback for direct execution
     import sys
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from config import CustomerSegmentation, InventoryConfig, ProfitabilityConfig
-
     try:
         from analysis.alerts import InventoryAlerts
     except ImportError:
-        # Last resort fallback
         from .alerts import InventoryAlerts
 
 

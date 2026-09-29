@@ -48,15 +48,7 @@ try:
 except ImportError:
     CRYPTO_AVAILABLE = False
 
-try:
-    from config import Config
-except ImportError:
-    from pathlib import Path
-
-    src_path = Path(__file__).parent.parent.parent
-    if str(src_path) not in sys.path:
-        sys.path.insert(0, str(src_path))
-    from config import Config
+from business_analyzer.core.config import Config
 
 logger = logging.getLogger(__name__)
 

@@ -6,25 +6,14 @@ Contains configuration, security utilities, and the AIVanna base class.
 
 from __future__ import annotations
 
-import inspect
 import math
 import os
 import re
 import sys
 import time
-import warnings
 from datetime import datetime
 from functools import wraps
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
-
-# Optional dotenv import
-try:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-except ImportError:
-    pass
 
 from vanna.legacy.chromadb.chromadb_vector import ChromaDB_VectorStore
 from vanna.legacy.openai import OpenAI_Chat
@@ -34,6 +23,16 @@ try:
 except ImportError:
     OpenAI = None
 
+from business_analyzer.core.config import (  # noqa: F401
+    DEFAULT_PROVIDER,
+    MAX_STACK_FRAME_DEPTH,
+    SUPPORTED_PROVIDERS,
+    Config,
+    get_env_or_test_default,
+    hydrate_ai_config,
+    require_env,
+    resolve_database_settings,
+)
 from business_analyzer.core.j3system_sales_warehouse import (
     build_sales_warehouse_sql_for_question,
     extract_warehouse_code,
@@ -41,274 +40,12 @@ from business_analyzer.core.j3system_sales_warehouse import (
     qualified_j3_table,
     warehouse_display_name_sql,
 )
-from business_analyzer.core.paths import resolve_output_dir
 from business_analyzer.core.query_cache import create_query_cache
 
 from .circuit_breaker import CircuitBreakerError, with_circuit_breaker
 
-# =============================================================================
-# CONSTANTS
-# =============================================================================
-
-# Maximum stack depth to search for test file indicators (safety limit)
-MAX_STACK_FRAME_DEPTH = 20
-
-# Supported AI providers
-SUPPORTED_PROVIDERS = ["grok", "openai", "deepseek", "anthropic", "ollama"]
-DEFAULT_PROVIDER = "grok"
-
-
-# =============================================================================
-# SECURITY - Required Environment Variables (No Defaults!)
-# =============================================================================
-
-
-def require_env(name: str, validation_func=None, error_msg: str = None) -> str:
-    """
-    Get required environment variable with optional validation.
-    Exits immediately if missing or invalid - no defaults allowed!
-    """
-    value = os.getenv(name)
-
-    if not value:
-        print(f"❌ ERROR: Variable de entorno requerida faltante: {name}")
-        if error_msg:
-            print(f"   {error_msg}")
-        else:
-            print("   Agrega a tu archivo .env:")
-        print(f"   {name}=tu-valor-aqui")
-        print("\n   Ejemplo .env completo:")
-        print("   GROK_API_KEY=xai-tu-clave")
-        print("   DB_HOST=tu-servidor")
-        print("   DB_NAME=SmartBusiness")
-        print("   DB_USER=tu-usuario")
-        print("   DB_PASSWORD=tu-contraseña")
-        sys.exit(1)
-
-    if validation_func and not validation_func(value):
-        print(f"❌ ERROR: {name} tiene un valor inválido: {value}")
-        if error_msg:
-            print(f"   {error_msg}")
-        sys.exit(1)
-
-    return value
-
-
-def _is_testing_env() -> bool:
-    """
-    Detect if we're running in a testing environment.
-    Checks multiple indicators to be robust across different test runners.
-    """
-    # Check if pytest is imported
-    if "pytest" in sys.modules:
-        return True
-
-    # Check for TESTING environment variable
-    if os.getenv("TESTING", "false").lower() == "true":
-        return True
-
-    # Check if running from a test file (using inspect for safety)
-    current_frame = None
-    try:
-        current_frame = inspect.currentframe()
-        frame = current_frame
-        depth = 0
-        while frame and depth < MAX_STACK_FRAME_DEPTH:
-            filename = frame.f_globals.get("__file__", "")
-            if "test" in filename.lower() or "pytest" in filename.lower():
-                return True
-            frame = frame.f_back
-            depth += 1
-    except (AttributeError, ValueError):
-        pass
-    finally:
-        if current_frame is not None:
-            del current_frame
-
-    return False
-
-
-def get_env_or_test_default(
-    name: str,
-    test_default: str,
-    validation_func=None,
-    error_msg: str = None,
-    warn_on_test_default: bool = True,
-) -> str:
-    """
-    Get environment variable with testing support.
-
-    In production: uses require_env() with validation and exits on failure.
-    In testing: returns environment variable or test default with optional warning.
-
-    Args:
-        name: Environment variable name
-        test_default: Default value to use in testing mode
-        validation_func: Validation function (production mode only)
-        error_msg: Error message for validation failures (production mode only)
-        warn_on_test_default: If True, issue warning when using test default
-
-    Returns:
-        Environment variable value (validated in production, raw in testing)
-    """
-    is_testing = _is_testing_env()
-
-    if is_testing:
-        value = os.getenv(name, test_default)
-        if warn_on_test_default and value == test_default:
-            warnings.warn(
-                f"Testing mode: Using default value for {name}",
-                category=UserWarning,
-                stacklevel=2,
-            )
-        return value
-    else:
-        return require_env(name, validation_func, error_msg)
-
-
-def resolve_database_settings():
-    """Resolve direct database variables or a local Navicat NCX export."""
-    if _is_testing_env():
-        return {
-            "host": get_env_or_test_default("DB_HOST", test_default="test-host"),
-            "port": int(get_env_or_test_default("DB_PORT", "1433")),
-            "name": get_env_or_test_default("DB_NAME", test_default="TestDB"),
-            "user": get_env_or_test_default("DB_USER", test_default="test_user"),
-            "password": get_env_or_test_default(
-                "DB_PASSWORD", test_default="test_password"
-            ),
-        }
-
-    direct_requested = any(
-        os.getenv(name) for name in ("DB_HOST", "DB_USER", "DB_PASSWORD")
-    )
-    if direct_requested:
-        return {
-            "host": require_env("DB_HOST"),
-            "port": int(os.getenv("DB_PORT", "1433")),
-            "name": require_env("DB_NAME"),
-            "user": require_env("DB_USER"),
-            "password": require_env("DB_PASSWORD"),
-        }
-
-    ncx_file_path = os.getenv("NCX_FILE_PATH")
-    if ncx_file_path:
-        from business_analyzer.core.database import load_connections
-
-        expanded_path = os.path.expanduser(ncx_file_path)
-        connections = load_connections(expanded_path)
-        if not connections:
-            print(f"❌ ERROR: No se encontró una conexión válida en {expanded_path}")
-            sys.exit(1)
-
-        details = connections[0]
-        return {
-            "host": details["Host"],
-            "port": int(details.get("Port", 1433)),
-            "name": os.getenv("DB_NAME") or details.get("Database", "master"),
-            "user": details["UserName"],
-            "password": details["Password"],
-        }
-
-    return {
-        "host": require_env("DB_HOST"),
-        "port": int(os.getenv("DB_PORT", "1433")),
-        "name": require_env("DB_NAME"),
-        "user": require_env("DB_USER"),
-        "password": require_env("DB_PASSWORD"),
-    }
-
-
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
-
-
-class Config:
-    """Configuration class for AI providers and database connections."""
-
-    # AI Provider selection (grok, openai, deepseek, anthropic, ollama)
-    AI_PROVIDER = os.getenv("AI_PROVIDER", DEFAULT_PROVIDER).lower()
-
-    # Validate provider
-    if AI_PROVIDER not in SUPPORTED_PROVIDERS:
-        print(f"❌ ERROR: AI_PROVIDER '{AI_PROVIDER}' no es válido.")
-        print(f"   Proveedores soportados: {', '.join(SUPPORTED_PROVIDERS)}")
-        print(f"   Ejemplo: AI_PROVIDER=grok")
-        sys.exit(1)
-
-    # Provider-specific API keys (only required for chosen provider)
-    # Only load the API key for the selected provider to avoid requiring all keys
-    GROK_API_KEY = None
-    OPENAI_API_KEY = None
-    DEEPSEEK_API_KEY = None
-    ANTHROPIC_API_KEY = None
-
-    if AI_PROVIDER == "grok":
-        GROK_API_KEY = get_env_or_test_default(
-            "GROK_API_KEY",
-            test_default="xai-test-key-for-ci-only",
-            validation_func=lambda x: x.startswith("xai-"),
-            error_msg="La clave de Grok debe comenzar con 'xai-'",
-            warn_on_test_default=True,
-        )
-    elif AI_PROVIDER == "openai":
-        OPENAI_API_KEY = get_env_or_test_default(
-            "OPENAI_API_KEY",
-            test_default="sk-test-key-for-ci-only",
-            validation_func=lambda x: x.startswith("sk-"),
-            error_msg="La clave de OpenAI debe comenzar con 'sk-'",
-            warn_on_test_default=True,
-        )
-    elif AI_PROVIDER == "deepseek":
-        DEEPSEEK_API_KEY = get_env_or_test_default(
-            "DEEPSEEK_API_KEY",
-            test_default="sk-test-key-for-ci-only",
-            warn_on_test_default=True,
-        )
-    elif AI_PROVIDER == "anthropic":
-        ANTHROPIC_API_KEY = get_env_or_test_default(
-            "ANTHROPIC_API_KEY",
-            test_default="sk-ant-test-key-for-ci-only",
-            validation_func=lambda x: x.startswith("sk-ant-"),
-            error_msg="La clave de Anthropic debe comenzar con 'sk-ant-'",
-            warn_on_test_default=True,
-        )
-
-    # Ollama configuration (local, no API key needed)
-    OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
-
-    # DeepSeek uses an OpenAI-compatible API.
-    DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
-
-    # Database configuration: direct variables take precedence over NCX.
-    _DB_SETTINGS = resolve_database_settings()
-    DB_HOST = _DB_SETTINGS["host"]
-    DB_PORT = _DB_SETTINGS["port"]
-    DB_NAME = _DB_SETTINGS["name"]
-    DB_USER = _DB_SETTINGS["user"]
-    DB_PASSWORD = _DB_SETTINGS["password"]
-
-    # Server configuration
-    PORT = int(os.getenv("PORT", "8084"))
-    # nosec B104: Binding to 0.0.0.0 is intentional for the web server
-    # This allows the server to be accessible from other machines on the network
-    HOST = os.getenv("HOST", "0.0.0.0")  # nosec B104
-
-    # Feature toggles
-    ENABLE_AI_INSIGHTS = os.getenv("ENABLE_AI_INSIGHTS", "true").lower() == "true"
-    INSIGHTS_MAX_ROWS = int(os.getenv("INSIGHTS_MAX_ROWS", "15"))
-    MAX_DISPLAY_ROWS = int(os.getenv("MAX_DISPLAY_ROWS", "100"))
-    OUTPUT_DIR = resolve_output_dir()
-
-    @classmethod
-    def ensure_output_dir(cls) -> Path:
-        path = resolve_output_dir()
-        cls.OUTPUT_DIR = path
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+# Preserve historical import-time AI provider validation / key loading.
+hydrate_ai_config()
 
 
 # =============================================================================

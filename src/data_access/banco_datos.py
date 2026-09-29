@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pymssql
 
-from ..config import Config
+from business_analyzer.core.config import Config
 
 logger = logging.getLogger(__name__)
 
