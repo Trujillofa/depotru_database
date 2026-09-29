@@ -51,7 +51,6 @@ except ImportError:
 try:
     from config import Config
 except ImportError:
-    import sys
     from pathlib import Path
 
     src_path = Path(__file__).parent.parent.parent

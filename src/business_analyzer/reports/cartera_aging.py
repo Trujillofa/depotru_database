@@ -11,7 +11,7 @@ from typing import Any, Dict, Mapping, Optional
 from business_analyzer.ai.base import Config
 from business_analyzer.ai.formatting import format_currency
 from business_analyzer.core.cartera_aging import CarteraAgingRunner
-from business_analyzer.core.database import Database
+from business_analyzer.core.database import Database, DatabaseError
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -273,7 +273,7 @@ def build_cartera_result(
             include_dso=bool(include_dso),
         )
         report = runner.build_report(as_of)
-    except Exception as exc:  # noqa: BLE001 — surface to API
+    except (DatabaseError, OSError, ValueError, RuntimeError) as exc:
         return {
             "status": "error",
             "message": f"Error generando cartera / aging: {exc}",
@@ -300,7 +300,7 @@ def build_cartera_result(
             path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
         else:
             path.write_text(render_markdown(report), encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001
+    except (OSError, RuntimeError, ValueError, ImportError) as exc:
         return {
             "status": "error",
             "message": f"Error escribiendo informe ({fmt_norm}): {exc}",

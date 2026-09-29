@@ -1,7 +1,5 @@
 """Tests for environment-backed path resolution."""
 
-import os
-
 from business_analyzer.core.paths import resolve_env_path, resolve_output_dir
 
 

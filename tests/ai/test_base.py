@@ -4,8 +4,6 @@ Tests for business_analyzer/ai/base.py
 
 from unittest.mock import Mock
 
-import pytest
-
 # Standalone mock config (does not replace business_analyzer.ai.base in sys.modules)
 mock_config = Mock()
 mock_config.GROK_API_KEY = "test-key"

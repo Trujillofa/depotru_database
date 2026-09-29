@@ -1,6 +1,5 @@
 """Static verification for J3System sales-to-warehouse reference documentation."""
 
-import re
 from pathlib import Path
 
 import pytest

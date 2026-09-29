@@ -1,9 +1,7 @@
 """Tests for manager report Flask endpoints in SmartVannaFlaskApp."""
 
-import json
 import os
 import sys
-from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest

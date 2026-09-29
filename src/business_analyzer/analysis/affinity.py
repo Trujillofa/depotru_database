@@ -15,7 +15,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List
 
 # Ensure src/ is on the path
 _src = str(Path(__file__).resolve().parent.parent.parent)
@@ -23,11 +23,7 @@ if _src not in sys.path:
     sys.path.insert(0, _src)
 
 from business_analyzer.analysis.blender import merge
-from business_analyzer.analysis.engines import (
-    EXCLUDED_CODES,
-    EXCLUDED_SKUS,
-    MATRIX_MIN_SALES,
-)
+from business_analyzer.analysis.engines import EXCLUDED_CODES, EXCLUDED_SKUS
 from business_analyzer.analysis.engines.category_fallback import (
     run as run_category_fallback,
 )

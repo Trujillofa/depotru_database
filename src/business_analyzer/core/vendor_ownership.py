@@ -12,17 +12,7 @@ Budget attribution priority remains in presupuesto_2026.attribute_sale:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import (
-    Dict,
-    FrozenSet,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-)
+from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 # Built-in merge map: source code → canonical meta code
 DEFAULT_CODE_MERGES: Dict[str, str] = {

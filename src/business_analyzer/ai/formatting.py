@@ -6,7 +6,7 @@ Contains number formatting utilities for Colombian pesos, percentages, and thous
 
 import locale
 import re
-from typing import Any, List, Optional
+from typing import Any
 
 import pandas as pd
 

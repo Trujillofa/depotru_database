@@ -11,10 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
-import pandas as pd
-
 from business_analyzer.ai.flask_app import SmartVannaFlaskApp
-from business_analyzer.ai.formatting import format_dataframe
 from business_analyzer.ai.recommended_reports import (
     build_manager_action,
     get_recommended_reports,
@@ -219,6 +216,7 @@ class TestRecommendedReportsFlaskRoutes:
     def test_catalog_pdf_entry_uses_explicit_format(self, report_client, tmp_path):
         client, stub, success = report_client
         catalog = client.get("/api/v0/recommended_reports").get_json()
+        assert catalog["reports"]
         pdf_action = build_manager_action(year=2024, month=5, fmt="pdf")
         response = client.post("/api/v0/generate_report", json=pdf_action)
         assert response.status_code == 200

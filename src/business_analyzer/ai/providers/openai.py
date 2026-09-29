@@ -2,7 +2,7 @@
 OpenAI provider for AI package.
 """
 
-from typing import Any, Optional, Tuple
+from typing import Tuple
 
 try:
     from openai import OpenAI

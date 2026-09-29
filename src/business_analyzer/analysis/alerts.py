@@ -4,7 +4,7 @@ Alerts module for Business Data Analyzer.
 Identifies items below safety stock thresholds and provides inventory insights.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import pandas as pd
 

@@ -6,7 +6,6 @@ import sys
 
 # Ensure src is in path
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -121,8 +120,6 @@ class TestStability:
 if __name__ == "__main__":
     # If pytest is available, use it
     try:
-        import pytest
-
         sys.exit(pytest.main([__file__, "-v"]))
     except ImportError:
         # Simple manual execution if pytest is not available

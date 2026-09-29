@@ -15,9 +15,8 @@ All tests use mocking - no real database connection required.
 
 import os
 import sys
-from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, mock_open, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -60,7 +59,6 @@ from business_analyzer.core.database import (
     ConnectionError,
     ConnectionType,
     Database,
-    DatabaseError,
     QueryError,
     decrypt_navicat_password,
     env_database_name,

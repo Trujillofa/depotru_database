@@ -42,11 +42,7 @@ from business_analyzer.core.j3system_sales_warehouse import (
     warehouse_display_name_sql,
 )
 from business_analyzer.core.paths import resolve_output_dir
-from business_analyzer.core.query_cache import (
-    MemoryQueryCache,
-    SimpleQueryCache,
-    create_query_cache,
-)
+from business_analyzer.core.query_cache import create_query_cache
 
 from .circuit_breaker import CircuitBreakerError, with_circuit_breaker
 

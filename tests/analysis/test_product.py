@@ -4,11 +4,7 @@ Tests for product analysis module.
 
 import pytest
 
-from src.business_analyzer.analysis.product import (
-    ProductAnalyzer,
-    extract_value,
-    safe_divide,
-)
+from src.business_analyzer.analysis.product import ProductAnalyzer
 
 
 class TestProductAnalyzer:

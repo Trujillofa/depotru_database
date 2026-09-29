@@ -16,7 +16,7 @@ from ..affinity_mart import (
     rows_to_engine_results,
     use_mart_preferred,
 )
-from . import EXCLUDED_CODES, EXCLUDED_SKUS, MATRIX_MIN_SALES, EngineResult
+from . import EXCLUDED_CODES, EXCLUDED_SKUS, EngineResult
 
 logger = logging.getLogger(__name__)
 
