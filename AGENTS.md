@@ -49,8 +49,21 @@ src/
 ├── business_analyzer/            # Modular package (preferred)
 │   ├── core/                   # config.py, database.py, validation.py
 │   ├── analysis/               # customer.py, financial.py, product.py, inventory.py, unified.py
-│   └── ai/                     # base.py, formatting.py, providers/{grok,openai,deepseek,anthropic,ollama}.py
+│   └── ai/                     # focused modules + base.py facade (see map below)
 └── config.py                   # Shared config (env vars, DB settings)
+
+**AI module map** (Phase 2b): `ai/base.py` is a thin re-export facade, not the monolith.
+
+| Module | Role |
+|--------|------|
+| `ai/llm.py` | `retry_on_failure`, `create_ai_client`, `LLMMixin` |
+| `ai/sql_routing.py` | classifiers, SQL templates, document-exclusion repair |
+| `ai/sql_runtime.py` | `generate_sql`, `run_sql`, MSSQL connect |
+| `ai/manager_report_routing.py` | manager-report detect/parse/build |
+| `ai/summaries.py` | currency normalize + `generate_summary` |
+| `ai/vanna.py` | composed `AIVanna` |
+| `ai/base.py` | compat re-exports (`__all__`) |
+| `ai/training.py` / `ai/charts.py` | already split (unchanged) |
 ```
 
 **Rule**: Use `business_analyzer/` modular package for new code.
@@ -95,10 +108,10 @@ OUTPUT_DIR = os.getenv("OUTPUT_DIR", "~/business_reports")
 
 | Tool | Config | Notes |
 |------|--------|-------|
-| **black** | 88 char line | `target-version = ['py39', 'py310', 'py311']` |
+| **black** | 88 char line | `target-version = ['py311', 'py312']` |
 | **isort** | black profile | `known_first_party = ["src"]` |
 | **flake8** | 88 char, via pyproject | Excludes: `E203, W503` (conflict with black) |
-| **mypy** | python 3.9 | Many modules have `ignore_errors = true` (legacy) |
+| **mypy** | python 3.11 | Many modules have `ignore_errors = true` (legacy) |
 | **pytest** | pythonpath=src | Markers: `unit`, `integration`, `slow`, `requires_db`, `requires_api` |
 
 **Pre-commit hooks** (configured in `.pre-commit-config.yaml`):
@@ -133,10 +146,10 @@ pytest -m "not requires_db and not requires_api"  # Safe for CI
 ## CI/CD Pipeline
 
 GitHub Actions (`.github/workflows/ci.yml`):
-1. **test** — Python 3.9, 3.10, 3.11 (excludes DB/API tests)
+1. **test** — Python 3.11, 3.12 (excludes DB/API tests) plus no-deps basic tests
 2. **lint** — black, isort, flake8 (some files excluded)
 3. **type-check** — mypy on subset of files
-4. **security-scan** — bandit (fails on HIGH severity)
+4. **security-scan** — bandit (fails on HIGH severity) + gitleaks
 5. **build** — Package build + twine check
 
 **Note**: Some files are excluded from strict linting in CI:

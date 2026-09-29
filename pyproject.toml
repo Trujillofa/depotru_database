@@ -17,7 +17,7 @@ version = "2.1.0"
 description = "Comprehensive business intelligence platform for hardware store operations with AI-powered natural language SQL queries"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 authors = [
     {name = "Business Data Analyzer Team"},
 ]
@@ -40,9 +40,8 @@ classifiers = [
     "Topic :: Office/Business",
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Natural Language :: English",
@@ -117,9 +116,9 @@ jupyter = [
     "ipykernel>=6.0.0",
 ]
 
-# MCP (Model Context Protocol) database server support (Python 3.10+)
+# MCP (Model Context Protocol) database server support
 mcp = [
-    "mcp>=1.2; python_version >= '3.10'",
+    "mcp>=1.2",
 ]
 
 # Distributed query cache (optional — set CACHE_BACKEND=redis)
@@ -254,7 +253,7 @@ exclude_lines = [
 
 [tool.black]
 line-length = 88
-target-version = ['py39', 'py310', 'py311']
+target-version = ['py311', 'py312']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -304,7 +303,7 @@ skip_glob = ["*.backup"]
 # ============================================================================
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
@@ -363,6 +362,12 @@ module = [
     "business_analyzer.analysis.*",
     "business_analyzer.ai.__init__",
     "business_analyzer.ai.base",
+    "business_analyzer.ai.llm",
+    "business_analyzer.ai.sql_routing",
+    "business_analyzer.ai.sql_runtime",
+    "business_analyzer.ai.manager_report_routing",
+    "business_analyzer.ai.summaries",
+    "business_analyzer.ai.vanna",
     "business_analyzer.ai.formatting",
     "business_analyzer.ai.insights",
     "business_analyzer.ai.providers.*",
@@ -372,6 +377,12 @@ module = [
     "src.business_analyzer.analysis.*",
     "src.business_analyzer.ai.__init__",
     "src.business_analyzer.ai.base",
+    "src.business_analyzer.ai.llm",
+    "src.business_analyzer.ai.sql_routing",
+    "src.business_analyzer.ai.sql_runtime",
+    "src.business_analyzer.ai.manager_report_routing",
+    "src.business_analyzer.ai.summaries",
+    "src.business_analyzer.ai.vanna",
     "src.business_analyzer.ai.formatting",
     "src.business_analyzer.ai.insights",
     "src.business_analyzer.ai.providers.*",

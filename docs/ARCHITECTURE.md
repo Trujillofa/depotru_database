@@ -104,8 +104,9 @@ depotru_database/
 │   └── database_explained.json           # Schema documentation
 │
 ├── .env.example                            # Environment template
-├── requirements.txt                        # Python dependencies
-├── pyproject.toml                          # Modern Python packaging
+├── pyproject.toml                          # Dependency source of truth
+├── uv.lock                                 # Locked dependency versions
+├── requirements.txt                        # Thin shim → pyproject.toml
 ├── pytest.ini                              # Test configuration
 └── README.md                               # Main documentation
 ```
@@ -299,7 +300,7 @@ export ANTHROPIC_API_KEY=sk-ant-your-key
 
 | Technology | Purpose | Version |
 |------------|---------|---------|
-| **Python** | Programming language | 3.8+ |
+| **Python** | Programming language | 3.11+ |
 | **pymssql/pyodbc** | SQL Server connection | 2.2.0+ |
 | **python-dotenv** | Environment variables | 0.19.0+ |
 | **pandas** | Data manipulation | 1.3.0+ |
@@ -464,9 +465,8 @@ cd depotru_database
 
 # Install in development mode (recommended)
 pip install -e ".[dev]"
-
-# Or install from requirements.txt
-pip install -r requirements.txt
+# Or honor the lockfile:
+# uv sync --locked --extra dev
 
 # Configure environment
 cp .env.example .env
@@ -494,11 +494,12 @@ PRODUCTION_MODE=true python src/vanna_grok.py
 ### Option 3: Docker Deployment
 
 ```dockerfile
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml uv.lock ./
+COPY src/ ./src/
+RUN pip install --no-cache-dir .
 
 COPY src/ ./src/
 COPY .env .

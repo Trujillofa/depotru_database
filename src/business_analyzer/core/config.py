@@ -261,7 +261,7 @@ def require_env(
         sys.exit(1)
 
     if validation_func and not validation_func(value):
-        print(f"❌ ERROR: {name} tiene un valor inválido: {value}")
+        print(f"❌ ERROR: {name} tiene un valor inválido")
         if error_msg:
             print(f"   {error_msg}")
         sys.exit(1)

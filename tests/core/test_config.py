@@ -226,6 +226,24 @@ def test_require_env_invalid_value_exits(isolated_config_env):
     assert excinfo.value.code == 1
 
 
+def test_require_env_invalid_value_does_not_echo_value(isolated_config_env, capsys):
+    leaked = "not-an-xai-key"
+    isolated_config_env.setenv("GROK_API_KEY", leaked)
+
+    with pytest.raises(SystemExit) as excinfo:
+        require_env(
+            "GROK_API_KEY",
+            validation_func=lambda value: value.startswith("xai-"),
+            error_msg="La clave de Grok debe comenzar con 'xai-'",
+        )
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert leaked not in captured.out
+    assert leaked not in captured.err
+    assert "GROK_API_KEY" in captured.out
+    assert "inválido" in captured.out
+
+
 def test_require_env_returns_valid_placeholder(isolated_config_env):
     isolated_config_env.setenv("GROK_API_KEY", "xai-placeholder-key")
     assert require_env("GROK_API_KEY") == "xai-placeholder-key"

@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 VENV_DIR=".venv-production"
-PYTHON_VERSION="3.9"
+PYTHON_VERSION="3.11"
 REQUIRED_SPACE_GB=2
 
 # Check if we're in the right directory
@@ -305,7 +305,7 @@ echo ""
 # Step 6: Create systemd service file (optional)
 echo "⚙️  Step 6: Creating systemd service file..."
 
-cat > business-analyzer.service << EOF
+cat > deploy/systemd/business-analyzer.service << EOF
 [Unit]
 Description=Business Data Analyzer - AI-Powered BI Platform
 After=network.target
@@ -323,10 +323,10 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-echo "✓ Created business-analyzer.service"
+echo "✓ Created deploy/systemd/business-analyzer.service"
 echo ""
 echo "To install as system service (requires sudo):"
-echo "  sudo cp business-analyzer.service /etc/systemd/system/"
+echo "  sudo cp deploy/systemd/business-analyzer.service /etc/systemd/system/"
 echo "  sudo systemctl daemon-reload"
 echo "  sudo systemctl enable business-analyzer"
 echo "  sudo systemctl start business-analyzer"

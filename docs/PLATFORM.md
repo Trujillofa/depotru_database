@@ -22,6 +22,20 @@ src/apps/api/v1.py           # FastAPI /v1 routes
 
 Legacy `business_analyzer` remains the bulk of BI implementation; modules grow services on top of the kernel.
 
+### AI package map
+
+`src/business_analyzer/ai/base.py` is a **compat facade** (re-exports), not the implementation monolith.
+
+| Module | Role |
+|--------|------|
+| `ai/llm.py` | `retry_on_failure`, `create_ai_client`, `LLMMixin` |
+| `ai/sql_routing.py` | classifiers, SQL templates, document-exclusion repair |
+| `ai/sql_runtime.py` | `generate_sql`, `run_sql`, MSSQL connect |
+| `ai/manager_report_routing.py` | manager-report detect/parse/build |
+| `ai/summaries.py` | currency normalize + `generate_summary` |
+| `ai/vanna.py` | composed `AIVanna` |
+| `ai/training.py` / `ai/charts.py` | already split (unchanged) |
+
 ## Stable BFF (production-style)
 
 ```bash

@@ -12,7 +12,7 @@ This file provides instructions for GitHub Copilot when working with this reposi
 - Automated report generation and visualizations
 
 **Main Technologies:**
-- Python 3.10+
+- Python 3.11+
 - SQL Server (via pymssql/pyodbc)
 - Vanna AI for natural language to SQL
 - Flask/Waitress for web serving
@@ -33,7 +33,7 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 ### Environment Configuration
@@ -216,11 +216,11 @@ def test_database_query():
 
 The repository has multiple workflows:
 
-1. **tests.yml** - Main test suite
+1. **ci.yml** - Unified CI
    - Runs on push to `main` and `copilot/**` branches
-   - Two jobs: basic tests (no dependencies) and full tests (with dependencies)
-   - Tests across Python 3.10, 3.11, 3.12
-   - Always ensure changes don't break `python run_tests.py --quick`
+   - Jobs: basic tests (no dependencies), full CI-safe suite, lint, type-check, bandit, gitleaks, build
+   - Tests across Python 3.11 and 3.12
+   - Always ensure changes don't break `python scripts/utils/run_tests.py --quick`
 
 2. **test-vanna-grok.yml** - Vanna AI tests
    - Specific to `src/vanna_grok.py` changes
@@ -373,7 +373,7 @@ When reviewing code:
 ```bash
 # Setup
 cp .env.example .env
-pip install -r requirements.txt
+pip install -e ".[dev]"
 
 # Test
 python run_tests.py --quick

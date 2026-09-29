@@ -8,7 +8,7 @@ You are an AI agent specialized in working on a **Business Intelligence platform
 
 ## Primary Technologies
 
-- Python 3.8-3.11
+- Python 3.11+
 - MSSQL Server (SmartBusiness database)
 - Vanna AI 2.0.1 (legacy, stable)
 - Grok API (xAI) for natural language → SQL
@@ -35,7 +35,7 @@ depotru_database/
 ├── examples/                    # Working examples
 ├── data/                        # Data files (never commit real data!)
 ├── .github/workflows/          # CI/CD automation
-└── requirements.txt            # Python dependencies
+└── pyproject.toml              # Dependency source of truth
 ```
 
 ## Key Files (Priority Order)
@@ -46,7 +46,7 @@ depotru_database/
 | **tests/*.py** | Test suite | High - Add tests for every change |
 | **docs/ROADMAP.md** | Development plan | Medium - Update after milestones |
 | **README.md** | User-facing docs | Medium - Update for major features |
-| **setup.py** | Package config | Low - Only for new dependencies |
+| **pyproject.toml** | Package config | Low - Only for new dependencies |
 | **.env.example** | Config template | Low - Only for new env vars |
 
 ## Essential Commands
@@ -68,9 +68,9 @@ python src/business_analyzer_combined.py  # Run traditional analyzer
 streamlit run examples/streamlit_dashboard.py  # Run dashboard
 
 # Multi-version Testing (if major change)
-conda create -n test-py310 python=3.10 -y
-conda activate test-py310
-pip install -r requirements.txt
+conda create -n test-py312 python=3.12 -y
+conda activate test-py312
+pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
@@ -80,7 +80,7 @@ pytest tests/ -v
 
 - Implement features from `docs/ROADMAP.md`
 - Maintain backward compatibility with Vanna 2.0.1 legacy APIs
-- Ensure code works across Python 3.8-3.11
+- Ensure code works across Python 3.11-3.12
 - Add tests for every new feature
 - Update documentation immediately
 
@@ -397,7 +397,7 @@ Examples:
 - refactor: Extract formatting logic to utils module
 - docs: Update ANACONDA_TESTING.md with troubleshooting
 - test: Add edge cases for Colombian peso formatting
-- chore: Update dependencies in requirements.txt
+- chore: Update dependencies in pyproject.toml
 ```
 
 ## Pre-Commit Checklist
