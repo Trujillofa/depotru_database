@@ -150,7 +150,7 @@ gemini -p "Generate tests for customer module" --output-format json
 ### Prerequisites
 
 - Node.js 18+ (for Claude Code and Gemini CLI)
-- Python 3.8+ (for Aider and existing tools)
+- Python 3.11+ (for Aider and existing tools)
 - Git
 
 ### Install All Agents

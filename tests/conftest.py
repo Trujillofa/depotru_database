@@ -48,6 +48,29 @@ def isolate_dotenv_from_test_environ():
             os.environ[key] = original
 
 
+def _install_load_dotenv_isolation():
+    """Re-isolate after later load_dotenv calls (fresh src.* imports)."""
+    try:
+        import dotenv
+        import dotenv.main
+    except ImportError:
+        return
+    real = dotenv.load_dotenv
+    if getattr(real, "_depotru_isolated", False):
+        return
+
+    def _isolated_load_dotenv(*args, **kwargs):
+        result = real(*args, **kwargs)
+        isolate_dotenv_from_test_environ()
+        return result
+
+    setattr(_isolated_load_dotenv, "_depotru_isolated", True)
+    dotenv.load_dotenv = _isolated_load_dotenv
+    dotenv.main.load_dotenv = _isolated_load_dotenv
+
+
+_install_load_dotenv_isolation()
+
 # Add src to path for imports
 src_path = Path(__file__).parent.parent / "src"
 if str(src_path) not in sys.path:
@@ -247,6 +270,14 @@ requires_pandas = pytest.mark.skipif(
 # =============================================================================
 # Shared Fixtures
 # =============================================================================
+
+
+@pytest.fixture(autouse=True)
+def _keep_dotenv_isolated():
+    """Strip .env leaks before and after every test."""
+    isolate_dotenv_from_test_environ()
+    yield
+    isolate_dotenv_from_test_environ()
 
 
 @pytest.fixture

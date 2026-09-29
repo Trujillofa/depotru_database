@@ -68,8 +68,8 @@ python src/business_analyzer_combined.py  # Run traditional analyzer
 streamlit run examples/streamlit_dashboard.py  # Run dashboard
 
 # Multi-version Testing (if major change)
-conda create -n test-py310 python=3.10 -y
-conda activate test-py310
+conda create -n test-py312 python=3.12 -y
+conda activate test-py312
 pip install -e ".[dev]"
 pytest tests/ -v
 ```

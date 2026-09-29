@@ -102,7 +102,7 @@ python -m pdb src/vanna_grok.py
 **Next:** Path B (Team Enablement)
 
 **Test Coverage:** ~85%
-**Python Versions:** 3.8, 3.9, 3.10, 3.11
+**Python Versions:** 3.11, 3.12
 **CI/CD:** GitHub Actions (auto-runs on push)
 
 ## 🚨 Critical Rules

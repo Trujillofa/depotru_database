@@ -300,7 +300,7 @@ export ANTHROPIC_API_KEY=sk-ant-your-key
 
 | Technology | Purpose | Version |
 |------------|---------|---------|
-| **Python** | Programming language | 3.8+ |
+| **Python** | Programming language | 3.11+ |
 | **pymssql/pyodbc** | SQL Server connection | 2.2.0+ |
 | **python-dotenv** | Environment variables | 0.19.0+ |
 | **pandas** | Data manipulation | 1.3.0+ |
@@ -465,11 +465,8 @@ cd depotru_database
 
 # Install in development mode (recommended)
 pip install -e ".[dev]"
-
-# Or install from the compatibility shim (still reads pyproject.toml)
-pip install -r requirements.txt
-# Preferred:
-pip install -e ".[dev]"
+# Or honor the lockfile:
+# uv sync --locked --extra dev
 
 # Configure environment
 cp .env.example .env

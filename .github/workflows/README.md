@@ -93,16 +93,10 @@ pytest tests/ -v --cov=src --cov-report=term
 
 ## Required Secrets
 
-The workflows use GitHub repository secrets for sensitive data:
+The CI-safe test job does **not** inject `GROK_API_KEY` or `DB_*` repository
+secrets. Those tests use placeholders or no credentials.
 
-- `GROK_API_KEY`: API key for Grok/xAI service (test value in CI)
-- `DB_SERVER`: Database server address (mock value in CI)
-- `DB_NAME`: Database name (mock value in CI)
-- `DB_USER`: Database username (mock value in CI)
-- `DB_PASSWORD`: Database password (mock value in CI)
-- `CLAUDE_CODE_OAUTH_TOKEN`: OAuth token for Claude Code integration
-
-**Note**: CI uses mock/test values. Real credentials are never exposed in workflows.
+- `CLAUDE_CODE_OAUTH_TOKEN`: OAuth token for Claude Code integration (Claude workflows only)
 
 ## Coverage Reports
 

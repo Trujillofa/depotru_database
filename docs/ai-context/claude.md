@@ -391,7 +391,8 @@ git clone https://github.com/Trujillofa/coding_omarchy.git
 cd coding_omarchy
 
 # Install dependencies
-pip install -r requirements.txt
+pip install -e .
+# or: uv sync --locked
 
 # Configure environment
 cp .env.example .env

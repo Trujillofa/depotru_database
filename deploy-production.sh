@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 VENV_DIR=".venv-production"
-PYTHON_VERSION="3.9"
+PYTHON_VERSION="3.11"
 REQUIRED_SPACE_GB=2
 
 # Check if we're in the right directory

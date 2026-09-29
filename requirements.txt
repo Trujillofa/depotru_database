@@ -1,6 +1,8 @@
 # Compatibility shim. Source of truth: pyproject.toml (+ uv.lock).
 #
+#   pip install -e .
 #   pip install -e ".[dev]"
+#   uv sync --locked
 #
-# This file exists so older docs, Containerfile, and scripts keep working.
+# This file exists so Containerfile and older scripts keep working.
 -e .
