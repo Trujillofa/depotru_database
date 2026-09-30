@@ -7,8 +7,9 @@ si la guía se aprueba. El minero no publica ni abre issues.
 
 Use esta plantilla para un grupo del top 10 de
 [chat-log-guides-mining.md](chat-log-guides-mining.md). Pegue solo texto
-**redactado**. Nunca incluya correos, teléfonos, cédulas, NIT, `session_id`
-ni claves.
+**redactado**. La redacción automática es de **mejor esfuerzo**: un humano
+debe revisar el texto antes de compartirlo o abrir un issue. Nunca incluya
+correos, teléfonos, cédulas, NIT, `session_id` ni claves.
 
 ```text
 id: (snake_case, corto)

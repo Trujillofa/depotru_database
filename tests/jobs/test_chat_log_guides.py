@@ -50,6 +50,13 @@ def _write_log(path: Path, rows: list[dict], extra_text: str = "") -> Path:
     return path
 
 
+def test_redact_obfuscated_email_after_normalize():
+    redacted = clg.redact_pii("SYNTHETIC: juan [at] example.test cuanto demo")
+    assert "juan [at] example.test" not in redacted
+    assert "juan@example.test" not in redacted
+    assert "email" in redacted
+
+
 def test_redact_email_phone_digits_and_document_numbers():
     raw = (
         "SYNTHETIC: enviar a demo.user@example.test tel +57 300 123 4567 "
@@ -257,10 +264,9 @@ def test_draft_guide_is_spanish_template_and_not_published():
 
 
 def test_resolve_log_path_uses_settings_not_raw_getenv(isolated_settings, tmp_path):
-    isolated_settings.setenv(
-        "ASSISTANT_CHAT_LOG", str(tmp_path / "from-settings.jsonl")
-    )
-    settings = Settings()
+    isolated_settings.delenv("ASSISTANT_CHAT_LOG", raising=False)
+    settings = Settings(ASSISTANT_CHAT_LOG=str(tmp_path / "from-settings.jsonl"))
+    isolated_settings.setenv("ASSISTANT_CHAT_LOG", str(tmp_path / "from-env.jsonl"))
     resolved = clg.resolve_log_path(explicit=None, settings=settings)
     assert resolved == tmp_path / "from-settings.jsonl"
 
@@ -426,6 +432,288 @@ def test_script_wrapper_exists():
     script = root / "scripts" / "analysis" / "mine_chat_log_guides.py"
     assert script.is_file()
     assert "chat_log_guides" in script.read_text(encoding="utf-8")
+
+
+def test_escape_markdown_neutralizes_mentions_and_issue_close():
+    text = clg.escape_markdown("ver @usuario y closes #65 <img> | col")
+    assert "@usuario" not in text
+    assert "#65" not in text
+    assert "<img>" not in text
+    assert "|" not in text or "\\|" in text
+
+
+def test_csv_file_uses_utf8_sig(tmp_path: Path):
+    log = _write_log(
+        tmp_path / "chat_log.jsonl",
+        [_line("SYNTHETIC: horario de atencion sede demo")],
+    )
+    out = tmp_path / "out"
+    assert clg.main(["--log-path", str(log), "--output-dir", str(out)]) == 0
+    raw = (out / "unmatched_question_clusters.csv").read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")
+
+
+def test_plural_one_grupo(tmp_path: Path, capsys):
+    log = _write_log(
+        tmp_path / "chat_log.jsonl",
+        [_line("SYNTHETIC: horario de atencion sede demo")],
+    )
+    clg.main(["--log-path", str(log), "--output-dir", str(tmp_path / "out")])
+    text = capsys.readouterr().out
+    assert "1 grupo " in text
+    assert "1 grupos" not in text
+
+
+def test_stale_drafts_are_removed(tmp_path: Path):
+    log = _write_log(
+        tmp_path / "chat_log.jsonl",
+        [_line("SYNTHETIC: horario de atencion sede demo")],
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    stale = out / "borrador_guia_OLD.md"
+    stale.write_text("stale", encoding="utf-8")
+    assert clg.main(["--log-path", str(log), "--output-dir", str(out)]) == 0
+    assert not stale.exists()
+    assert list(out.glob("borrador_*.md")) == []
+
+
+def test_stale_drafts_are_replaced_on_draft_rerun(tmp_path: Path):
+    log = _write_log(
+        tmp_path / "chat_log.jsonl",
+        [_line("SYNTHETIC: horario de atencion sede demo")],
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    leftover = out / "borrador_guia_cpreviousrun.md"
+    leftover.write_text("leftover from previous run", encoding="utf-8")
+    leftover_issue = out / "borrador_issue_cpreviousrun.md"
+    leftover_issue.write_text("leftover issue", encoding="utf-8")
+    assert clg.main(["--log-path", str(log), "--output-dir", str(out), "--draft"]) == 0
+    names = {path.name for path in out.glob("borrador_*.md")}
+    assert leftover.name not in names
+    assert leftover_issue.name not in names
+    assert any(name.startswith("borrador_guia_") for name in names)
+    assert any(name.startswith("borrador_issue_") for name in names)
+    for path in out.glob("borrador_*.md"):
+        assert "leftover" not in path.read_text(encoding="utf-8")
+
+
+def test_output_dir_file_is_spanish_error(tmp_path: Path, capsys):
+    log = _write_log(
+        tmp_path / "chat_log.jsonl",
+        [_line("SYNTHETIC: horario de atencion sede demo")],
+    )
+    out = tmp_path / "not-a-dir"
+    out.write_text("x", encoding="utf-8")
+    code = clg.main(["--log-path", str(log), "--output-dir", str(out)])
+    assert code == 1
+    assert "carpeta" in capsys.readouterr().out.lower()
+
+
+def test_permission_denied_is_spanish(tmp_path: Path, monkeypatch, capsys):
+    log = _write_log(
+        tmp_path / "chat_log.jsonl",
+        [_line("SYNTHETIC: horario de atencion sede demo")],
+    )
+    original = Path.read_bytes
+
+    def _blocked(self: Path) -> bytes:
+        if self == log:
+            raise PermissionError("denied")
+        return original(self)
+
+    monkeypatch.setattr(Path, "read_bytes", _blocked)
+    code = clg.main(["--log-path", str(log), "--output-dir", str(tmp_path / "out")])
+    assert code == 1
+    assert "permiso" in capsys.readouterr().out.lower()
+
+
+def test_binary_log_is_spanish(tmp_path: Path, capsys):
+    path = tmp_path / "chat_log.jsonl"
+    path.write_bytes(b"\x00\x01\x02binary\x00")
+    code = clg.main(["--log-path", str(path), "--output-dir", str(tmp_path / "out")])
+    assert code == 1
+    assert "binario" in capsys.readouterr().out.lower()
+
+
+def test_invalid_utf8_lines_are_skipped(tmp_path: Path):
+    good = json.dumps(_line("SYNTHETIC: horario de atencion sede demo"))
+    path = tmp_path / "chat_log.jsonl"
+    path.write_bytes(good.encode("utf-8") + b"\n" + b"\xff\xfe\xfa\n")
+    result = clg.mine_chat_log(path)
+    assert result.empty is False
+    assert result.skipped_lines >= 1
+
+
+def test_cluster_id_is_hash_of_redacted_text():
+    rec = clg.parse_record(_line("SYNTHETIC: cuanto vale el cemento demo xyz"))
+    assert rec is not None
+    cluster = clg.cluster_unmatched([rec])[0]
+    assert cluster.cluster_id == clg.cluster_id_for(cluster.normalized)
+    assert cluster.cluster_id.startswith("c")
+    assert rec.message not in cluster.cluster_id
+
+
+def test_cluster_cap_keeps_overflow_as_singletons():
+    topics = (
+        "alphaaaa",
+        "betabbbb",
+        "gammagggg",
+        "deltadddd",
+        "epsiloneee",
+        "zetazzzzz",
+    )
+    rows = [clg.parse_record(_line(f"SYNTHETIC: {topic}")) for topic in topics]
+    records = [row for row in rows if row is not None]
+    clusters = clg.cluster_unmatched(records, max_groups=2)
+    assert len(clusters) == 6
+
+
+def test_cli_adversarial_synthetic_leaks_on_all_surfaces(tmp_path: Path, capsys):
+    """CLI surfaces must not echo adversarial SYNTHETIC identifiers."""
+    zwsp = "\u200b"
+    endash = "\u2013"
+    full_at = "\uff20"
+    messages = [
+        f"SYNTHETIC: llama al (311) 222 3352 pedido demo {1}",
+        "SYNTHETIC: cel 311 222 33 63 horario demo",
+        "SYNTHETIC: +57 (311) 222 3362 cemento demo",
+        f"SYNTHETIC: tel 311{endash}222{endash}3364 varilla demo",
+        f"SYNTHETIC: tel 311{zwsp}222{zwsp}3365 brocas demo",
+        "SYNTHETIC: fijo 601 555 1234 domingo demo",
+        "SYNTHETIC: fijo 555-1239 mayorista demo",
+        "SYNTHETIC: NIT 900 123 458 9 portal demo",
+        "SYNTHETIC: CC 1 234 567 899 envio demo",
+        "SYNTHETIC: CC 1-234-567-900 material demo",
+        "SYNTHETIC: CC. 1 234 567 895 herramienta demo",
+        "SYNTHETIC: NIT 1.234.567,901 atencion demo",
+        "SYNTHETIC: tarjeta 4111 1111 1111 1111 electronica demo",
+        "SYNTHETIC: tarjeta 4111-1111-1111-1112 domicilio demo",
+        "SYNTHETIC: FV-12345 cotizacion demo",
+        "SYNTHETIC: factura 12347 unica demo",
+        "SYNTHETIC: remision 9988 sede demo",
+        "SYNTHETIC: pedido 7701 barrio demo",
+        "SYNTHETIC: orden 8802 clave demo",
+        "SYNTHETIC: juan [at] example.test cuanto demo",
+        "SYNTHETIC: ana (at) example.test vale demo",
+        f"SYNTHETIC: luis{full_at}example.test precio demo",
+        "SYNTHETIC: maria arroba example.test horario demo",
+        "SYNTHETIC: pedro [at] example [dot] test cemento demo",
+        "SYNTHETIC: https://example.test/x?token=abcSECRET99 varilla demo",
+        "SYNTHETIC: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.aaa brocas demo",
+        "SYNTHETIC: password=SuperFake99 domingo demo",
+        "SYNTHETIC: pwd=FakePwd99 mayorista demo",
+        "SYNTHETIC: api_key=FAKEAPIKEY99 portal demo",
+        "SYNTHETIC: token=FAKETOKEN99 envio demo",
+        "SYNTHETIC: secret=FAKESECRET99 material demo",
+        "SYNTHETIC: ghp_FakeGitHubToken1234567890abcd herramienta demo",
+        "SYNTHETIC: github_pat_FakePatXXXXXXXXXXXXXXXX atencion demo",
+        "SYNTHETIC: AKIAIOSFODNN7EXAMPLE electronica demo",
+        "SYNTHETIC: sk-ant-api03-fake-abc_def domicilio demo",
+        "SYNTHETIC: sk-proj-fakeProjectKey_123 cotizacion demo",
+        "SYNTHETIC: sk-fakeOpenAIKeyXXXXXXXX unica demo",
+        "SYNTHETIC: xai-placeholdersecretkey99 sede demo",
+        "SYNTHETIC: hex deadbeefdeadbeefdeadbeefdeadbeef barrio demo",
+        "SYNTHETIC: b64 VGVzdEJhc2U2NEZha2VUb2tlbkZvclRlc3Rz clave demo",
+        "SYNTHETIC: ip 192.0.2.10 cuanto demo",
+        "SYNTHETIC: ipv6 2001:db8::1 vale demo",
+        "SYNTHETIC: me llamo Juan Demo Perez precio demo",
+        "SYNTHETIC: soy Ana Demo horario demo",
+        "SYNTHETIC: mi nombre es Luis Demo cemento demo",
+        "SYNTHETIC: cliente Carla Demo varilla demo",
+        "SYNTHETIC: vivo en calle 12 34 56 brocas demo",
+        "SYNTHETIC: carrera 7 n 12 domingo demo",
+        "SYNTHETIC: cra 15 20 mayorista demo",
+        "SYNTHETIC: cl 45 10 portal demo",
+        "SYNTHETIC: kr 9 8 envio demo",
+        "SYNTHETIC: avenida 19 100 material demo",
+        "SYNTHETIC: diagonal 40 20 herramienta demo",
+        "SYNTHETIC: transversal 5 6 atencion demo",
+    ]
+    leaks = [
+        "(311) 222 3352",
+        "311 222 33 63",
+        "+57 (311) 222 3362",
+        "311-222-3364",
+        "3112223365",
+        "601 555 1234",
+        "555-1239",
+        "900 123 458 9",
+        "1 234 567 899",
+        "1-234-567-900",
+        "1 234 567 895",
+        "1.234.567,901",
+        "4111 1111 1111 1111",
+        "4111-1111-1111-1112",
+        "FV-12345",
+        "factura 12347",
+        "remision 9988",
+        "pedido 7701",
+        "orden 8802",
+        "juan [at] example.test",
+        "juan@example.test",
+        "ana (at) example.test",
+        "ana@example.test",
+        "luis@example.test",
+        "maria arroba example.test",
+        "maria@example.test",
+        "pedro@example.test",
+        "abcSECRET99",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.aaa",
+        "SuperFake99",
+        "FakePwd99",
+        "FAKEAPIKEY99",
+        "FAKETOKEN99",
+        "FAKESECRET99",
+        "ghp_FakeGitHubToken1234567890abcd",
+        "github_pat_FakePatXXXXXXXXXXXXXXXX",
+        "AKIAIOSFODNN7EXAMPLE",
+        "sk-ant-api03-fake-abc_def",
+        "sk-proj-fakeProjectKey_123",
+        "sk-fakeOpenAIKeyXXXXXXXX",
+        "xai-placeholdersecretkey99",
+        "deadbeefdeadbeefdeadbeefdeadbeef",
+        "VGVzdEJhc2U2NEZha2VUb2tlbkZvclRlc3Rz",
+        "192.0.2.10",
+        "2001:db8::1",
+        "Juan Demo Perez",
+        "Ana Demo",
+        "Luis Demo",
+        "Carla Demo",
+        "calle 12 34 56",
+        "carrera 7 n 12",
+        "cra 15 20",
+        "cl 45 10",
+        "kr 9 8",
+        "avenida 19 100",
+        "diagonal 40 20",
+        "transversal 5 6",
+        "demo.user@example.test",
+    ]
+    log = _write_log(tmp_path / "chat_log.jsonl", [_line(msg) for msg in messages])
+    out = tmp_path / "out"
+    code = clg.main(
+        ["--log-path", str(log), "--output-dir", str(out), "--draft", "--top", "50"]
+    )
+    assert code == 0
+    stdout = capsys.readouterr().out
+    blobs = [stdout]
+    for path in out.rglob("*"):
+        blobs.append(path.name)
+        if path.is_file():
+            blobs.append(path.read_text(encoding="utf-8", errors="replace"))
+    combined = "\n".join(blobs)
+    missing = [token for token in leaks if token in combined]
+    assert missing == [], missing
+    for path in out.glob("borrador_*.md"):
+        assert path.name.startswith("borrador_")
+        assert path.name.startswith("borrador_guia_c") or path.name.startswith(
+            "borrador_issue_c"
+        )
+        assert "Juan" not in path.name
+        assert "311222" not in path.name
+        assert "example.test" not in path.name
 
 
 @pytest.fixture

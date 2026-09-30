@@ -7,19 +7,18 @@ data/assistant/chat_log.jsonl under the project root.
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from business_analyzer.core.config import get_settings
+
 
 def default_log_path() -> Path:
-    env = (os.getenv("ASSISTANT_CHAT_LOG") or "").strip()
-    if env:
-        return Path(env).expanduser()
-    # Prefer repo-relative data/ when CWD is project root; else /tmp fallback
-    candidate = Path("data/assistant/chat_log.jsonl")
-    return candidate
+    configured = (get_settings().ASSISTANT_CHAT_LOG or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path("data/assistant/chat_log.jsonl")
 
 
 def log_assistant_turn(
