@@ -1350,6 +1350,55 @@ def test_clave_and_pin_word_are_redacted_as_secrets():
         assert "secreto" in redacted.lower()
 
 
+def test_labeled_passphrase_consumes_rest_of_sentence():
+    multi = clg.redact_pii("SYNTHETIC: passphrase es caballo bateria grapa correcta")
+    for leak in ("caballo", "bateria", "grapa", "correcta"):
+        assert leak not in multi.lower()
+    assert "secreto" in multi.lower()
+
+    two_words = clg.redact_pii("SYNTHETIC: passphrase grapa cemento")
+    assert "grapa" not in two_words.lower()
+    assert "cemento" not in two_words.lower()
+
+    punctuated = (
+        "SYNTHETIC: la clave, es grapa",
+        "SYNTHETIC: clave - grapa cemento",
+        "SYNTHETIC: pass: grapa",
+        "SYNTHETIC: codigo secreto grapa",
+        "SYNTHETIC: clave...grapa",
+        "SYNTHETIC: contraseña del wifi es grapa",
+    )
+    for raw in punctuated:
+        redacted = clg.redact_pii(raw)
+        assert "grapa" not in redacted.lower(), raw
+        assert "secreto" in redacted.lower()
+
+    bounded = clg.redact_pii("SYNTHETIC: passphrase grapa caballo. precio cemento demo")
+    assert "grapa" not in bounded.lower()
+    assert "caballo" not in bounded.lower()
+    assert "cemento" in bounded.lower()
+
+
+def test_unique_cluster_ids_uses_per_key_nonce():
+    shared = [
+        clg.QuestionCluster(
+            cluster_id="cabcdefghijkl",
+            count=1,
+            representative="synthetic precio",
+            examples=(),
+            normalized="synthetic precio",
+        )
+        for _ in range(40)
+    ]
+    result = clg._unique_cluster_ids(shared)
+    ids = [item.cluster_id for item in result]
+    assert len(ids) == len(set(ids))
+    assert ids[0] == "cabcdefghijkl"
+    assert ids[1] == clg.cluster_id_for("synthetic precio\nsynthetic precio\n1")
+    assert ids[2] == clg.cluster_id_for("synthetic precio\nsynthetic precio\n2")
+    assert ids[39] == clg.cluster_id_for("synthetic precio\nsynthetic precio\n39")
+
+
 def test_allowlist_txt_rejects_names_junk_and_duplicates():
     forbidden_names = {
         "ada",
@@ -1360,8 +1409,21 @@ def test_allowlist_txt_rejects_names_junk_and_duplicates():
         "estrella",
         "diamante",
         "cortes",
+        "luz",
+        "neiva",
+        "huila",
+        "mica",
     }
-    forbidden_fragments = {"hidr", "xido", "bsika", "bdrywall"}
+    forbidden_fragments = {
+        "hidr",
+        "xido",
+        "bsika",
+        "bdrywall",
+        "iluminaci",
+        "nivelaci",
+        "sif",
+        "xic",
+    }
     allowed_short = {
         "a",
         "al",

@@ -53,15 +53,17 @@ La lista blanca evita que un token desconocido o un dígito salga a un
 archivo, pero **no es una garantía de privacidad**. Un humano debe mirar
 estos casos (y cualquier otro) antes de compartir:
 
-- Palabras de la lista blanca que forman parte de un secreto mal etiquetado
-  (`clave` sola, sin valor) siguen visibles. `clave <palabra>`,
-  `pin <palabra>` y passphrases similares (`password`, `passphrase`,
-  `contraseña` + palabra) se redactan a `secreto`. Una frase hecha solo de
-  palabras comunes sin esa etiqueta puede dejar alguna palabra.
+- Tras `clave`, `pin`, `password`, `passphrase`, `contraseña` o
+  `codigo secreto`, se redacta el resto de la oración (hasta `.` `!` `?`),
+  también si hay coma, guion, puntos o `:` (`clave, es X`, `clave - X`).
+  Eso también se come texto inocente (`la clave al vendedor` →
+  `la secreto`). `clave` sola, sin valor, sigue visible. Una frase de
+  contraseña **sin** etiqueta puede dejar palabras de la lista.
 - Nombres: se quitaron de la lista blanca entradas tipo nombre propio
   (`ada`, `marco`, `mina`, `cielo`, `blanca`, `estrella`, `diamante`,
-  `cortes`). Un nombre que coincida con otra palabra de ferretería o de
-  función que siga en el `.txt` puede mostrarse.
+  `cortes`, `luz`, `neiva`, `huila`, `mica`). Un nombre que coincida con
+  otra palabra de ferretería o de función que siga en el `.txt` puede
+  mostrarse.
 - Números deletreados: tres o más palabras-dígito seguidas (`cero`…`nueve`,
   p. ej. `cinco tres dos` o `tres uno uno dos dos dos`) se colapsan a
   `numero`. Una o dos (`uno dos`) se muestran como palabras; no se
@@ -74,9 +76,9 @@ estos casos (y cualquier otro) antes de compartir:
   `SKU-123456` **no** se marca como documento (el `123456` no se muestra).
 - Ofuscaciones nuevas o dominios partidos de forma rara pueden no
   coincidir con el regex; la lista blanca igual impide que salgan.
-- Contraseñas en texto libre **sin** etiqueta (`contraseña`, `clave:`,
-  `psw`, `pwd`, `apikey`, `token de acceso`, `PIN`, `OTP`, `cvv`) pueden
-  no entrar al regex; si el valor no está en la lista, no se muestra.
+- Contraseñas en texto libre **sin** etiqueta (`apikey` suelta, token
+  sin `clave`/`pin`/`password`) pueden no entrar al regex; si el valor
+  no está en la lista, no se muestra.
 - Tratamientos (`Sr.`, `Dr.`, `Ing.`, `cliente:`, `atendido por`, …) son
   heurísticos. `soy constructor` / `soy nuevo` / `cliente frecuente` no
   se tratan como nombre.

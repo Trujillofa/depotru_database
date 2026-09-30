@@ -19,6 +19,7 @@ import json
 import sys
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from decimal import Decimal
 from html import escape
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
@@ -610,7 +611,7 @@ def csv_guard_cell(value: Any) -> str:
         return ""
     if isinstance(value, bool):
         text = str(value)
-    elif isinstance(value, (int, float)):
+    elif isinstance(value, (int, float, Decimal)):
         return str(value)
     else:
         text = str(value)

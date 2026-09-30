@@ -180,11 +180,14 @@ _PASSWORD_RE = re.compile(
     re.I,
 )
 _PIN_OTP_RE = re.compile(r"\b(?:pin|otp|cvv|cvc)\b\s*[:=]?\s*\S{2,16}", re.I)
-_LABELED_PASSPHRASE_RE = re.compile(
-    r"\b(?:clave|contrase[nñ]a|password|passwd|pwd|psw|passphrase|"
-    r"pin|otp|pass)\b\s+\S{1,256}",
+_PASSPHRASE_LABEL_RE = re.compile(
+    r"\b(?:"
+    r"clave|contrase[nñ]a|password|passwd|pwd|psw|passphrase|"
+    r"pin|otp|pass|c[oó]digo\s+secreto"
+    r")\b",
     re.I,
 )
+_PASSPHRASE_SEP = frozenset(" \t,.:-=…")
 _DIGIT_WORD = r"(?:cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)"
 _DIGIT_WORD_RUN_RE = re.compile(
     rf"\b{_DIGIT_WORD}(?:\s+{_DIGIT_WORD}){{2,}}\b",
@@ -488,6 +491,32 @@ def collapse_digit_word_runs(text: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+def _redact_labeled_passphrases(text: str) -> str:
+    """Redact from a secret label through the end of the sentence."""
+    if not text:
+        return ""
+    pieces: list[str] = []
+    pos = 0
+    for match in _PASSPHRASE_LABEL_RE.finditer(text):
+        rest = text[match.end() :]
+        seps = 0
+        while seps < len(rest) and rest[seps] in _PASSPHRASE_SEP:
+            seps += 1
+        body = rest[seps:]
+        if not body:
+            continue
+        stop = len(body)
+        for index, char in enumerate(body):
+            if char in ".!?":
+                stop = index
+                break
+        pieces.append(text[pos : match.start()])
+        pieces.append(" secreto ")
+        pos = match.end() + seps + stop
+    pieces.append(text[pos:])
+    return "".join(pieces)
+
+
 def _redact_digit_run(match: re.Match[str]) -> str:
     raw = match.group(0)
     digits = re.sub(r"\D", "", raw)
@@ -532,9 +561,9 @@ def redact_pii(text: str) -> str:
     value = _BEARER_RE.sub(" secreto ", value)
     value = _BASIC_RE.sub(" secreto ", value)
     value = _JWT_RE.sub(" secreto ", value)
+    value = _redact_labeled_passphrases(value)
     value = _PASSWORD_RE.sub(" secreto ", value)
     value = _PIN_OTP_RE.sub(" secreto ", value)
-    value = _LABELED_PASSPHRASE_RE.sub(" secreto ", value)
     value = _KV_SECRET_RE.sub(" secreto ", value)
     value = _KEY_PREFIX_RE.sub(" secreto ", value)
     value = _AWS_RE.sub(" secreto ", value)
@@ -824,19 +853,24 @@ def _unique_cluster_ids(
 ) -> list[QuestionCluster]:
     """Keep ``cluster_id`` unique when two groups project to the same text."""
     used: set[str] = set()
+    next_nonce: dict[tuple[str, str], int] = {}
     unique: list[QuestionCluster] = []
     for cluster in clusters:
         cid = cluster.cluster_id
-        nonce = 0
+        if cid not in used:
+            used.add(cid)
+            unique.append(cluster)
+            continue
+        key = (cluster.representative, cluster.normalized)
+        nonce = next_nonce.get(key, 0) + 1
+        cid = cluster_id_for(f"{cluster.representative}\n{cluster.normalized}\n{nonce}")
         while cid in used:
             nonce += 1
             cid = cluster_id_for(
                 f"{cluster.representative}\n{cluster.normalized}\n{nonce}"
             )
+        next_nonce[key] = nonce
         used.add(cid)
-        if cid == cluster.cluster_id:
-            unique.append(cluster)
-            continue
         unique.append(
             QuestionCluster(
                 cluster_id=cid,

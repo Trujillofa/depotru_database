@@ -6,6 +6,7 @@ import csv
 import re
 import sqlite3
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1331,6 +1332,8 @@ def test_csv_guard_cell_skips_numeric_values():
     assert acl.csv_guard_cell(5_000_000) == "5000000"
     assert acl.csv_guard_cell("-400000") == "'-400000"
     assert acl.csv_guard_cell("+12") == "'+12"
+    assert acl.csv_guard_cell(Decimal("-12.50")) == "-12.50"
+    assert acl.csv_guard_cell(Decimal("12.50")) == "12.50"
 
 
 @pytest.mark.unit
