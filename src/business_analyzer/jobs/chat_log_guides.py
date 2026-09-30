@@ -183,11 +183,12 @@ _PIN_OTP_RE = re.compile(r"\b(?:pin|otp|cvv|cvc)\b\s*[:=]?\s*\S{2,16}", re.I)
 _PASSPHRASE_LABEL_RE = re.compile(
     r"\b(?:"
     r"clave|contrase[nñ]a|password|passwd|pwd|psw|passphrase|"
-    r"pin|otp|pass|c[oó]digo\s+secreto"
+    r"pin|otp|pass|c[oó]digo\s+secreto|token\s+secreto"
     r")\b",
     re.I,
 )
 _PASSPHRASE_SEP = frozenset(" \t,.:-=…")
+_SENTENCE_END = frozenset(".!?\n")
 _DIGIT_WORD = r"(?:cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)"
 _DIGIT_WORD_RUN_RE = re.compile(
     rf"\b{_DIGIT_WORD}(?:\s+{_DIGIT_WORD}){{2,}}\b",
@@ -465,11 +466,16 @@ def project_for_display(
     return displayed.strip()
 
 
-def prepare_for_redaction(text: str) -> str:
+def prepare_for_redaction(text: str, *, keep_newlines: bool = False) -> str:
     """Collapse whitespace first, then NFKC, strip format marks, deobfuscate."""
     if not text:
         return ""
-    value = re.sub(r"\s+", " ", text).strip()
+    if keep_newlines:
+        value = text.replace("\r\n", "\n").replace("\r", "\n")
+        value = re.sub(r"[^\S\n]+", " ", value)
+        value = re.sub(r"\n+", "\n", value).strip()
+    else:
+        value = re.sub(r"\s+", " ", text).strip()
     if len(value) > MAX_REDACT_CHARS:
         value = value[:MAX_REDACT_CHARS]
     value = unicodedata.normalize("NFKC", value)
@@ -481,7 +487,9 @@ def prepare_for_redaction(text: str) -> str:
     value = _OBFUSCATED_DOT_RE.sub(".", value)
     value = _WORD_DOT_RE.sub(".", value)
     value = re.sub(r"\s*@\s*", "@", value)
-    value = re.sub(r"(?<=[a-záéíóúñ])\s*\.\s*(?=[a-záéíóúñ])", ".", value)
+    value = re.sub(r"(?<=[a-záéíóúñ])[^\S\n]*\.[^\S\n]*(?=[a-záéíóúñ])", ".", value)
+    if keep_newlines:
+        return re.sub(r"[^\S\n]+", " ", value).strip()
     return re.sub(r"\s+", " ", value).strip()
 
 
@@ -498,21 +506,21 @@ def _redact_labeled_passphrases(text: str) -> str:
     pieces: list[str] = []
     pos = 0
     for match in _PASSPHRASE_LABEL_RE.finditer(text):
-        rest = text[match.end() :]
-        seps = 0
-        while seps < len(rest) and rest[seps] in _PASSPHRASE_SEP:
-            seps += 1
-        body = rest[seps:]
-        if not body:
+        if match.start() < pos:
             continue
-        stop = len(body)
-        for index, char in enumerate(body):
-            if char in ".!?":
+        cursor = match.end()
+        while cursor < len(text) and text[cursor] in _PASSPHRASE_SEP:
+            cursor += 1
+        if cursor >= len(text) or text[cursor] in _SENTENCE_END:
+            continue
+        stop = len(text)
+        for index in range(cursor, len(text)):
+            if text[index] in _SENTENCE_END:
                 stop = index
                 break
         pieces.append(text[pos : match.start()])
         pieces.append(" secreto ")
-        pos = match.end() + seps + stop
+        pos = stop
     pieces.append(text[pos:])
     return "".join(pieces)
 
@@ -554,7 +562,7 @@ def _redact_phone_like(text: str) -> str:
 
 def redact_pii(text: str) -> str:
     """Best-effort PII/secret redaction. A human must still review output."""
-    value = prepare_for_redaction(text)
+    value = prepare_for_redaction(text, keep_newlines=True)
     value = re.sub(r"\((\d+)\)", r"\1", value)
     value = _URL_RE.sub(" url ", value)
     value = _QUERY_SECRET_RE.sub(" url ", value)

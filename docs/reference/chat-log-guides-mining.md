@@ -53,12 +53,19 @@ La lista blanca evita que un token desconocido o un dígito salga a un
 archivo, pero **no es una garantía de privacidad**. Un humano debe mirar
 estos casos (y cualquier otro) antes de compartir:
 
-- Tras `clave`, `pin`, `password`, `passphrase`, `contraseña` o
-  `codigo secreto`, se redacta el resto de la oración (hasta `.` `!` `?`),
-  también si hay coma, guion, puntos o `:` (`clave, es X`, `clave - X`).
+- Tras `clave`, `pin`, `password`, `passphrase`, `contraseña`,
+  `codigo secreto` o `token secreto`, se redacta el resto de la oración
+  (hasta `.` `!` `?` o un salto de línea), también si hay coma, guion,
+  puntos o `:` (`clave, es X`, `clave - X`). Una etiqueta que cae dentro
+  de un tramo ya redactado no vuelve a abrir el span ni cruza el
+  terminador (`clave grapa pin. precio cemento` deja `precio cemento`).
   Eso también se come texto inocente (`la clave al vendedor` →
   `la secreto`). `clave` sola, sin valor, sigue visible. Una frase de
   contraseña **sin** etiqueta puede dejar palabras de la lista.
+- Casos que **no** se redactan hoy: `clave_X` (el `_` une el token y
+  evita `\b`), `clave! X` (`!` cierra la oración antes del valor),
+  `clave es X.Y` (el primer `.` corta y deja `Y`) y `clave es Dr. X Y`
+  (el punto de `Dr.` corta igual).
 - Nombres: se quitaron de la lista blanca entradas tipo nombre propio
   (`ada`, `marco`, `mina`, `cielo`, `blanca`, `estrella`, `diamante`,
   `cortes`, `luz`, `neiva`, `huila`, `mica`). Un nombre que coincida con

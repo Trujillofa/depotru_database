@@ -84,7 +84,6 @@ ano
 anos
 ante
 antes
-anticorr
 anticorrosiva
 anticorrosivo
 antideslizantes
@@ -109,7 +108,6 @@ articuloscodigo
 articulosnombre
 asegurar
 asesoria
-asf
 asfaltica
 asfaltico
 aspersor
@@ -119,8 +117,6 @@ audience
 aunque
 autofijantes
 autorizado
-averi
-averiad
 ayer
 ayuda
 azotea
@@ -184,7 +180,6 @@ cadenas
 caida
 caja
 cajas
-cal
 calcula
 calentador
 calibre
@@ -206,7 +201,6 @@ capilaridad
 careta
 cargas
 carpeta
-carpinter
 carpinteria
 cartera
 casa
@@ -223,7 +217,6 @@ center
 cepilla
 cepillo
 cepillos
-cer
 cera
 ceramica
 cerca
@@ -242,7 +235,6 @@ chat
 chazo
 chazos
 check
-cicl
 cielorraso
 cierra
 cierran
@@ -312,8 +304,6 @@ criticas
 cruceta
 crucetas
 csv
-ctrica
-ctrico
 cuadrado
 cuadro
 cual
@@ -339,7 +329,6 @@ delicada
 demo
 dentada
 depende
-desag
 desague
 descarga
 descascara
@@ -347,7 +336,6 @@ desde
 deseada
 desengrasante
 desprendimientos
-despu
 despues
 destapacanos
 destapador
@@ -369,7 +357,6 @@ discos
 diseno
 disponible
 distintos
-divisi
 dni
 doble
 doce
@@ -421,7 +408,6 @@ entre
 enviar
 envio
 envios
-epox
 epoxica
 epoxicar
 epoxico
@@ -460,7 +446,6 @@ estucar
 estuco
 estufa
 etc
-ete
 eternit
 etiqueta
 evita
@@ -479,7 +464,6 @@ facturas
 falta
 favor
 faz
-fe
 febrero
 fecha
 fed
@@ -490,7 +474,6 @@ fijacion
 fijaciones
 fijar
 filtra
-filtraci
 filtracion
 fina
 fino
@@ -519,8 +502,6 @@ fuertes
 fuga
 fugas
 fugo
-fundaci
-fv
 gafas
 galvanizada
 ganadera
@@ -547,7 +528,6 @@ grava
 gravilla
 grieta
 grietas
-grifer
 griferia
 grifo
 grounded
@@ -563,7 +543,6 @@ guias
 guide
 gyplac
 haber
-habitaci
 habitacion
 hace
 hacen
@@ -581,7 +560,6 @@ hierro
 hogar
 hola
 horario
-hormig
 hoy
 hueco
 huecos
@@ -591,10 +569,8 @@ humedas
 humedece
 humedo
 humedos
-ibre
 identifica
 iluminacion
-impermeabil
 impermeabilizante
 impermeabilizantes
 impermeabilizar
@@ -608,7 +584,6 @@ informe
 ingresos
 inodoro
 insectos
-inspecci
 inspeccion
 instalacion
 instalar
@@ -650,7 +625,6 @@ led
 les
 levanta
 levantado
-lica
 lija
 lijas
 limpia
@@ -678,7 +652,6 @@ longitud
 los
 losa
 lote
-ltico
 luego
 lunes
 madera
@@ -718,7 +691,6 @@ mes
 meses
 meson
 message
-met
 metal
 metalico
 metalicos
@@ -744,8 +716,6 @@ mortero
 mosquitero
 mosquitos
 motor
-mpara
-mparas
 muchas
 mucho
 mueble
@@ -778,7 +748,6 @@ nunca
 o
 obligatoria
 obra
-oc
 ocho
 octubre
 once
@@ -864,7 +833,6 @@ precio
 pregunta
 preguntas
 preparacion
-presi
 presion
 presostato
 presurizadora
@@ -887,7 +855,6 @@ proteger
 proveedor
 proveedores
 prueba
-ptico
 public
 publicar
 puede
@@ -961,14 +928,12 @@ rodillo
 rodillos
 rompi
 rosca
-rot
 rota
 rotacion
 roto
 rotura
 roturas
 roza
-ruc
 ruido
 rut
 sabado
@@ -1007,7 +972,6 @@ servir
 session
 set
 si
-sicas
 sido
 siendo
 sierra
@@ -1033,7 +997,6 @@ sonda
 soporte
 soportes
 soy
-stico
 stillson
 stock
 store
@@ -1067,7 +1030,6 @@ tanque
 tanques
 tanta
 tanto
-tap
 tapa
 tapada
 tapado
@@ -1084,7 +1046,6 @@ tees
 teflon
 teja
 tejas
-tel
 tela
 tele
 telefono
@@ -1096,7 +1057,6 @@ terraza
 the
 thinner
 thinneres
-tica
 tiene
 tienen
 tienes
@@ -1135,7 +1095,6 @@ tres
 triturado
 trozo
 tu
-tuber
 tuberia
 tubo
 tubos
@@ -1190,9 +1149,7 @@ vivo
 vocabulario
 volumen
 vuelve
-x
 xico
-xyz
 y
 ya
 yeso

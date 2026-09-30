@@ -8,6 +8,7 @@ import json
 import logging
 import random
 import re
+import time
 from pathlib import Path
 
 import pytest
@@ -1379,6 +1380,41 @@ def test_labeled_passphrase_consumes_rest_of_sentence():
     assert "cemento" in bounded.lower()
 
 
+def test_repeated_pin_labels_are_linear_time():
+    payload = ("pin " * 5000).rstrip()
+    start = time.perf_counter()
+    redacted = clg._redact_labeled_passphrases(payload)
+    elapsed = time.perf_counter() - start
+    assert "pin" not in redacted.lower()
+    assert "secreto" in redacted.lower()
+    assert elapsed < 0.5, elapsed
+
+
+def test_inner_label_does_not_cross_sentence_end():
+    helper = clg._redact_labeled_passphrases("clave grapa pin. precio cemento")
+    assert "precio cemento" in helper
+    assert "grapa" not in helper.lower()
+    redacted = clg.redact_pii("SYNTHETIC: clave grapa pin. precio cemento")
+    assert "grapa" not in redacted.lower()
+    assert "cemento" in redacted.lower()
+    assert "precio" in redacted.lower()
+
+
+def test_token_secreto_redacts_following_value():
+    one = clg.redact_pii("SYNTHETIC: token secreto grapa material demo")
+    assert "grapa" not in one.lower()
+    assert "secreto" in one.lower()
+    labeled = clg.redact_pii("SYNTHETIC: token secreto: caballo bateria")
+    assert "caballo" not in labeled.lower()
+    assert "bateria" not in labeled.lower()
+
+
+def test_passphrase_redaction_does_not_cross_newline():
+    redacted = clg.redact_pii("SYNTHETIC: clave es grapa\nNecesito cemento demo")
+    assert "grapa" not in redacted.lower()
+    assert "cemento" in redacted.lower()
+
+
 def test_unique_cluster_ids_uses_per_key_nonce():
     shared = [
         clg.QuestionCluster(
@@ -1397,6 +1433,29 @@ def test_unique_cluster_ids_uses_per_key_nonce():
     assert ids[1] == clg.cluster_id_for("synthetic precio\nsynthetic precio\n1")
     assert ids[2] == clg.cluster_id_for("synthetic precio\nsynthetic precio\n2")
     assert ids[39] == clg.cluster_id_for("synthetic precio\nsynthetic precio\n39")
+
+
+_DETACHED_SUFFIX_RE = re.compile(
+    r"(?:stico|ptico|ctrico|ctrica|ltico|sicas|mpara|mparas)$"
+)
+_INCOMPLETE_STEM_RE = re.compile(r"(?:si|ci|ig|corr|eri|iad)$")
+_STEM_COMPLETIONS = ("izante", "izar", "izacion", "osivo", "osiva")
+
+
+def _is_truncated_allowlist_stem(word: str, vocab: set[str]) -> bool:
+    """True for incomplete Spanish stems or detached suffixes."""
+    if len(word) >= 5 and _INCOMPLETE_STEM_RE.search(word):
+        if not word.endswith(("cion", "sion", "cia", "cio", "cie")):
+            return True
+    if len(word) >= 5 and word.endswith("er") and f"{word}ia" in vocab:
+        return True
+    if len(word) >= 6 and any(
+        f"{word}{suffix}" in vocab for suffix in _STEM_COMPLETIONS
+    ):
+        return True
+    if word.endswith("ag") and f"{word}ue" in vocab:
+        return True
+    return bool(_DETACHED_SUFFIX_RE.fullmatch(word))
 
 
 def test_allowlist_txt_rejects_names_junk_and_duplicates():
@@ -1423,6 +1482,45 @@ def test_allowlist_txt_rejects_names_junk_and_duplicates():
         "nivelaci",
         "sif",
         "xic",
+        "ete",
+        "tap",
+        "tel",
+        "rot",
+        "met",
+        "asf",
+        "cer",
+        "mpara",
+        "sicas",
+        "stico",
+        "ptico",
+        "lica",
+        "ctrico",
+        "ibre",
+        "tica",
+        "cicl",
+        "divisi",
+        "fundaci",
+        "habitaci",
+        "filtraci",
+        "inspecci",
+        "presi",
+        "despu",
+        "desag",
+        "hormig",
+        "carpinter",
+        "tuber",
+        "grifer",
+        "anticorr",
+        "averi",
+        "averiad",
+        "epox",
+        "fe",
+        "fv",
+        "oc",
+        "x",
+        "xyz",
+        "ruc",
+        "cal",
     }
     allowed_short = {
         "a",
@@ -1432,8 +1530,6 @@ def test_allowlist_txt_rejects_names_junk_and_duplicates():
         "el",
         "en",
         "es",
-        "fe",
-        "fv",
         "la",
         "le",
         "lo",
@@ -1442,14 +1538,12 @@ def test_allowlist_txt_rejects_names_junk_and_duplicates():
         "ni",
         "no",
         "o",
-        "oc",
         "se",
         "si",
         "su",
         "te",
         "tu",
         "un",
-        "x",
         "y",
         "ya",
     }
@@ -1463,11 +1557,13 @@ def test_allowlist_txt_rejects_names_junk_and_duplicates():
         words.append(raw)
     assert words
     assert len(words) == len(set(words))
+    vocab = set(words)
     for word in words:
         assert word not in forbidden_names
         assert word not in forbidden_fragments
         if len(word) < 3:
             assert word in allowed_short, word
+        assert not _is_truncated_allowlist_stem(word, vocab), word
 
 
 def test_missing_allowlist_logs_warning(tmp_path: Path, caplog):
