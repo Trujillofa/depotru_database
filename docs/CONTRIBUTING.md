@@ -261,6 +261,11 @@ Examples:
 python scripts/utils/run_weekly_kpi_board.py --print-cron
 ```
 
+The Monday cash pack (`depotru-monday-cash`, Phase 3 / #65) wraps this weekly
+KPI board with overdue cartera and negative-margin / SIKA SKUs. It writes an
+HTML + `.eml` **draft** only (`--send` is off by default). See
+`docs/reference/monday-cash-pack.md`.
+
 ### Backfill / Re-run a Specific Week
 
 ```bash

@@ -71,6 +71,7 @@ src/
 **CLI entry points:**
 - `vanna-grok` / `python src/vanna_grok.py` — NL→SQL chat UI
 - `depotru-report` — monthly manager sales report (HTML/PDF/JSON)
+- `depotru-monday-cash` — Monday cash pack draft (cartera + margen negativo/SIKA + KPI)
 - `depotru-db-mcp` — MCP database server for AI agents
 
 **Production Vanna:** set `PRODUCTION_MODE=true` to serve with Waitress (default: Flask dev server).

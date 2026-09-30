@@ -175,6 +175,8 @@ def test_fetch_sql_aggregations_dispatches_all_result_sets():
     assert data["vendor_sales"][0]["vendor_name"] == "SIKA"
     assert data["marca_sales"][0]["marca_name"] == "SIKA"
     assert len(fake.calls) >= 10
+    margin_sql = next(q for q, _ in fake.calls if "HAVING SUM(bd.Cantidad)" in q)
+    assert "AS proveedor" in margin_sql
 
 
 @pytest.mark.unit

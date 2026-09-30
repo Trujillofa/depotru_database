@@ -85,6 +85,32 @@ def _env_str_or_default(value: Any, default: str) -> str:
     return str(value)
 
 
+_BOOL_TRUE = frozenset({"true", "1", "yes", "on"})
+_BOOL_FALSE = frozenset({"false", "0", "no", "off"})
+
+
+def _env_bool_default_true(value: Any) -> bool:
+    """Parse an optional boolean env flag; default True (used by SMTP TLS).
+
+    Accepts true/1/yes/on and false/0/no/off (case-insensitive). Blank, None,
+    and unrecognized values keep the default (TLS on).
+    """
+    if value is None:
+        return True
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return value != 0
+    cleaned = str(value).strip().lower()
+    if not cleaned:
+        return True
+    if cleaned in _BOOL_TRUE:
+        return True
+    if cleaned in _BOOL_FALSE:
+        return False
+    return True
+
+
 def _blank_to_none(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -170,7 +196,25 @@ class Settings(BaseSettings):
     INSIGHTS_MAX_ROWS: int = 15
     MAX_DISPLAY_ROWS: int = 100
 
-    @field_validator("DB_HOST", "DB_USER", "DB_PASSWORD", mode="before")
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_USE_TLS: bool = True
+    MAIL_FROM: Optional[str] = None
+    MAIL_TO: Optional[str] = None
+
+    @field_validator(
+        "DB_HOST",
+        "DB_USER",
+        "DB_PASSWORD",
+        "SMTP_HOST",
+        "SMTP_USER",
+        "SMTP_PASSWORD",
+        "MAIL_FROM",
+        "MAIL_TO",
+        mode="before",
+    )
     @classmethod
     def _optional_db_str(cls, value: Any) -> Optional[str]:
         return _blank_to_none(value)
@@ -219,6 +263,16 @@ class Settings(BaseSettings):
     @classmethod
     def _port(cls, value: Any) -> int:
         return _coerce_optional_int(value, 8084)
+
+    @field_validator("SMTP_PORT", mode="before")
+    @classmethod
+    def _smtp_port(cls, value: Any) -> int:
+        return _coerce_optional_int(value, 587)
+
+    @field_validator("SMTP_USE_TLS", mode="before")
+    @classmethod
+    def _smtp_use_tls(cls, value: Any) -> bool:
+        return _env_bool_default_true(value)
 
     @field_validator("INSIGHTS_MAX_ROWS", mode="before")
     @classmethod

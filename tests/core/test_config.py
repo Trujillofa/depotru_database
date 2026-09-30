@@ -54,6 +54,13 @@ CONFIG_ENV_KEYS = (
     "ENABLE_AI_INSIGHTS",
     "INSIGHTS_MAX_ROWS",
     "MAX_DISPLAY_ROWS",
+    "SMTP_HOST",
+    "SMTP_PORT",
+    "SMTP_USER",
+    "SMTP_PASSWORD",
+    "SMTP_USE_TLS",
+    "MAIL_FROM",
+    "MAIL_TO",
 )
 
 
@@ -108,9 +115,58 @@ def test_settings_defaults_without_env(isolated_config_env):
     assert settings.ENABLE_AI_INSIGHTS is True
     assert settings.INSIGHTS_MAX_ROWS == 15
     assert settings.MAX_DISPLAY_ROWS == 100
+    assert settings.SMTP_HOST is None
+    assert settings.SMTP_PORT == 587
+    assert settings.SMTP_USER is None
+    assert settings.SMTP_PASSWORD is None
+    assert settings.SMTP_USE_TLS is True
+    assert settings.MAIL_FROM is None
+    assert settings.MAIL_TO is None
     assert settings.NCX_FILE_PATH == os.path.expanduser(
         "~/Coding_OMARCHY/python_files/connections.ncx"
     )
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("true", True),
+        ("TRUE", True),
+        ("1", True),
+        ("yes", True),
+        ("on", True),
+        ("false", False),
+        ("FALSE", False),
+        ("0", False),
+        ("no", False),
+        ("off", False),
+        ("", True),
+        ("   ", True),
+        ("maybe", True),
+    ],
+)
+def test_settings_smtp_use_tls_boolean_tokens(isolated_config_env, raw, expected):
+    isolated_config_env.setenv("SMTP_USE_TLS", raw)
+    assert Settings().SMTP_USE_TLS is expected
+
+
+def test_settings_smtp_use_tls_defaults_on(isolated_config_env):
+    isolated_config_env.delenv("SMTP_USE_TLS", raising=False)
+    assert Settings().SMTP_USE_TLS is True
+
+
+def test_settings_smtp_optional_overrides(isolated_config_env):
+    isolated_config_env.setenv("SMTP_HOST", "smtp.example.test")
+    isolated_config_env.setenv("SMTP_PORT", "465")
+    isolated_config_env.setenv("SMTP_USE_TLS", "false")
+    isolated_config_env.setenv("MAIL_FROM", "from@example.test")
+    isolated_config_env.setenv("MAIL_TO", "to@example.test")
+    settings = Settings()
+    assert settings.SMTP_HOST == "smtp.example.test"
+    assert settings.SMTP_PORT == 465
+    assert settings.SMTP_USE_TLS is False
+    assert settings.MAIL_FROM == "from@example.test"
+    assert settings.MAIL_TO == "to@example.test"
 
 
 def test_settings_env_overrides(isolated_config_env):
@@ -164,11 +220,13 @@ def test_settings_tolerates_invalid_port_and_row_limits(isolated_config_env):
     isolated_config_env.setenv("PORT", "not-a-port")
     isolated_config_env.setenv("INSIGHTS_MAX_ROWS", "abc")
     isolated_config_env.setenv("MAX_DISPLAY_ROWS", "")
+    isolated_config_env.setenv("SMTP_PORT", "nope")
 
     settings = Settings()
     assert settings.PORT == 8084
     assert settings.INSIGHTS_MAX_ROWS == 15
     assert settings.MAX_DISPLAY_ROWS == 100
+    assert settings.SMTP_PORT == 587
 
 
 def test_config_reload_applies_settings_and_thresholds(isolated_config_env):
