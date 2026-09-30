@@ -2,8 +2,8 @@
 # Replace `skus` with the real Core Lines list and set placeholder: false
 # before any live database run. Do not treat AKZO-DEMO-* as real SKUs.
 #
-# Matching is by ArticulosCodigo (SKU list). proveedor / marca on
-# banco_datos and productos_adicional are selected for display only.
+# Matching is by ArticulosCodigo (SKU list). The live query reads
+# banco_datos only (no productos_adicional / proveedor / marca join).
 #
 # Territory default: vendedor_codigo + VendedorFactura (commercial owner
 # already used by manager_report / presupuesto_vendedores). Alternative

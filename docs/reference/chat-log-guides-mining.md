@@ -54,11 +54,19 @@ archivo, pero **no es una garantía de privacidad**. Un humano debe mirar
 estos casos (y cualquier otro) antes de compartir:
 
 - Palabras de la lista blanca que forman parte de un secreto mal etiquetado
-  (`clave` sola, sin valor) siguen visibles; el valor se intenta redactar
-  con regex y, si falla, se descarta por no estar en la lista.
-- Números en palabras (`once`, `veinte`, `trescientos`) no son dígitos; si
-  están en la lista (`uno`…`nueve`) se muestran como palabras. Eso es
-  intencional: no se convierten a `1`/`2`/`3`.
+  (`clave` sola, sin valor) siguen visibles. `clave <palabra>`,
+  `pin <palabra>` y passphrases similares (`password`, `passphrase`,
+  `contraseña` + palabra) se redactan a `secreto`. Una frase hecha solo de
+  palabras comunes sin esa etiqueta puede dejar alguna palabra.
+- Nombres: se quitaron de la lista blanca entradas tipo nombre propio
+  (`ada`, `marco`, `mina`, `cielo`, `blanca`, `estrella`, `diamante`,
+  `cortes`). Un nombre que coincida con otra palabra de ferretería o de
+  función que siga en el `.txt` puede mostrarse.
+- Números deletreados: tres o más palabras-dígito seguidas (`cero`…`nueve`,
+  p. ej. `cinco tres dos` o `tres uno uno dos dos dos`) se colapsan a
+  `numero`. Una o dos (`uno dos`) se muestran como palabras; no se
+  convierten a `1`/`2`/`3`. Compuestos (`once`, `veinte`, `trescientos`)
+  no son dígitos-palabra y, si están en la lista, se muestran.
 - Un término nuevo de ferretería que no esté en el `.txt` desaparece de la
   salida (falso negativo de vocabulario). Agréguelo a la lista a mano.
 - La capa regex aún puede etiquetar de más: un NIT de 9 dígitos o un

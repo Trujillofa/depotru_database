@@ -13,6 +13,7 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import re
 import sys
 import unicodedata
@@ -63,6 +64,12 @@ MSG_BEST_EFFORT = (
     "Redacción de mejor esfuerzo (lista blanca + regex). Un humano debe "
     "revisar la salida antes de compartirla o abrir un issue."
 )
+MSG_ALLOWLIST_MISSING = (
+    "No se encontró el archivo de lista blanca (%s). "
+    "Se usa solo el vocabulario mínimo."
+)
+
+logger = logging.getLogger(__name__)
 
 STOPWORDS = frozenset(
     {
@@ -173,6 +180,16 @@ _PASSWORD_RE = re.compile(
     re.I,
 )
 _PIN_OTP_RE = re.compile(r"\b(?:pin|otp|cvv|cvc)\b\s*[:=]?\s*\S{2,16}", re.I)
+_LABELED_PASSPHRASE_RE = re.compile(
+    r"\b(?:clave|contrase[nñ]a|password|passwd|pwd|psw|passphrase|"
+    r"pin|otp|pass)\b\s+\S{1,256}",
+    re.I,
+)
+_DIGIT_WORD = r"(?:cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)"
+_DIGIT_WORD_RUN_RE = re.compile(
+    rf"\b{_DIGIT_WORD}(?:\s+{_DIGIT_WORD}){{2,}}\b",
+    re.I,
+)
 _KV_SECRET_RE = re.compile(
     r"\b(?:password|pwd|psw|api[_-]?key|apikey|token|secret|access[_-]?token)"
     r"\s*[:=]\s*\S{1,512}",
@@ -414,6 +431,7 @@ def load_allowlist(path: Optional[Path] = None) -> frozenset[str]:
     try:
         text = target.read_text(encoding="utf-8")
     except OSError:
+        logger.warning(MSG_ALLOWLIST_MISSING, target)
         return frozenset(words)
     for line in text.splitlines():
         raw = line.split("#", 1)[0].strip().lower()
@@ -436,7 +454,7 @@ def project_for_display(
     vocab = ALLOWLIST if allowlist is None else allowlist
     folded = fold_letters(text)
     kept = [token for token in _LETTER_TOKEN_RE.findall(folded) if token in vocab]
-    displayed = " ".join(kept)
+    displayed = collapse_digit_word_runs(" ".join(kept))
     if len(displayed) > MAX_MSG_CHARS:
         displayed = displayed[:MAX_MSG_CHARS]
         if " " in displayed:
@@ -461,6 +479,12 @@ def prepare_for_redaction(text: str) -> str:
     value = _WORD_DOT_RE.sub(".", value)
     value = re.sub(r"\s*@\s*", "@", value)
     value = re.sub(r"(?<=[a-záéíóúñ])\s*\.\s*(?=[a-záéíóúñ])", ".", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def collapse_digit_word_runs(text: str) -> str:
+    """Replace 3+ consecutive Spanish digit-words with ``numero``."""
+    value = _DIGIT_WORD_RUN_RE.sub(" numero ", text or "")
     return re.sub(r"\s+", " ", value).strip()
 
 
@@ -510,6 +534,7 @@ def redact_pii(text: str) -> str:
     value = _JWT_RE.sub(" secreto ", value)
     value = _PASSWORD_RE.sub(" secreto ", value)
     value = _PIN_OTP_RE.sub(" secreto ", value)
+    value = _LABELED_PASSPHRASE_RE.sub(" secreto ", value)
     value = _KV_SECRET_RE.sub(" secreto ", value)
     value = _KEY_PREFIX_RE.sub(" secreto ", value)
     value = _AWS_RE.sub(" secreto ", value)
@@ -532,6 +557,7 @@ def redact_pii(text: str) -> str:
     value = _HEX_RE.sub(" secreto ", value)
     value = _B64_RE.sub(" secreto ", value)
     value = _redact_phone_like(value)
+    value = collapse_digit_word_runs(value)
     value = re.sub(r"\s+", " ", value).strip()
     return _PLACEHOLDER_DUP_RE.sub(r"\1", value)
 
@@ -790,7 +816,37 @@ def cluster_unmatched(
 
     built = [_build_cluster(members) for members in merged]
     built.extend(_build_cluster(members) for _key, members in overflow)
-    return built
+    return _unique_cluster_ids(built)
+
+
+def _unique_cluster_ids(
+    clusters: Sequence[QuestionCluster],
+) -> list[QuestionCluster]:
+    """Keep ``cluster_id`` unique when two groups project to the same text."""
+    used: set[str] = set()
+    unique: list[QuestionCluster] = []
+    for cluster in clusters:
+        cid = cluster.cluster_id
+        nonce = 0
+        while cid in used:
+            nonce += 1
+            cid = cluster_id_for(
+                f"{cluster.representative}\n{cluster.normalized}\n{nonce}"
+            )
+        used.add(cid)
+        if cid == cluster.cluster_id:
+            unique.append(cluster)
+            continue
+        unique.append(
+            QuestionCluster(
+                cluster_id=cid,
+                count=cluster.count,
+                representative=cluster.representative,
+                examples=cluster.examples,
+                normalized=cluster.normalized,
+            )
+        )
+    return unique
 
 
 def _build_cluster(members: Sequence[QuestionRecord]) -> QuestionCluster:

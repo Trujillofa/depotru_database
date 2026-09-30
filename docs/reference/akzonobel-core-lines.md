@@ -10,7 +10,8 @@ are ranked by potential (sum of `TotalSinIva`) so the team knows where to push.
 
 A territory is ranked only if it sold at least one **non-Core** SKU. Selling
 only Core Lines SKUs does not rank it. Credit notes (`Cantidad` ≤ 0) and
-zero-total lines (`TotalSinIva` ≤ 0) do not count as a sale. Service/bag
+zero-total lines (`TotalSinIva` ≤ 0) do not count as a sale. Returns are
+**not netted**: potential is the sum of positive lines only. Service/bag
 names from `SalesQueryRunner` (`EXCLUDED_PRODUCT_NAMES`) are dropped, so a
 territory that only bought those items is not active.
 
@@ -42,11 +43,11 @@ The shipped file is **not** a live catalog:
 
 It is labelled `SYNTHETIC PLACEHOLDER` (`placeholder: true`). SKUs are
 `AKZO-DEMO-001` … `AKZO-DEMO-003`. Matching is by `ArticulosCodigo` only.
-`proveedor` / `marca` (and `productos_adicional`) are selected on the live
-query for display, not for membership. Replace the list and set
-`placeholder: false` before a live run. Live mode **refuses** to query the
-database while `placeholder: true`. `--synthetic` and unit tests still work.
-Do not invent real AkzoNobel / Pintuco codes in git.
+The live query reads `banco_datos` only; it does not join
+`productos_adicional` or select `proveedor` / `marca`. Replace the list and
+set `placeholder: false` before a live run. Live mode **refuses** to query
+the database while `placeholder: true`. `--synthetic` and unit tests still
+work. Do not invent real AkzoNobel / Pintuco codes in git.
 
 Override path via `--config` or Settings `AKZONOBEL_CORE_LINES_CONFIG`
 (pydantic-settings). JSON and a `sku,name` CSV are also accepted (CSV loads
