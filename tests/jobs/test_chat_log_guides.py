@@ -65,6 +65,7 @@ def test_redact_email_phone_digits_and_document_numbers():
     assert "tel" in redacted
     assert "documento" in redacted
     assert "numero" in redacted
+    assert "tel tel" not in redacted
 
 
 def test_redact_secrets_like_api_keys():

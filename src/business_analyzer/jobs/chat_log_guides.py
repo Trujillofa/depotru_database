@@ -209,7 +209,13 @@ def redact_pii(text: str) -> str:
     value = _PHONE_MOBILE_RE.sub(" tel ", value)
     value = _NIT_DOTS_RE.sub(" documento ", value)
     value = _LONG_DIGITS_RE.sub(" numero ", value)
-    return re.sub(r"\s+", " ", value).strip()
+    value = re.sub(r"\s+", " ", value).strip()
+    return re.sub(
+        r"\b(email|tel|documento|numero|secreto)(?:\s+\1)+\b",
+        r"\1",
+        value,
+        flags=re.I,
+    )
 
 
 def normalize_question(text: str) -> str:
