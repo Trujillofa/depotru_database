@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 import io
 import json
+import random
+import re
 from pathlib import Path
 
 import pytest
@@ -339,8 +341,8 @@ def test_main_synthetic_uses_labelled_fixture_only(tmp_path: Path):
     md = (tmp_path / "out" / "unmatched_question_clusters.md").read_text(
         encoding="utf-8"
     )
-    assert "SYNTHETIC" in md
-    assert "gotera" not in md.lower() or "SYNTHETIC" in md
+    assert "synthetic" in md.lower()
+    assert "gotera" not in md.lower() or "synthetic" in md.lower()
 
 
 def test_argparse_help_is_spanish(capsys):
@@ -505,9 +507,9 @@ def test_unrelated_user_files_survive_with_draft(tmp_path: Path):
     out.mkdir()
     notes = out / "borrador_mis_notas.md"
     notes.write_text("notas del usuario", encoding="utf-8")
-    leftover = out / "borrador_guia_c0123456789ab.md"
+    leftover = out / "borrador_guia_cabcdefghijkl.md"
     leftover.write_text("old generated", encoding="utf-8")
-    leftover_issue = out / "borrador_issue_c0123456789ab.md"
+    leftover_issue = out / "borrador_issue_cabcdefghijkl.md"
     leftover_issue.write_text("old issue", encoding="utf-8")
     not_hex = out / "borrador_guia_cpreviousrun.md"
     not_hex.write_text("user-ish name", encoding="utf-8")
@@ -530,7 +532,7 @@ def test_symlink_named_like_draft_is_not_unlinked(tmp_path: Path):
     out.mkdir()
     target = tmp_path / "outside_secret.md"
     target.write_text("destino externo", encoding="utf-8")
-    link = out / "borrador_guia_cabcdef012345.md"
+    link = out / "borrador_guia_cabcdefghijkl.md"
     link.symlink_to(target)
     assert clg.main(["--log-path", str(log), "--output-dir", str(out), "--draft"]) == 0
     assert link.is_symlink()
@@ -560,7 +562,7 @@ def test_directory_named_like_draft_does_not_abort(tmp_path: Path, capsys):
     out.mkdir()
     decoy = out / "borrador_x.md"
     decoy.mkdir()
-    generated_dir = out / "borrador_guia_c0123456789ab.md"
+    generated_dir = out / "borrador_guia_cabcdefghijkl.md"
     generated_dir.mkdir()
     code = clg.main(["--log-path", str(log), "--output-dir", str(out), "--draft"])
     assert code == 0
@@ -616,13 +618,16 @@ def test_invalid_utf8_lines_are_skipped(tmp_path: Path):
     assert result.skipped_lines >= 1
 
 
-def test_cluster_id_is_hash_of_redacted_text():
+def test_cluster_id_is_letters_hash_of_allowlisted_text():
     rec = clg.parse_record(_line("SYNTHETIC: cuanto vale el cemento demo xyz"))
     assert rec is not None
     cluster = clg.cluster_unmatched([rec])[0]
-    assert cluster.cluster_id == clg.cluster_id_for(cluster.normalized)
+    assert cluster.cluster_id == clg.cluster_id_for(cluster.representative)
     assert cluster.cluster_id.startswith("c")
+    assert cluster.cluster_id[1:].isalpha()
+    assert not any(char.isdigit() for char in cluster.cluster_id)
     assert rec.message not in cluster.cluster_id
+    assert rec.displayed == cluster.representative
 
 
 def test_cluster_cap_keeps_overflow_as_singletons():
@@ -1008,3 +1013,302 @@ def test_escape_markdown_neutralizes_urls_and_gh_refs():
 def isolated_settings(monkeypatch):
     monkeypatch.delenv("ASSISTANT_CHAT_LOG", raising=False)
     return monkeypatch
+
+
+def _user_fields_clean(text: str) -> None:
+    assert not any(char.isdigit() for char in text), text
+    folded = clg.fold_letters(text)
+    for token in re.findall(r"[a-z]+", folded):
+        assert token in clg.ALLOWLIST, token
+
+
+def test_allowlist_file_is_plain_text_and_human_extendable(tmp_path: Path):
+    path = tmp_path / "extra.txt"
+    path.write_text("# comentario\n\nMiPalabra\n123no\ncanción\n", encoding="utf-8")
+    vocab = clg.load_allowlist(path)
+    assert "mipalabra" in vocab
+    assert "cancion" in vocab
+    assert "123no" not in vocab
+    assert "el" in vocab
+    assert "email" in vocab
+    missing = clg.load_allowlist(tmp_path / "no-such-allowlist.txt")
+    assert "pregunta" in missing
+    assert clg._ALLOWLIST_PATH.is_file()
+
+
+def test_project_for_display_drops_unknown_words_and_digits():
+    text = clg.project_for_display("Juan Perez tel 3112223348 cemento demo")
+    assert "juan" not in text
+    assert "perez" not in text
+    assert "3112223348" not in text
+    assert not any(char.isdigit() for char in text)
+    assert "cemento" in text
+    assert "demo" in text
+    for token in text.split():
+        assert token in clg.ALLOWLIST
+
+
+def test_digit_words_stay_words_on_display():
+    rec = clg.parse_record(_line("SYNTHETIC: necesito uno dos tres de cemento"))
+    assert rec is not None
+    assert "1" not in rec.displayed
+    assert "2" not in rec.displayed
+    assert "3" not in rec.displayed
+    assert "uno" in rec.displayed
+    assert "dos" in rec.displayed
+    assert "tres" in rec.displayed
+    assert "cada 1" not in rec.displayed
+
+
+def test_sku_code_is_not_labelled_documento():
+    redacted = clg.redact_pii("SYNTHETIC: SKU-123456 cemento demo")
+    assert "documento" not in redacted
+    displayed = clg.project_for_display(redacted)
+    assert not any(char.isdigit() for char in displayed)
+    assert "sku" in displayed
+    assert "cemento" in displayed
+
+
+def test_calle_cemento_keeps_product_word():
+    rec = clg.parse_record(_line("SYNTHETIC: calle 45 de cemento demo"))
+    assert rec is not None
+    assert "45" not in rec.displayed
+    assert "cemento" in rec.displayed
+
+
+def test_truncate_happens_after_redaction():
+    secret = "xai-" + "placeholdersecretkey99"
+    raw = ("SYNTHETIC cemento " * 60) + f" clave: {secret}"
+    assert len(raw) > clg.MAX_MSG_CHARS
+    rec = clg.parse_record(_line(raw))
+    assert rec is not None
+    assert secret not in rec.redacted
+    assert secret not in rec.displayed
+    assert len(rec.displayed) <= clg.MAX_MSG_CHARS
+
+
+def test_overlong_lines_are_not_reported_as_empty(tmp_path: Path):
+    huge = json.dumps(_line("SYNTHETIC: " + ("cemento " * 2000)))
+    assert len(huge.encode("utf-8")) > clg.MAX_LINE_BYTES
+    path = tmp_path / "chat_log.jsonl"
+    path.write_bytes(huge.encode("utf-8") + b"\n")
+    result = clg.mine_chat_log(path)
+    assert result.empty is True
+    assert "vacío" not in result.message.lower()
+    assert "vacio" not in result.message.lower()
+    assert result.skipped_lines >= 1
+
+
+def test_output_md_directory_collision_is_spanish(tmp_path: Path, capsys):
+    log = _write_log(
+        tmp_path / "chat_log.jsonl",
+        [_line("SYNTHETIC: horario de atencion sede demo")],
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "unmatched_question_clusters.md").mkdir()
+    code = clg.main(["--log-path", str(log), "--output-dir", str(out)])
+    assert code == 1
+    text = capsys.readouterr().out.lower()
+    assert "carpeta" in text
+    assert "permiso" not in text
+
+
+def test_write_replaces_symlink_instead_of_following(tmp_path: Path):
+    log = _write_log(
+        tmp_path / "chat_log.jsonl",
+        [_line("SYNTHETIC: horario de atencion sede demo")],
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("destino externo", encoding="utf-8")
+    link = out / "unmatched_question_clusters.md"
+    link.symlink_to(outside)
+    assert clg.main(["--log-path", str(log), "--output-dir", str(out)]) == 0
+    assert outside.read_text(encoding="utf-8") == "destino externo"
+    assert link.is_file()
+    assert not link.is_symlink()
+    assert "horario" in link.read_text(encoding="utf-8")
+
+
+def _fresh_leak_payloads(seed: int) -> tuple[list[str], list[str]]:
+    rng = random.Random(seed)
+    marks = ["", " ", ".", "-", "\u200b", "\u200e", "\u034f", "\ufe0f"]
+    cases = (str.lower, str.upper, str.title)
+
+    def sprinkle(digits: str) -> str:
+        out = []
+        for char in digits:
+            out.append(rng.choice(marks))
+            out.append(char)
+        return "".join(out)
+
+    messages: list[str] = []
+    leaks: list[str] = []
+
+    mobile = "3" + "".join(str(rng.randint(0, 9)) for _ in range(9))
+    mobile_txt = sprinkle(mobile)
+    messages.append(f"SYNTHETIC: cel {mobile_txt} cemento demo")
+    leaks.extend([mobile, mobile_txt, re.sub(r"\D", "", mobile_txt)])
+
+    nit = "".join(str(rng.randint(0, 9)) for _ in range(9))
+    nit_txt = f"{nit[:3]}.{nit[3:6]}.{nit[6:]}"
+    messages.append(f"SYNTHETIC: NIT {nit_txt} varilla demo")
+    leaks.extend([nit, nit_txt])
+
+    card = "4111" + "".join(str(rng.randint(0, 9)) for _ in range(12))
+    card_txt = ".".join(card[i : i + 4] for i in range(0, 16, 4))
+    messages.append(f"SYNTHETIC: tarjeta {card_txt} brocas demo")
+    leaks.extend([card, card_txt])
+
+    labels = (
+        "cedula",
+        "CC",
+        "CE",
+        "TI",
+        "RUT",
+        "RUC",
+        "DNI",
+        "pasaporte",
+        "factura",
+        "remision",
+        "OC",
+        "guia",
+        "FE",
+    )
+    for label in labels:
+        number = str(rng.randint(1000, 9999999))
+        shown = rng.choice(cases)(label) + " " + number
+        messages.append(f"SYNTHETIC: {shown} horario demo")
+        leaks.append(number)
+        leaks.append(shown)
+
+    local = "ana"
+    domain = "ejemplo"
+    messages.append(f"SYNTHETIC: {local} (at) {domain} (dot) co cemento demo")
+    messages.append(f"SYNTHETIC: {local}_arroba_{domain}.com varilla demo")
+    messages.append(f"SYNTHETIC: {local}@{domain},com brocas demo")
+    leaks.extend(
+        [
+            f"{local}@{domain}.co",
+            f"{local}@{domain}.com",
+            f"{local}@{domain},com",
+            f"{local}_arroba_{domain}.com",
+            f"{local} (at) {domain} (dot) co",
+        ]
+    )
+
+    secret_bodies = {
+        "psw": "FakePsw" + str(rng.randint(10, 99)),
+        "pwd": "FakePwd" + str(rng.randint(10, 99)),
+        "apikey": "FakeApi" + str(rng.randint(10, 99)),
+        "token": "FakeTok" + str(rng.randint(10, 99)),
+        "pin": str(rng.randint(1000, 9999)),
+        "otp": str(rng.randint(100000, 999999)),
+    }
+    messages.append(f"SYNTHETIC: psw: {secret_bodies['psw']} domingo demo")
+    messages.append(f"SYNTHETIC: pwd={secret_bodies['pwd']} mayorista demo")
+    messages.append(f"SYNTHETIC: apikey {secret_bodies['apikey']} portal demo")
+    messages.append(f"SYNTHETIC: token de acceso: {secret_bodies['token']} envio demo")
+    messages.append(
+        f"SYNTHETIC: clave de acceso {secret_bodies['token']} material demo"
+    )
+    messages.append(
+        f"SYNTHETIC: codigo de verificacion {secret_bodies['otp']} " f"herramienta demo"
+    )
+    messages.append(f"SYNTHETIC: mi pin es {secret_bodies['pin']} atencion demo")
+    leaks.extend(secret_bodies.values())
+
+    prefixes = (
+        ("glpat-", "FakeGitLab" + str(rng.randint(10, 99))),
+        ("npm_", "FakeNpm" + str(rng.randint(10, 99))),
+        ("SG.", "FakeSend" + str(rng.randint(10, 99))),
+        ("dop_v1_", "FakeDoppler" + str(rng.randint(10, 99))),
+        ("shpat_", "FakeShopify" + str(rng.randint(10, 99))),
+    )
+    for prefix, body in prefixes:
+        token = prefix + body
+        messages.append(f"SYNTHETIC: {token} electronica demo")
+        leaks.append(token)
+
+    account = "Account" + "Key=" + "FakeAzure" + str(rng.randint(10, 99))
+    endpoints = "Default" + "EndpointsProtocol=https"
+    messages.append(f"SYNTHETIC: {account} domicilio demo")
+    messages.append(f"SYNTHETIC: {endpoints} cotizacion demo")
+    leaks.extend([account, "FakeAzure", endpoints])
+
+    for scheme in ("postgres", "mssql", "mysql"):
+        user = "dbuser" + str(rng.randint(10, 99))
+        password = "dbpass" + str(rng.randint(10, 99))
+        uri = f"{scheme}://{user}:{password}@host.example.test/db"
+        messages.append(f"SYNTHETIC: {uri} unica demo")
+        leaks.extend([uri, user, password, f"{user}:{password}"])
+
+    name = rng.choice(("Hernando", "Ramiro", "Lucia")) + " Demo"
+    messages.append(f"SYNTHETIC: atendido por {name} sede demo")
+    messages.append(f"SYNTHETIC: Dr. {name} barrio demo")
+    messages.append(f"SYNTHETIC: Ing. {name} clave demo")
+    leaks.append(name)
+
+    messages.append("SYNTHETIC: Av. Boyaca 68-45 cemento demo")
+    messages.append("SYNTHETIC: Mz 5 Cs 12 varilla demo")
+    leaks.extend(["68-45", "Boyaca", "Boyacá"])
+
+    return messages, [item for item in leaks if item]
+
+
+@pytest.mark.parametrize("seed", [20260930, 202609301, 884422])
+def test_fuzz_default_deny_cli_surfaces(tmp_path: Path, capsys, seed: int):
+    messages, leaks = _fresh_leak_payloads(seed)
+    log = _write_log(tmp_path / "chat_log.jsonl", [_line(msg) for msg in messages])
+    out = tmp_path / "out"
+    code = clg.main(
+        ["--log-path", str(log), "--output-dir", str(out), "--draft", "--top", "80"]
+    )
+    assert code == 0
+    stdout = capsys.readouterr().out
+    combined = _cli_blobs(stdout, out)
+    missing = [token for token in leaks if token and token in combined]
+    assert missing == [], missing
+
+    result = clg.mine_chat_log(log, top=80)
+    assert result.empty is False
+    for cluster in result.clusters:
+        _user_fields_clean(cluster.representative)
+        assert re.fullmatch(r"c[a-z]{12}", cluster.cluster_id)
+        assert not any(char.isdigit() for char in cluster.cluster_id)
+        for example in cluster.examples:
+            _user_fields_clean(example)
+
+    csv_text = (out / "unmatched_question_clusters.csv").read_text(encoding="utf-8-sig")
+    reader = csv.DictReader(io.StringIO(csv_text))
+    for row in reader:
+        _user_fields_clean(row["representativa"])
+        assert re.fullmatch(r"c[a-z]{12}", row["cluster_id"])
+        if row["ejemplos"]:
+            _user_fields_clean(row["ejemplos"])
+
+    for path in out.glob("borrador_*.md"):
+        assert re.fullmatch(r"borrador_(?:guia|issue)_c[a-z]{12}\.md", path.name)
+        assert not any(char.isdigit() for char in path.name)
+
+
+def test_regex_layer_catches_review_digit_shapes():
+    samples = {
+        "3112223348": "SYNTHETIC: cel 3112223348 cemento demo",
+        "+573112223361": "SYNTHETIC: tel +573112223361 varilla demo",
+        "311.222.3349": "SYNTHETIC: cel 311.222.3349 brocas demo",
+        "900.123.459-0": "SYNTHETIC: NIT 900.123.459-0 horario demo",
+        "4111.1111.1111.1113": "SYNTHETIC: tarjeta 4111.1111.1111.1113 demo",
+        "1234567894": "SYNTHETIC: c.c 1234567894 cemento demo",
+        "12348": "SYNTHETIC: factura No. 12348 varilla demo",
+        "4326": "SYNTHETIC: remision No. 4326 brocas demo",
+        "7327": "SYNTHETIC: OC 7327 horario demo",
+    }
+    for leak, raw in samples.items():
+        redacted = clg.redact_pii(raw)
+        displayed = clg.project_for_display(redacted)
+        assert leak not in redacted
+        assert leak not in displayed
+        assert not any(char.isdigit() for char in displayed)

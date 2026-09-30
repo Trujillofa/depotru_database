@@ -2,7 +2,8 @@
 
 Read-only. No network, no LLM, no database, no write SQL. Reuses
 ``modules.assistant.problem_guides.match_guide`` so assistant routing is
-unchanged. Redaction is best-effort; a human must review outputs.
+unchanged. Display is default-deny (allowlist) plus best-effort regex
+redaction; a human must review outputs.
 """
 
 from __future__ import annotations
@@ -28,20 +29,30 @@ DEFAULT_TOP_N = 10
 JACCARD_THRESHOLD = 0.5
 CLUSTER_MAX_GROUPS = 2000
 MAX_MSG_CHARS = 800
+MAX_REDACT_CHARS = 20000
 MAX_LINE_BYTES = 4096
-_GENERATED_DRAFT_RE = re.compile(r"^borrador_(?:guia|issue)_c[0-9a-f]{12}\.md$")
+_GENERATED_DRAFT_RE = re.compile(r"^borrador_(?:guia|issue)_c[a-z]{12}\.md$")
+_ALLOWLIST_PATH = Path(__file__).with_name("chat_log_guides_allowlist.txt")
+_ALPHA = "abcdefghijklmnopqrstuvwxyz"
+_LETTER_TOKEN_RE = re.compile(r"[a-z]+")
 
 MSG_MISSING = (
     "No se encontró el archivo de registro de chat (chat_log.jsonl). "
     "Nada que analizar."
 )
 MSG_EMPTY = "El registro de chat está vacío. No hay preguntas para analizar."
+MSG_LONG_LINES = (
+    "Hay líneas que superan el límite y no se pudieron usar. " "Nada que analizar."
+)
 MSG_NOT_FILE = "La ruta del registro de chat no es un archivo. Nada que analizar."
 MSG_ALL_MATCHED = "No hay preguntas sin guía coincidente."
 MSG_PERMISSION = "No hay permiso para leer el registro de chat. Nada que analizar."
 MSG_BINARY = "El registro de chat parece un archivo binario. Nada que analizar."
 MSG_OUTPUT_IS_FILE = "La ruta de salida no es una carpeta. Nada que escribir."
 MSG_OUTPUT_PERMISSION = "No hay permiso para escribir en la carpeta de salida."
+MSG_OUTPUT_COLLISION_DIR = (
+    "Hay una carpeta en el camino del archivo de salida. Nada que escribir."
+)
 MSG_SYNTHETIC_NOTE = (
     "Fixture SYNTHETIC: no es un registro real. El top 10 real se obtiene "
     "ejecutando este script contra el chat_log.jsonl privado. La redacción "
@@ -49,8 +60,8 @@ MSG_SYNTHETIC_NOTE = (
     "compartirla o abrir un issue."
 )
 MSG_BEST_EFFORT = (
-    "Redacción de mejor esfuerzo. Un humano debe revisar la salida antes "
-    "de compartirla o abrir un issue."
+    "Redacción de mejor esfuerzo (lista blanca + regex). Un humano debe "
+    "revisar la salida antes de compartirla o abrir un issue."
 )
 
 STOPWORDS = frozenset(
@@ -102,6 +113,22 @@ STOPWORDS = frozenset(
     }
 )
 
+_PLACEHOLDER_WORDS = frozenset(
+    {
+        "email",
+        "tel",
+        "documento",
+        "numero",
+        "secreto",
+        "nombre",
+        "direccion",
+        "url",
+        "ref",
+        "pregunta",
+        "x",
+    }
+)
+
 _DASH_TRANS = str.maketrans(
     {
         "\u2010": "-",
@@ -116,11 +143,12 @@ _DASH_TRANS = str.maketrans(
 
 # Bounded quantifiers — collapse whitespace first; avoid nested +/+ backtracking.
 _EMAIL_RE = re.compile(
-    r"(?<![\w.%+-])[\w.%+-]{1,64}@[\w.-]{1,253}\.[\w]{2,24}",
+    r"(?<![\w.%+-])[\w.%+-]{1,64}@[\w.-]{1,253}[.,][\w]{2,24}",
     re.I,
 )
 _OBFUSCATED_AT_RE = re.compile(r"\[(?:at|arroba)\]|\((?:at|arroba)\)", re.I)
 _ARROBA_RE = re.compile(r"\s+(?:arroba|at)\s+", re.I)
+_UNDERSCORE_ARROBA_RE = re.compile(r"_arroba_", re.I)
 _OBFUSCATED_DOT_RE = re.compile(r"\[(?:dot|punto)\]|\((?:dot|punto)\)", re.I)
 _WORD_DOT_RE = re.compile(r"(?<=\w)\s+(?:dot|punto)\s+(?=\w)", re.I)
 _URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>\"']{1,512}", re.I)
@@ -136,23 +164,36 @@ _JWT_RE = re.compile(
     r"\beyJ[A-Za-z0-9_-]{4,512}\.[A-Za-z0-9_-]{4,512}\.[A-Za-z0-9_-]{4,512}\b"
 )
 _PASSWORD_RE = re.compile(
-    r"(?:contrase[nñ]a|clave|password|passwd|pwd|db_password)\s*"
-    r"(?:es|[:=])\s*\S{1,256}"
+    r"(?:contrase[nñ]a|password|passwd|pwd|psw|db_password|"
+    r"apikey|api[_-]?key|token(?:\s+de\s+acceso)?|clave\s+de\s+acceso|"
+    r"c[oó]digo\s+de\s+verificaci[oó]n|mi\s+pin\s+es)\s*"
+    r"(?:es|[:=])?\s*\S{1,256}"
+    r"|clave\s*(?:es|[:=])\s*\S{1,256}"
     r"|[\"']password[\"']\s*:\s*[\"'][^\"']{1,256}[\"']",
     re.I,
 )
 _PIN_OTP_RE = re.compile(r"\b(?:pin|otp|cvv|cvc)\b\s*[:=]?\s*\S{2,16}", re.I)
 _KV_SECRET_RE = re.compile(
-    r"\b(?:password|pwd|api[_-]?key|token|secret|access[_-]?token)"
+    r"\b(?:password|pwd|psw|api[_-]?key|apikey|token|secret|access[_-]?token)"
     r"\s*[:=]\s*\S{1,512}",
     re.I,
 )
 _KEY_PREFIX_RE = re.compile(
     r"\b(?:sk_live_|sk_test_|pk_live_|pk_test_|rk_live_|gho_|ghs_|ghu_|"
-    r"ghp_|github_pat_|sk-ant-|sk-proj-|sk-|xai-|xoxp-|xoxb-)"
+    r"ghp_|github_pat_|sk-ant-|sk-proj-|sk-|xai-|xoxp-|xoxb-|"
+    r"glpat-|npm_|dop_v1_|shpat_)"
     r"[A-Za-z0-9_-]{4,512}\b"
+    r"|SG\.[A-Za-z0-9_-]{4,512}"
 )
 _AWS_RE = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{8,20}\b")
+_CONN_RE = re.compile(
+    r"(?:AccountKey|SharedAccessKey|DefaultEndpointsProtocol)\s*=\s*\S{1,512}",
+    re.I,
+)
+_DB_URI_RE = re.compile(
+    r"(?:postgres(?:ql)?|mssql|mysql|sqlserver|mongodb)://\S{1,512}",
+    re.I,
+)
 _UUID_RE = re.compile(
     r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
     re.I,
@@ -167,13 +208,18 @@ _MAC_RE = re.compile(
     re.I,
 )
 _LABEL_ID_RE = re.compile(
-    r"\b(?:facturas?|fv|fed|remisi[oó]n(?:es)?|pedidos?|orden(?:es)?|nit|cc|"
-    r"c[eé]dulas?|pasaportes?|tel(?:[eé]fonos?)?|cel(?:ulares?)?|cuentas?)\b"
+    r"\b(?:"
+    r"facturas?|factura\s+no\.?|fv|fe|fed|oc|gu[ií]as?|"
+    r"remisi[oó]n(?:es)?|remision\s+no\.?|pedidos?|orden(?:es)?|"
+    r"nit|rut|ruc|dni|cc|c\.?\s*c\.?|ce|ti|"
+    r"c[eé]dulas?(?:\s+de\s+ciudadan[ií]a)?|pasaportes?|"
+    r"tel(?:[eé]fonos?)?|cel(?:ulares?)?|cuentas?"
+    r")\b"
     r"[\s:.#\-]*"
     r"(?:[A-Za-z]{1,6}[\s.\-])?\d[\d\s.,\-]{0,24}",
     re.I,
 )
-_DOC_CODE_RE = re.compile(r"\b[A-Z]{2,8}-\d{3,8}\b")
+_DOC_CODE_RE = re.compile(r"\b(?:FV|FE|FED|OC|CC|CE|TI|NIT)-\d{1,12}\b", re.I)
 _GH_REF_RE = re.compile(r"\bGH-\d{1,8}\b", re.I)
 _NAME_INTRO_RE = re.compile(
     r"\b(?:me\s+llamo|mi\s+nombre\s+es|a\s+nombre\s+de)\s+" r"(?:\S+\s+){0,3}\S+",
@@ -181,7 +227,8 @@ _NAME_INTRO_RE = re.compile(
 )
 _NAME_TITLE_RE = re.compile(
     r"\b(?:[Ss]r\.?|[Ss]ra\.?|[Dd]oña|[Dd]ona|[Dd]on|[Ss]e[nñ]or|"
-    r"[Ss]e[nñ]ora)\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+"
+    r"[Ss]e[nñ]ora|[Dd]r\.?|[Dd]ra\.?|[Ii]ng\.?|[Ll]ic\.?)\s+"
+    r"[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+"
     r"(?:\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+){0,3}"
 )
 _NAME_SOY_RE = re.compile(
@@ -194,14 +241,15 @@ _NAME_CLIENTE_RE = re.compile(
     r"(?:\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+){0,3}"
 )
 _NAME_HABLA_RE = re.compile(
-    r"\b(?:[Hh]abla|[Aa]tiende)\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+"
+    r"\b(?:[Hh]abla|[Aa]tiende|[Aa]tendido\s+por|[Aa]tendida\s+por)\s+"
+    r"[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+"
     r"(?:\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+){0,3}"
 )
 _ADDR_RE = re.compile(
     r"\b(?:calle|cll\.?|cl\.?|carrera|cra\.?|kra|kr\.?|avenida|av\.?|"
     r"diagonal|diag\.?|transversal|trans\.?|tv\.?|apto\.?|apartamento|"
-    r"torre|casa|barrio|manzana|conjunto)\s+"
-    r"(?=\S*\d)[\w#.\-]+(?:\s+[\w#.\-]+){0,6}",
+    r"torre|casa|barrio|manzana|mz|conjunto|cs)\s+"
+    r"[\w#.\-]*\d[\w#.\-]*(?:\s+[\w#.\-]*\d[\w#.\-]*){0,5}",
     re.I,
 )
 _HEX_RE = re.compile(r"\b[0-9a-f]{20,256}\b", re.I)
@@ -210,22 +258,10 @@ _GROUP_PHONE_RE = re.compile(r"\b\d{1,4}(?:[\s\-]\d{1,4}){2,5}\b")
 _SHORT_PHONE_RE = re.compile(r"\b\d{3,4}[\s\-]\d{3,4}\b")
 _CARD_SEP_RE = re.compile(r"\b\d{4}(?:[\s\-]\d{4}){2,4}\b")
 _CARD_CONTIG_RE = re.compile(r"\b\d{13,19}\b")
-_DIGIT_WORD_RE = re.compile(
-    r"\b(?:cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\b",
-    re.I,
-)
-_DIGIT_WORD_MAP = {
-    "cero": "0",
-    "uno": "1",
-    "dos": "2",
-    "tres": "3",
-    "cuatro": "4",
-    "cinco": "5",
-    "seis": "6",
-    "siete": "7",
-    "ocho": "8",
-    "nueve": "9",
-}
+_MOBILE10_RE = re.compile(r"(?<!\d)(?:\+?57)?3\d{9}(?!\d)")
+_NIT9_RE = re.compile(r"(?<!\d)\d{9}(?!\d)")
+_DOTTED_GROUP_RE = re.compile(r"(?<!\d)\d{1,4}(?:[./]\d{1,4}){1,6}(?:-?\d{1,4})?(?!\d)")
+_DIGIT_SEP_RUN_RE = re.compile(r"\+?\d(?:[\s.\-/]*\d){6,18}")
 _PLACEHOLDER_DUP_RE = re.compile(
     r"\b(email|tel|documento|numero|secreto|nombre|direccion|url|ref)" r"(?:\s+\1)+\b",
     re.I,
@@ -319,6 +355,7 @@ SYNTHETIC_CHAT_LOG_JSONL = (
 class QuestionRecord:
     message: str
     redacted: str
+    displayed: str
     normalized: str
     tokens: frozenset[str]
     guide_id: Optional[str]
@@ -358,16 +395,66 @@ def _strip_invisible(text: str) -> str:
     return "".join(out)
 
 
+def fold_letters(text: str) -> str:
+    """NFKC, strip format marks, lowercase, fold accents to ASCII letters."""
+    value = unicodedata.normalize("NFKC", text or "")
+    value = _strip_invisible(value)
+    value = "".join(
+        char
+        for char in unicodedata.normalize("NFD", value.lower())
+        if unicodedata.category(char) != "Mn"
+    )
+    return value
+
+
+def load_allowlist(path: Optional[Path] = None) -> frozenset[str]:
+    """Load the human-editable display allowlist (letters-only words)."""
+    words = set(STOPWORDS) | set(_PLACEHOLDER_WORDS)
+    target = path if path is not None else _ALLOWLIST_PATH
+    try:
+        text = target.read_text(encoding="utf-8")
+    except OSError:
+        return frozenset(words)
+    for line in text.splitlines():
+        raw = line.split("#", 1)[0].strip().lower()
+        if not raw:
+            continue
+        folded = fold_letters(raw)
+        if _LETTER_TOKEN_RE.fullmatch(folded):
+            words.add(folded)
+    return frozenset(words)
+
+
+ALLOWLIST = load_allowlist()
+
+
+def project_for_display(
+    text: str,
+    allowlist: Optional[frozenset[str]] = None,
+) -> str:
+    """Keep only allowlisted lowercase letter-words. Digits are never emitted."""
+    vocab = ALLOWLIST if allowlist is None else allowlist
+    folded = fold_letters(text)
+    kept = [token for token in _LETTER_TOKEN_RE.findall(folded) if token in vocab]
+    displayed = " ".join(kept)
+    if len(displayed) > MAX_MSG_CHARS:
+        displayed = displayed[:MAX_MSG_CHARS]
+        if " " in displayed:
+            displayed = displayed.rsplit(" ", 1)[0]
+    return displayed.strip()
+
+
 def prepare_for_redaction(text: str) -> str:
     """Collapse whitespace first, then NFKC, strip format marks, deobfuscate."""
     if not text:
         return ""
     value = re.sub(r"\s+", " ", text).strip()
-    if len(value) > MAX_MSG_CHARS:
-        value = value[:MAX_MSG_CHARS]
+    if len(value) > MAX_REDACT_CHARS:
+        value = value[:MAX_REDACT_CHARS]
     value = unicodedata.normalize("NFKC", value)
     value = _strip_invisible(value)
     value = value.translate(_DASH_TRANS)
+    value = _UNDERSCORE_ARROBA_RE.sub("@", value)
     value = _OBFUSCATED_AT_RE.sub("@", value)
     value = _ARROBA_RE.sub("@", value)
     value = _OBFUSCATED_DOT_RE.sub(".", value)
@@ -377,10 +464,23 @@ def prepare_for_redaction(text: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
-def _replace_digit_words(text: str) -> str:
-    return _DIGIT_WORD_RE.sub(
-        lambda match: _DIGIT_WORD_MAP[match.group(0).lower()], text
-    )
+def _redact_digit_run(match: re.Match[str]) -> str:
+    raw = match.group(0)
+    digits = re.sub(r"\D", "", raw)
+    if digits.startswith("57") and len(digits) >= 12:
+        digits = digits[2:]
+        raw_has_sep = True
+    else:
+        raw_has_sep = any(char in raw for char in "./-+")
+    if len(digits) == 10 and digits.startswith("3"):
+        return " tel "
+    if len(digits) == 9:
+        return " documento "
+    if 13 <= len(digits) <= 19:
+        return " numero "
+    if raw_has_sep and len(digits) >= 7:
+        return " numero "
+    return raw
 
 
 def _redact_phone_like(text: str) -> str:
@@ -392,13 +492,16 @@ def _redact_phone_like(text: str) -> str:
     value = _GROUP_PHONE_RE.sub(_if_long, value)
     value = _SHORT_PHONE_RE.sub(_if_long, value)
     value = _CARD_CONTIG_RE.sub(" numero ", value)
+    value = _DOTTED_GROUP_RE.sub(" numero ", value)
+    value = _DIGIT_SEP_RUN_RE.sub(_redact_digit_run, value)
+    value = _MOBILE10_RE.sub(" tel ", value)
+    value = _NIT9_RE.sub(" documento ", value)
     return value
 
 
 def redact_pii(text: str) -> str:
     """Best-effort PII/secret redaction. A human must still review output."""
     value = prepare_for_redaction(text)
-    value = _replace_digit_words(value)
     value = re.sub(r"\((\d+)\)", r"\1", value)
     value = _URL_RE.sub(" url ", value)
     value = _QUERY_SECRET_RE.sub(" url ", value)
@@ -410,6 +513,8 @@ def redact_pii(text: str) -> str:
     value = _KV_SECRET_RE.sub(" secreto ", value)
     value = _KEY_PREFIX_RE.sub(" secreto ", value)
     value = _AWS_RE.sub(" secreto ", value)
+    value = _CONN_RE.sub(" secreto ", value)
+    value = _DB_URI_RE.sub(" secreto ", value)
     value = _UUID_RE.sub(" secreto ", value)
     value = _EMAIL_RE.sub(" email ", value)
     value = _IPV6_RE.sub(" numero ", value)
@@ -468,9 +573,19 @@ def escape_markdown(text: str) -> str:
     return value
 
 
-def cluster_id_for(normalized: str) -> str:
-    digest = hashlib.sha256((normalized or "").encode("utf-8")).hexdigest()[:12]
-    return f"c{digest}"
+def _letters_hash(text: str, length: int) -> str:
+    digest = hashlib.sha256((text or "").encode("utf-8")).digest()
+    number = int.from_bytes(digest, "big")
+    chars: list[str] = []
+    for _ in range(length):
+        chars.append(_ALPHA[number % 26])
+        number //= 26
+    return "".join(chars)
+
+
+def cluster_id_for(displayed: str) -> str:
+    """Stable letters-only id from the allowlisted projection (no digits)."""
+    return "c" + _letters_hash(displayed, 12)
 
 
 def resolve_log_path(
@@ -500,6 +615,9 @@ def parse_record(raw: object) -> Optional[QuestionRecord]:
     else:
         guide_id = str(logged_guide).strip() or None
     redacted = redact_pii(message)
+    displayed = project_for_display(redacted)
+    if not displayed:
+        displayed = "pregunta"
     normalized = normalize_question(redacted)
     if not normalized:
         return None
@@ -507,6 +625,7 @@ def parse_record(raw: object) -> Optional[QuestionRecord]:
     return QuestionRecord(
         message=message,
         redacted=redacted,
+        displayed=displayed,
         normalized=normalized,
         tokens=tokenize(normalized),
         guide_id=guide_id,
@@ -590,14 +709,19 @@ def mine_chat_log(path: Path, *, top: int = DEFAULT_TOP_N) -> MineResult:
         raise ChatLogMineError(MSG_BINARY)
     lines: List[str] = []
     skipped_decode = 0
+    skipped_overlong = 0
     for raw in data.splitlines():
         if len(raw) > MAX_LINE_BYTES:
-            raw = raw[:MAX_LINE_BYTES]
+            skipped_overlong += 1
+            continue
         try:
             lines.append(raw.decode("utf-8"))
         except UnicodeDecodeError:
             skipped_decode += 1
+    skipped_extra = skipped_decode + skipped_overlong
     if not any(line.strip() for line in lines):
+        if skipped_overlong:
+            return _empty_result(MSG_LONG_LINES, skipped=skipped_extra)
         if skipped_decode:
             return _empty_result(MSG_EMPTY, skipped=skipped_decode)
         return _empty_result(MSG_EMPTY)
@@ -608,7 +732,7 @@ def mine_chat_log(path: Path, *, top: int = DEFAULT_TOP_N) -> MineResult:
             clusters=(),
             records_read=len(records),
             unmatched=0,
-            skipped_lines=skipped + skipped_decode,
+            skipped_lines=skipped + skipped_extra,
             message=MSG_ALL_MATCHED if records else MSG_EMPTY,
             empty=True,
         )
@@ -617,7 +741,7 @@ def mine_chat_log(path: Path, *, top: int = DEFAULT_TOP_N) -> MineResult:
         clusters=tuple(clusters),
         records_read=len(records),
         unmatched=len(unmatched),
-        skipped_lines=skipped + skipped_decode,
+        skipped_lines=skipped + skipped_extra,
         message="",
         empty=False,
     )
@@ -670,7 +794,7 @@ def cluster_unmatched(
 
 
 def _build_cluster(members: Sequence[QuestionRecord]) -> QuestionCluster:
-    counts = Counter(item.redacted for item in members)
+    counts = Counter(item.displayed for item in members)
     representative = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
     examples = tuple(
         text
@@ -679,7 +803,7 @@ def _build_cluster(members: Sequence[QuestionRecord]) -> QuestionCluster:
     )[:3]
     normalized = normalize_question(representative)
     return QuestionCluster(
-        cluster_id=cluster_id_for(normalized),
+        cluster_id=cluster_id_for(representative),
         count=len(members),
         representative=representative,
         examples=examples,
@@ -707,10 +831,10 @@ def render_markdown(clusters: Sequence[QuestionCluster]) -> str:
         "",
         MSG_BEST_EFFORT,
         "",
-        "Solo texto redactado. No incluye `session_id` ni respuestas.",
+        "Solo texto de la lista blanca. No incluye `session_id` ni respuestas.",
         "",
-        "| # | Conteo | Representativa (redactada) | Ejemplos |",
-        "|---|--------|----------------------------|----------|",
+        "| # | Conteo | Representativa (lista blanca) | Ejemplos |",
+        "|---|--------|-------------------------------|----------|",
     ]
     if not clusters:
         lines.append("| — | 0 | — | — |")
@@ -745,15 +869,15 @@ def render_csv(clusters: Sequence[QuestionCluster]) -> str:
     return buffer.getvalue()
 
 
-def _proposed_guide_id(normalized: str) -> str:
-    return "g" + hashlib.sha256((normalized or "").encode("utf-8")).hexdigest()[:10]
+def _proposed_guide_id(displayed: str) -> str:
+    return "g" + _letters_hash(displayed, 10)
 
 
 def render_draft_guide(cluster: QuestionCluster) -> str:
-    guide_id = _proposed_guide_id(cluster.normalized)
+    guide_id = _proposed_guide_id(cluster.representative)
     title = cluster.representative
-    if title.lower().startswith("synthetic:"):
-        title = title.split(":", 1)[1].strip()
+    if title.lower().startswith("synthetic"):
+        title = title.split("synthetic", 1)[-1].strip()
     title = title[:1].upper() + title[1:] if title else "Sin título"
     escaped = re.escape(normalize_question(cluster.representative))
     examples = (
@@ -766,9 +890,9 @@ def render_draft_guide(cluster: QuestionCluster) -> str:
         f"**Origen:** minería de chat_log.jsonl (conteo {cluster.count}).\n"
         f"**id propuesto:** `{guide_id}`\n\n"
         f"{MSG_BEST_EFFORT}\n\n"
-        "## Pregunta representativa (redactada)\n\n"
+        "## Pregunta representativa (lista blanca)\n\n"
         f"{escape_markdown(cluster.representative)}\n\n"
-        "## Otras formulaciones (redactadas)\n\n"
+        "## Otras formulaciones (lista blanca)\n\n"
         f"{examples}\n\n"
         "## Patrones (regex, propuesta)\n\n"
         f"- `{escaped}`\n\n"
@@ -788,15 +912,15 @@ def render_draft_guide(cluster: QuestionCluster) -> str:
 
 
 def render_draft_issue_body(cluster: QuestionCluster) -> str:
-    guide_id = _proposed_guide_id(cluster.normalized)
+    guide_id = _proposed_guide_id(cluster.representative)
     return (
         f"# Borrador de guía: `{guide_id}`\n\n"
         "**Estado:** BORRADOR — no crear este issue automáticamente; no publicar.\n"
         "Parte de issue 65 (Phase 3c). Plantilla: "
         "docs/reference/problem-guide-template.md.\n\n"
         f"{MSG_BEST_EFFORT}\n\n"
-        f"**Conteo (redactado):** {cluster.count}\n\n"
-        "## Pregunta representativa (redactada)\n\n"
+        f"**Conteo (lista blanca):** {cluster.count}\n\n"
+        "## Pregunta representativa (lista blanca)\n\n"
         f"{escape_markdown(cluster.representative)}\n\n"
         "Incluye una lista de necesidades para el cliente. "
         "Un humano decide si abre el issue y si incorpora la guía.\n"
@@ -804,7 +928,7 @@ def render_draft_issue_body(cluster: QuestionCluster) -> str:
 
 
 def _safe_filename(cluster_id: str) -> str:
-    cleaned = re.sub(r"[^a-z0-9_]+", "_", cluster_id.lower()).strip("_")
+    cleaned = re.sub(r"[^a-z_]+", "_", cluster_id.lower()).strip("_")
     return (cleaned or "cluster")[:80]
 
 
@@ -834,6 +958,20 @@ def _clear_generated_drafts(output_dir: Path) -> None:
             continue
 
 
+def _replace_output_file(path: Path, content: str, encoding: str) -> None:
+    """Write a new regular file. Never follow a generated-name symlink."""
+    try:
+        if path.is_symlink():
+            path.unlink()
+        elif path.exists() and path.is_dir():
+            raise ChatLogMineError(MSG_OUTPUT_COLLISION_DIR)
+        path.write_text(content, encoding=encoding)
+    except ChatLogMineError:
+        raise
+    except OSError as exc:
+        raise ChatLogMineError(MSG_OUTPUT_PERMISSION) from exc
+
+
 def write_outputs(
     clusters: Sequence[QuestionCluster],
     output_dir: Path,
@@ -851,11 +989,8 @@ def write_outputs(
     written: dict[str, Path] = {}
     md_path = output_dir / "unmatched_question_clusters.md"
     csv_path = output_dir / "unmatched_question_clusters.csv"
-    try:
-        md_path.write_text(render_markdown(clusters), encoding="utf-8")
-        csv_path.write_text(render_csv(clusters), encoding="utf-8-sig")
-    except OSError as exc:
-        raise ChatLogMineError(MSG_OUTPUT_PERMISSION) from exc
+    _replace_output_file(md_path, render_markdown(clusters), "utf-8")
+    _replace_output_file(csv_path, render_csv(clusters), "utf-8-sig")
     written["markdown"] = md_path
     written["csv"] = csv_path
     if write_drafts:
@@ -863,13 +998,8 @@ def write_outputs(
             stem = _safe_filename(cluster.cluster_id)
             guide_path = output_dir / f"borrador_guia_{stem}.md"
             issue_path = output_dir / f"borrador_issue_{stem}.md"
-            try:
-                guide_path.write_text(render_draft_guide(cluster), encoding="utf-8")
-                issue_path.write_text(
-                    render_draft_issue_body(cluster), encoding="utf-8"
-                )
-            except OSError as exc:
-                raise ChatLogMineError(MSG_OUTPUT_PERMISSION) from exc
+            _replace_output_file(guide_path, render_draft_guide(cluster), "utf-8")
+            _replace_output_file(issue_path, render_draft_issue_body(cluster), "utf-8")
             written[f"guide_{stem}"] = guide_path
             written[f"issue_{stem}"] = issue_path
     return written
@@ -879,8 +1009,9 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Analiza el registro de chat (chat_log.jsonl) y lista las "
-            "preguntas sin guía coincidente. Solo lectura. No publica guías "
-            "ni crea issues. La redacción es de mejor esfuerzo."
+            "preguntas sin guía coincidente. Solo lectura. No publica "
+            "guías ni crea issues. La salida usa lista blanca (mejor "
+            "esfuerzo)."
         )
     )
     parser.add_argument(

@@ -241,11 +241,7 @@ class Settings(BaseSettings):
     @field_validator("DB_PORT", mode="before")
     @classmethod
     def _db_port(cls, value: Any) -> Any:
-        if value is None:
-            return 1433
-        if isinstance(value, str) and not value.strip():
-            return 1433
-        return value
+        return _coerce_optional_int(value, 1433)
 
     @field_validator("AI_PROVIDER", mode="before")
     @classmethod

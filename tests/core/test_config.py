@@ -6,6 +6,9 @@ No live database or AI provider calls. Secrets use placeholders only.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -250,12 +253,14 @@ def test_settings_tolerates_invalid_port_and_row_limits(isolated_config_env):
     isolated_config_env.setenv("INSIGHTS_MAX_ROWS", "abc")
     isolated_config_env.setenv("MAX_DISPLAY_ROWS", "")
     isolated_config_env.setenv("SMTP_PORT", "nope")
+    isolated_config_env.setenv("DB_PORT", "abc")
 
     settings = Settings()
     assert settings.PORT == 8084
     assert settings.INSIGHTS_MAX_ROWS == 15
     assert settings.MAX_DISPLAY_ROWS == 100
     assert settings.SMTP_PORT == 587
+    assert settings.DB_PORT == 1433
 
 
 def test_config_reload_applies_settings_and_thresholds(isolated_config_env):
@@ -420,6 +425,30 @@ def test_src_config_shim_reexports_canonical_config():
 
     assert ShimConfig is Config
     assert ShimSegments is CustomerSegmentation
+
+
+def test_invalid_db_port_does_not_traceback_on_import():
+    env = os.environ.copy()
+    env["DB_PORT"] = "abc"
+    src = str(Path(__file__).resolve().parents[2] / "src")
+    previous = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = src + (os.pathsep + previous if previous else "")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import business_analyzer.core.config as cfg; "
+                "print(cfg.Settings().DB_PORT)"
+            ),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "1433"
 
 
 def test_ai_base_shim_reexports_canonical_config():

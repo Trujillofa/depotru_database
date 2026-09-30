@@ -4,6 +4,7 @@
 **CLI:** `depotru-mine-chat-guides`
 **Código:** `business_analyzer.jobs.chat_log_guides`
 **Script:** `scripts/analysis/mine_chat_log_guides.py`
+**Lista blanca:** `src/business_analyzer/jobs/chat_log_guides_allowlist.txt`
 
 Análisis de solo lectura del registro del asistente de vitrina. **No** cambia
 el enrutamiento del asistente, los informes ni el SQL. No habla con la base
@@ -21,37 +22,64 @@ está en `.gitignore`. El escritor y el minero leen esa ruta por Settings.
 
 El registro real es **privado**. No lo suba a git.
 
-La redacción de correos, teléfonos, NIT/CC, facturas, secretos, IPs, nombres
-y direcciones es de **mejor esfuerzo**. No garantiza que no quede dato
-personal. **Un humano debe revisar la salida (Markdown, CSV, borradores,
-nombres de archivo y la consola) antes de compartirla o abrir un issue.**
+La salida visible (Markdown, CSV, borradores, consola, nombres de archivo y
+`cluster_id`) es **lista blanca por defecto**: del texto del usuario solo
+pasan palabras en minúscula, solo letras (tras NFKC, quitar marcas invisibles
+y doblar tildes) que estén en
+`chat_log_guides_allowlist.txt`. Todo lo demás (dígitos, nombres, handles,
+URLs, secretos, palabras desconocidas) se descarta o se cambia por un
+marcador neutro (`email`, `tel`, `documento`, `numero`, `secreto`, `nombre`,
+`direccion`, `url`, `ref`). **Los dígitos del usuario nunca se escriben.**
 
-La salida no incluye `session_id` ni el texto de las respuestas. El
-`cluster_id` sale de un hash del texto ya redactado.
+El agrupamiento puede usar por dentro el texto normalizado completo. Solo la
+proyección de la lista blanca se muestra o se hashea en `cluster_id` / id
+propuesto (letras, sin dígitos).
+
+Encima hay una capa regex de **mejor esfuerzo** (correos, celulares de 10
+dígitos que empiezan por 3, NIT de 9, grupos con puntos o barras, tarjetas
+de 13–19, dígitos tras etiquetas, secretos, URIs). **No garantiza** que no
+quede dato personal. **Un humano debe revisar la salida antes de
+compartirla o abrir un issue.**
+
+La salida no incluye `session_id` ni el texto de las respuestas.
+
+Para ampliar el vocabulario visible (términos de ferretería, nombres de
+informe, columnas), edite el `.txt`: una palabra en minúscula por línea;
+`#` inicia comentario. No agregue nombres de personas ni dígitos.
 
 ### Brechas conocidas
 
-Quedan huecos a propósito o porque el heurístico no llega. Un humano debe
-mirar estos casos (y cualquier otro) antes de compartir:
+La lista blanca evita que un token desconocido o un dígito salga a un
+archivo, pero **no es una garantía de privacidad**. Un humano debe mirar
+estos casos (y cualquier otro) antes de compartir:
 
-- Números en palabras más allá de cero–nueve seguidos (`once`, `veinte`).
-- Ofuscaciones nuevas o dominios partidos de forma rara.
+- Palabras de la lista blanca que forman parte de un secreto mal etiquetado
+  (`clave` sola, sin valor) siguen visibles; el valor se intenta redactar
+  con regex y, si falla, se descarta por no estar en la lista.
+- Números en palabras (`once`, `veinte`, `trescientos`) no son dígitos; si
+  están en la lista (`uno`…`nueve`) se muestran como palabras. Eso es
+  intencional: no se convierten a `1`/`2`/`3`.
+- Un término nuevo de ferretería que no esté en el `.txt` desaparece de la
+  salida (falso negativo de vocabulario). Agréguelo a la lista a mano.
+- La capa regex aún puede etiquetar de más: un NIT de 9 dígitos o un
+  celular `3` + 9 dígitos se redacta aunque sea un código de producto; un
+  `SKU-123456` **no** se marca como documento (el `123456` no se muestra).
+- Ofuscaciones nuevas o dominios partidos de forma rara pueden no
+  coincidir con el regex; la lista blanca igual impide que salgan.
 - Contraseñas en texto libre **sin** etiqueta (`contraseña`, `clave:`,
-  `password es`, `PIN`, `OTP`, `cvv`).
-- Tratamientos o presentaciones que no estén en la lista (solo
-  Sr./Sra./don/doña/señor/señora, `Cliente:` / `cliente` + nombre en
-  mayúscula, `me llamo`, `a nombre de`, `habla` / `atiende` + nombre).
-  **No** se redacta `soy constructor`, `soy nuevo` ni `cliente frecuente`.
-- `apto` / `barrio` / `casa` / `torre` / `manzana` / `conjunto` sin un
-  número al lado; `calle 45 de cemento` puede marcarse como dirección.
-- Códigos de producto de 7 a 12 dígitos **sin** separadores ni etiqueta
-  (`referencia 7701234`) se dejan. Teléfonos/tarjetas con espacios o
-  guiones, o 13+ dígitos seguidos, sí se redactan. El canje es menos
-  falsos positivos en ferretería a cambio de revisar a mano.
+  `psw`, `pwd`, `apikey`, `token de acceso`, `PIN`, `OTP`, `cvv`) pueden
+  no entrar al regex; si el valor no está en la lista, no se muestra.
+- Tratamientos (`Sr.`, `Dr.`, `Ing.`, `cliente:`, `atendido por`, …) son
+  heurísticos. `soy constructor` / `soy nuevo` / `cliente frecuente` no
+  se tratan como nombre.
+- `calle 45 de cemento` no se come la palabra `cemento`; el `45` no
+  aparece. Direcciones (`Av. Boyacá 68-45`, `Mz 5 Cs 12`) pierden números
+  y nombres de barrio que no estén en la lista.
 - `--draft` solo borra archivos regulares (no enlaces, no carpetas) cuyo
-  nombre es exactamente `borrador_(guia|issue)_c<hex de 12>.md`. No toca
+  nombre es exactamente `borrador_(guia|issue)_c<12 letras>.md`. No toca
   `borrador_mis_notas.md` ni nada en subcarpetas. Sin `--draft` no borra
-  borradores.
+  borradores. Si el nombre de salida es un enlace, se reemplaza el enlace
+  (no se escribe a través de él). Si es una carpeta, el error lo dice.
 
 La **lista top 10 de preguntas reales sin guía** se obtiene ejecutando este
 script contra el registro privado en una máquina que lo tenga. Las guías de
@@ -68,12 +96,12 @@ PYTHONPATH=src python scripts/analysis/mine_chat_log_guides.py \
 depotru-mine-chat-guides --synthetic --output-dir /tmp/chat_guides_mining
 ```
 
-Espere `SYNTHETIC:` en el Markdown/CSV. Revise
+Espere `synthetic` en el Markdown/CSV. Revise
 `unmatched_question_clusters.md` / `.csv`. `--draft` escribe
 `borrador_guia_*.md` y `borrador_issue_*.md` (nunca publica una guía ni abre
 un issue). Con `--draft` solo se quitan borradores previos generados por
-esta herramienta (`borrador_(guia|issue)_c<hex>.md`); no se tocan archivos
-del usuario.
+esta herramienta (`borrador_(guia|issue)_c<12 letras>.md`); no se tocan
+archivos del usuario.
 
 ## Cómo ejecutarlo (registro privado)
 
@@ -85,7 +113,9 @@ PYTHONPATH=src python scripts/analysis/mine_chat_log_guides.py \
 Si el archivo no existe o está vacío, el comando sale con código 0 y un
 mensaje en español. No inventa preguntas. Si no hay permiso de lectura, el
 archivo es binario o `--output-dir` es un archivo, sale con código 1 y un
-mensaje en español (sin traza). Las líneas con UTF-8 inválido se saltan.
+mensaje en español (sin traza). Las líneas de más de 4096 bytes se saltan
+(el mensaje no dice que el registro esté vacío). Las líneas con UTF-8
+inválido se saltan.
 
 ## Borradores de guía
 
