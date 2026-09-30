@@ -203,6 +203,7 @@ class Settings(BaseSettings):
     SMTP_USE_TLS: bool = True
     MAIL_FROM: Optional[str] = None
     MAIL_TO: Optional[str] = None
+    AKZONOBEL_CORE_LINES_CONFIG: Optional[str] = None
 
     @field_validator(
         "DB_HOST",
@@ -213,6 +214,7 @@ class Settings(BaseSettings):
         "SMTP_PASSWORD",
         "MAIL_FROM",
         "MAIL_TO",
+        "AKZONOBEL_CORE_LINES_CONFIG",
         mode="before",
     )
     @classmethod

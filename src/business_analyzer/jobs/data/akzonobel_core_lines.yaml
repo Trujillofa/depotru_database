@@ -1,0 +1,26 @@
+# SYNTHETIC PLACEHOLDER — not a live AkzoNobel / Core Lines catalog.
+# Replace `skus` with the real Core Lines list and set placeholder: false
+# before any live database run. Do not treat AKZO-DEMO-* as real SKUs.
+#
+# Matching is by ArticulosCodigo (SKU list). proveedor / marca on
+# banco_datos and productos_adicional are selected for display only.
+#
+# Territory default: vendedor_codigo + VendedorFactura (commercial owner
+# already used by manager_report / presupuesto_vendedores). Alternative
+# documented banco_datos fields: ciudad, departamento. zona_unica is J3
+# cartera master data and is not queried here.
+
+version: 1
+placeholder: true
+
+territory:
+  key_field: vendedor_codigo
+  label_field: VendedorFactura
+
+skus:
+  - sku: AKZO-DEMO-001
+    name: Pintura demo línea núcleo 1
+  - sku: AKZO-DEMO-002
+    name: Pintura demo línea núcleo 2
+  - sku: AKZO-DEMO-003
+    name: Pintura demo línea núcleo 3

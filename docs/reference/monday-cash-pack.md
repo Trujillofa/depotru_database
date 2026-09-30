@@ -84,4 +84,7 @@ Re-run the same command; files are named `monday_cash_pack_YYYY-MM-DD.html` / `.
 
 ## Out of scope here
 
-AkzoNobel Core Lines zero-penetration report and mining `chat_log.jsonl` for new assistant guides are later PRs of Phase 3.
+AkzoNobel Core Lines zero-penetration report is a sibling job:
+[akzonobel-core-lines.md](akzonobel-core-lines.md). Mining `chat_log.jsonl`
+for new assistant guides is a later PR of Phase 3. The Monday pack does not
+attach Core Lines yet.
