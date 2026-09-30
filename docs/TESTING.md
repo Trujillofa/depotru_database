@@ -287,6 +287,9 @@ with fixtures/mocks so they cannot regress silently:
 | `src/business_analyzer/jobs/monday_cash_pack.py` | Monday cash pack (Phase 3 / #65); draft email must not send by default |
 | `src/business_analyzer/jobs/akzonobel_core_lines.py` | AkzoNobel Core Lines (Phase 3 / #65); zero-penetration HTML/CSV |
 
+Phase 3c (`chat_log_guides.py`) is **not** a money path; CI still requires **90%**
+on that read-only miner so the four 80% money-path floors stay unchanged.
+
 ```bash
 # After pytest --cov=src (same .coverage file CI uses)
 coverage report --include='src/business_analyzer/reports/monthly.py' --fail-under=80
@@ -295,6 +298,7 @@ coverage report --include='src/business_analyzer/analysis/manager_report/queries
 coverage report --include='src/business_analyzer/core/website_stock_magento_ssh.py' --fail-under=80
 coverage report --include='src/business_analyzer/jobs/monday_cash_pack.py' --fail-under=90
 coverage report --include='src/business_analyzer/jobs/akzonobel_core_lines.py' --fail-under=90
+coverage report --include='src/business_analyzer/jobs/chat_log_guides.py' --fail-under=90
 ```
 
 Magento dry-run (no SSH, no storefront writes). Ops ``--dry-run`` also

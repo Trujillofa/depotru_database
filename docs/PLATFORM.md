@@ -131,6 +131,9 @@ jq -r '.guide_id // "none"' data/assistant/chat_log.jsonl | sort | uniq -c | sor
 Fields: `ts`, `session_id`, `message` (≤500), `reply_preview` (≤200), `tools_used`,
 `guide_id`, `product_query`, `grounded`. No API keys or full tool payloads.
 
+To cluster unmatched questions (redacted, read-only) see
+[reference/chat-log-guides-mining.md](reference/chat-log-guides-mining.md).
+
 ### Product deep links
 
 When Magento REST search returns `url_key`, replies include PDP URLs:

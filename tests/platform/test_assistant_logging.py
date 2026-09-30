@@ -8,7 +8,7 @@ import pytest
 from depotru_kernel.auth import Audience
 from depotru_tools.registry import reset_default_registry
 from modules.assistant.chat import ChatRequest, format_product_lines, run_assistant_turn
-from modules.assistant.logging import log_assistant_turn
+from modules.assistant.logging import default_log_path, log_assistant_turn
 
 
 @pytest.fixture(autouse=True)
@@ -16,6 +16,23 @@ def _fresh_registry():
     reset_default_registry()
     yield
     reset_default_registry()
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_default_log_path_reads_env_without_building_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    target = tmp_path / "from-settings-chat.jsonl"
+    monkeypatch.setenv("ASSISTANT_CHAT_LOG", str(target))
+    monkeypatch.setenv("DB_PORT", "abc")
+
+    def _boom() -> object:
+        raise AssertionError("default_log_path must not construct Settings")
+
+    monkeypatch.setattr("business_analyzer.core.config.get_settings", _boom)
+    monkeypatch.setattr("business_analyzer.core.config.Settings", _boom)
+    assert default_log_path() == target
 
 
 @pytest.mark.unit

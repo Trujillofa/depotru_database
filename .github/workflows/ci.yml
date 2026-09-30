@@ -107,6 +107,7 @@ jobs:
           uv run coverage report --include='src/business_analyzer/core/website_stock_magento_ssh.py' --fail-under=80 --show-missing
           uv run coverage report --include='src/business_analyzer/jobs/monday_cash_pack.py' --fail-under=90 --show-missing
           uv run coverage report --include='src/business_analyzer/jobs/akzonobel_core_lines.py' --fail-under=90 --show-missing
+          uv run coverage report --include='src/business_analyzer/jobs/chat_log_guides.py' --fail-under=90 --show-missing
 
       - name: Upload coverage artifact
         if: matrix.python-version == '3.12'

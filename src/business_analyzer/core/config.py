@@ -204,6 +204,7 @@ class Settings(BaseSettings):
     MAIL_FROM: Optional[str] = None
     MAIL_TO: Optional[str] = None
     AKZONOBEL_CORE_LINES_CONFIG: Optional[str] = None
+    ASSISTANT_CHAT_LOG: Optional[str] = None
 
     @field_validator(
         "DB_HOST",
@@ -215,6 +216,7 @@ class Settings(BaseSettings):
         "MAIL_FROM",
         "MAIL_TO",
         "AKZONOBEL_CORE_LINES_CONFIG",
+        "ASSISTANT_CHAT_LOG",
         mode="before",
     )
     @classmethod
@@ -239,11 +241,7 @@ class Settings(BaseSettings):
     @field_validator("DB_PORT", mode="before")
     @classmethod
     def _db_port(cls, value: Any) -> Any:
-        if value is None:
-            return 1433
-        if isinstance(value, str) and not value.strip():
-            return 1433
-        return value
+        return _coerce_optional_int(value, 1433)
 
     @field_validator("AI_PROVIDER", mode="before")
     @classmethod
@@ -290,6 +288,15 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Build a fresh Settings snapshot from the current process environment."""
     return Settings()
+
+
+def read_assistant_chat_log() -> Optional[str]:
+    """Read ``ASSISTANT_CHAT_LOG`` without constructing ``Settings``.
+
+    ``Settings()`` validates every field; an unrelated invalid value such as
+    ``DB_PORT=abc`` must not disable assistant logging.
+    """
+    return _blank_to_none(os.getenv("ASSISTANT_CHAT_LOG"))
 
 
 def require_env(
