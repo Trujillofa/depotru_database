@@ -61,6 +61,7 @@ CONFIG_ENV_KEYS = (
     "SMTP_USE_TLS",
     "MAIL_FROM",
     "MAIL_TO",
+    "AKZONOBEL_CORE_LINES_CONFIG",
 )
 
 
@@ -122,6 +123,7 @@ def test_settings_defaults_without_env(isolated_config_env):
     assert settings.SMTP_USE_TLS is True
     assert settings.MAIL_FROM is None
     assert settings.MAIL_TO is None
+    assert settings.AKZONOBEL_CORE_LINES_CONFIG is None
     assert settings.NCX_FILE_PATH == os.path.expanduser(
         "~/Coding_OMARCHY/python_files/connections.ncx"
     )
@@ -167,6 +169,14 @@ def test_settings_smtp_optional_overrides(isolated_config_env):
     assert settings.SMTP_USE_TLS is False
     assert settings.MAIL_FROM == "from@example.test"
     assert settings.MAIL_TO == "to@example.test"
+
+
+def test_settings_akzonobel_config_path_override(isolated_config_env):
+    isolated_config_env.setenv(
+        "AKZONOBEL_CORE_LINES_CONFIG", "/tmp/akzo-demo-core-lines.yaml"
+    )
+    settings = Settings()
+    assert settings.AKZONOBEL_CORE_LINES_CONFIG == "/tmp/akzo-demo-core-lines.yaml"
 
 
 def test_settings_env_overrides(isolated_config_env):

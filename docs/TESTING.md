@@ -285,6 +285,7 @@ with fixtures/mocks so they cannot regress silently:
 | `src/business_analyzer/analysis/manager_report/queries.py` | SQL that feeds manager KPIs (must exclude test docs) |
 | `src/business_analyzer/core/website_stock_magento_ssh.py` | Can write production Magento MSI |
 | `src/business_analyzer/jobs/monday_cash_pack.py` | Monday cash pack (Phase 3 / #65); draft email must not send by default |
+| `src/business_analyzer/jobs/akzonobel_core_lines.py` | AkzoNobel Core Lines (Phase 3 / #65); zero-penetration HTML/CSV |
 
 ```bash
 # After pytest --cov=src (same .coverage file CI uses)
@@ -293,6 +294,7 @@ coverage report --include='src/business_analyzer/reports/cartera_pdf.py' --fail-
 coverage report --include='src/business_analyzer/analysis/manager_report/queries.py' --fail-under=80
 coverage report --include='src/business_analyzer/core/website_stock_magento_ssh.py' --fail-under=80
 coverage report --include='src/business_analyzer/jobs/monday_cash_pack.py' --fail-under=90
+coverage report --include='src/business_analyzer/jobs/akzonobel_core_lines.py' --fail-under=90
 ```
 
 Magento dry-run (no SSH, no storefront writes). Ops ``--dry-run`` also

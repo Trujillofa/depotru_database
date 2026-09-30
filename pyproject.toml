@@ -149,6 +149,7 @@ depotru-db-mcp = "business_analyzer.mcp.database_server:main"
 depotru-enrich-celular = "business_analyzer.analysis.cotizaciones_celular_cli:main"
 depotru-website-stock = "business_analyzer.core.website_stock_cli:main"
 depotru-monday-cash = "business_analyzer.jobs.monday_cash_pack:main"
+depotru-akzonobel-core-lines = "business_analyzer.jobs.akzonobel_core_lines:main"
 
 [project.urls]
 Homepage = "https://github.com/Trujillofa/depotru_database"
