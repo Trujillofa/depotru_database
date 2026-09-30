@@ -102,5 +102,5 @@ optional change if it stays a one-file attach.
 
 ## Out of scope
 
-Assistant guides from `chat_log.jsonl` (part C), nightly mart, branch
-dimension, Cloudflare tunnel, stale-data alerts.
+Nightly mart, branch dimension, Cloudflare tunnel, stale-data alerts.
+Assistant guide mining: [chat-log-guides-mining.md](chat-log-guides-mining.md).

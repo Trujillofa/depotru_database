@@ -62,6 +62,7 @@ CONFIG_ENV_KEYS = (
     "MAIL_FROM",
     "MAIL_TO",
     "AKZONOBEL_CORE_LINES_CONFIG",
+    "ASSISTANT_CHAT_LOG",
 )
 
 
@@ -124,6 +125,7 @@ def test_settings_defaults_without_env(isolated_config_env):
     assert settings.MAIL_FROM is None
     assert settings.MAIL_TO is None
     assert settings.AKZONOBEL_CORE_LINES_CONFIG is None
+    assert settings.ASSISTANT_CHAT_LOG is None
     assert settings.NCX_FILE_PATH == os.path.expanduser(
         "~/Coding_OMARCHY/python_files/connections.ncx"
     )
@@ -177,6 +179,14 @@ def test_settings_akzonobel_config_path_override(isolated_config_env):
     )
     settings = Settings()
     assert settings.AKZONOBEL_CORE_LINES_CONFIG == "/tmp/akzo-demo-core-lines.yaml"
+
+
+def test_settings_assistant_chat_log_path_override(isolated_config_env):
+    isolated_config_env.setenv(
+        "ASSISTANT_CHAT_LOG", "/tmp/synthetic-assistant-chat-log.jsonl"
+    )
+    settings = Settings()
+    assert settings.ASSISTANT_CHAT_LOG == "/tmp/synthetic-assistant-chat-log.jsonl"
 
 
 def test_settings_env_overrides(isolated_config_env):

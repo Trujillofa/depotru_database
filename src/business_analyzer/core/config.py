@@ -204,6 +204,7 @@ class Settings(BaseSettings):
     MAIL_FROM: Optional[str] = None
     MAIL_TO: Optional[str] = None
     AKZONOBEL_CORE_LINES_CONFIG: Optional[str] = None
+    ASSISTANT_CHAT_LOG: Optional[str] = None
 
     @field_validator(
         "DB_HOST",
@@ -215,6 +216,7 @@ class Settings(BaseSettings):
         "MAIL_FROM",
         "MAIL_TO",
         "AKZONOBEL_CORE_LINES_CONFIG",
+        "ASSISTANT_CHAT_LOG",
         mode="before",
     )
     @classmethod
