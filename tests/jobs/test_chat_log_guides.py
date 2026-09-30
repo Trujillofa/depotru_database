@@ -39,6 +39,16 @@ def _line(
     return rec
 
 
+def _stripe_secret(kind: str, env: str, body: str) -> str:
+    """Assemble a Stripe-like key at runtime so the source has no full token."""
+    return f"{kind}_{env}_{body}"
+
+
+def _jwt_token(*parts: str) -> str:
+    """Assemble a JWT-shaped string at runtime so the source has no full token."""
+    return ".".join(parts)
+
+
 def _write_log(path: Path, rows: list[dict], extra_text: str = "") -> Path:
     chunks = [json.dumps(row, ensure_ascii=False) for row in rows]
     text = "\n".join(chunks)
@@ -635,6 +645,7 @@ def test_cli_adversarial_synthetic_leaks_on_all_surfaces(tmp_path: Path, capsys)
     zwsp = "\u200b"
     endash = "\u2013"
     full_at = "\uff20"
+    bearer_jwt = _jwt_token("eyJ" + "hbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "aaa")
     messages = [
         f"SYNTHETIC: llama al (311) 222 3352 pedido demo {1}",
         "SYNTHETIC: cel 311 222 33 63 horario demo",
@@ -661,7 +672,7 @@ def test_cli_adversarial_synthetic_leaks_on_all_surfaces(tmp_path: Path, capsys)
         "SYNTHETIC: maria arroba example.test horario demo",
         "SYNTHETIC: pedro [at] example [dot] test cemento demo",
         "SYNTHETIC: https://example.test/x?token=abcSECRET99 varilla demo",
-        "SYNTHETIC: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.aaa brocas demo",
+        f"SYNTHETIC: Bearer {bearer_jwt} brocas demo",
         "SYNTHETIC: password=SuperFake99 domingo demo",
         "SYNTHETIC: pwd=FakePwd99 mayorista demo",
         "SYNTHETIC: api_key=FAKEAPIKEY99 portal demo",
@@ -720,7 +731,7 @@ def test_cli_adversarial_synthetic_leaks_on_all_surfaces(tmp_path: Path, capsys)
         "maria@example.test",
         "pedro@example.test",
         "abcSECRET99",
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.aaa",
+        bearer_jwt,
         "SuperFake99",
         "FakePwd99",
         "FAKEAPIKEY99",
@@ -791,6 +802,16 @@ def test_cli_review2_leaks_on_all_surfaces(tmp_path: Path, capsys):
     lre = "\u202a"
     vs16 = "\ufe0f"
     cgj = "\u034f"
+    sk_live = _stripe_secret("sk", "live", "FakeStripeLiveKey99")
+    sk_test = _stripe_secret("sk", "test", "FakeStripeTestKey99")
+    pk_live = _stripe_secret("pk", "live", "FakePublishable99")
+    rk_live = _stripe_secret("rk", "live", "FakeRestricted99")
+    jwt_full = _jwt_token(
+        "eyJ" + "hbGciOiJIUzI1NiJ9",
+        "eyJ" + "zdWIiOiIxMjM0In0",
+        "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+    )
+    jwt_sig = "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
     messages = [
         "SYNTHETIC: juan (arroba) example punto test cemento demo",
         "SYNTHETIC: ñu arroba example.test varilla demo",
@@ -798,7 +819,7 @@ def test_cli_review2_leaks_on_all_surfaces(tmp_path: Path, capsys):
         "SYNTHETIC: FED-12351 cotizacion demo",
         "SYNTHETIC: orden #12352 unica demo",
         "SYNTHETIC: www.tienda.example.test/pedido/98765 brocas demo",
-        "SYNTHETIC: sk_live_FakeStripeLiveKey99 domingo demo",
+        f"SYNTHETIC: {sk_live} domingo demo",
         "SYNTHETIC: cliente: Ramiro Demo Perez portal demo",
         "SYNTHETIC: Sr. Hernando Demo envio demo",
         "SYNTHETIC: contraseña: SuperClave99 material demo",
@@ -809,16 +830,16 @@ def test_cli_review2_leaks_on_all_surfaces(tmp_path: Path, capsys):
         "SYNTHETIC: PIN 4321 cotizacion demo",
         "SYNTHETIC: OTP 998877 sede demo",
         "SYNTHETIC: cvc 321 barrio demo",
-        "SYNTHETIC: sk_test_FakeStripeTestKey99 clave demo",
-        "SYNTHETIC: pk_live_FakePublishable99 cuanto demo",
-        "SYNTHETIC: rk_live_FakeRestricted99 vale demo",
+        f"SYNTHETIC: {sk_test} clave demo",
+        f"SYNTHETIC: {pk_live} cuanto demo",
+        f"SYNTHETIC: {rk_live} vale demo",
         "SYNTHETIC: gho_FakeOauthToken99 precio demo",
         "SYNTHETIC: ghs_FakeServerToken99 horario demo",
         "SYNTHETIC: ghu_FakeUserToken99 cemento demo",
         "SYNTHETIC: ASIAIOSFODNN7EXAMPLE varilla demo",
         "SYNTHETIC: xoxp-FakeSlackUser99 brocas demo",
         "SYNTHETIC: xoxb-FakeSlackBot99 domingo demo",
-        "SYNTHETIC: jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c mayorista demo",
+        f"SYNTHETIC: jwt {jwt_full} mayorista demo",
         "SYNTHETIC: uuid 123e4567-e89b-12d3-a456-426614174000 portal demo",
         "SYNTHETIC: Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ== envio demo",
         "SYNTHETIC: https://example.test/x?auth=AuthParam99 material demo",
@@ -872,7 +893,7 @@ def test_cli_review2_leaks_on_all_surfaces(tmp_path: Path, capsys):
         "#12352",
         "www.tienda.example.test/pedido/98765",
         "tienda.example.test",
-        "sk_live_FakeStripeLiveKey99",
+        sk_live,
         "Ramiro Demo Perez",
         "Hernando Demo",
         "SuperClave99",
@@ -883,17 +904,17 @@ def test_cli_review2_leaks_on_all_surfaces(tmp_path: Path, capsys):
         "PIN 4321",
         "OTP 998877",
         "cvc 321",
-        "sk_test_FakeStripeTestKey99",
-        "pk_live_FakePublishable99",
-        "rk_live_FakeRestricted99",
+        sk_test,
+        pk_live,
+        rk_live,
         "gho_FakeOauthToken99",
         "ghs_FakeServerToken99",
         "ghu_FakeUserToken99",
         "ASIAIOSFODNN7EXAMPLE",
         "xoxp-FakeSlackUser99",
         "xoxb-FakeSlackBot99",
-        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
-        "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+        jwt_full,
+        jwt_sig,
         "123e4567-e89b-12d3-a456-426614174000",
         "QWxhZGRpbjpvcGVuIHNlc2FtZQ==",
         "AuthParam99",
