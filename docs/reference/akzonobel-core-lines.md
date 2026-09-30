@@ -5,8 +5,14 @@
 **Code:** `business_analyzer.jobs.akzonobel_core_lines`
 
 Recommended ops report: for each **active territory** (it sold other products in
-the period), list Core Lines SKUs that had **zero sales**. Territories are
-ranked by potential (sum of `TotalSinIva`) so the team knows where to push.
+the period), list Core Lines SKUs that had **zero positive sales**. Territories
+are ranked by potential (sum of `TotalSinIva`) so the team knows where to push.
+
+A territory is ranked only if it sold at least one **non-Core** SKU. Selling
+only Core Lines SKUs does not rank it. Credit notes (`Cantidad` ≤ 0) and
+zero-total lines (`TotalSinIva` ≤ 0) do not count as a sale. Service/bag
+names from `SalesQueryRunner` (`EXCLUDED_PRODUCT_NAMES`) are dropped, so a
+territory that only bought those items is not active.
 
 ## Territory dimension
 
@@ -34,15 +40,17 @@ The shipped file is **not** a live catalog:
 
 `src/business_analyzer/jobs/data/akzonobel_core_lines.yaml`
 
-It is labelled `SYNTHETIC PLACEHOLDER`. SKUs are `AKZO-DEMO-001` …
-`AKZO-DEMO-003`. Vendor/brand tokens are `AKZO-DEMO-VENDOR` /
-`AKZO-DEMO-MARCA` so they can match the existing `proveedor` / `marca` fields
-(plus `productos_adicional` via the same COALESCE expressions as
-`SalesQueryRunner`). Replace that list with the real Core Lines SKUs before a
-live run. Do not invent real AkzoNobel / Pintuco codes in git.
+It is labelled `SYNTHETIC PLACEHOLDER` (`placeholder: true`). SKUs are
+`AKZO-DEMO-001` … `AKZO-DEMO-003`. Matching is by `ArticulosCodigo` only.
+`proveedor` / `marca` (and `productos_adicional`) are selected on the live
+query for display, not for membership. Replace the list and set
+`placeholder: false` before a live run. Live mode **refuses** to query the
+database while `placeholder: true`. `--synthetic` and unit tests still work.
+Do not invent real AkzoNobel / Pintuco codes in git.
 
 Override path via `--config` or Settings `AKZONOBEL_CORE_LINES_CONFIG`
-(pydantic-settings). JSON and a `sku,name` CSV are also accepted.
+(pydantic-settings). JSON and a `sku,name` CSV are also accepted (CSV loads
+as placeholder).
 
 ## How to run locally (synthetic, no DB)
 
@@ -65,10 +73,13 @@ PYTHONPATH=src python scripts/reports/run_akzonobel_core_lines.py \
 
 ## Live run (read-only SQL)
 
-Needs the usual DB Settings (`DB_HOST` / NCX, etc.). The query is SELECT-only
-and keeps:
+Needs the usual DB Settings (`DB_HOST` / NCX, etc.) and a YAML with
+`placeholder: false`. The query is SELECT-only and keeps:
 
 `DocumentosCodigo NOT IN ('XY','AS','TS','YX','ISC')`.
+
+It also requires `Cantidad > 0` and `TotalSinIva > 0`, and excludes
+`EXCLUDED_PRODUCT_NAMES`.
 
 ```bash
 PYTHONPATH=src python scripts/reports/run_akzonobel_core_lines.py \

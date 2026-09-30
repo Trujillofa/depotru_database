@@ -93,9 +93,16 @@ class CoreSku:
 class CoreLinesConfig:
     placeholder: bool
     territory: TerritoryMapping
-    proveedor_contains: tuple[str, ...]
-    marca_contains: tuple[str, ...]
     skus: tuple[CoreSku, ...]
+
+
+PLACEHOLDER_LIVE_ERROR = (
+    "La lista de líneas núcleo sigue marcada como marcador sintético "
+    "(placeholder: true). No se consulta la base de datos. "
+    "Use --synthetic para una prueba, o edite el YAML, ponga "
+    "placeholder: false y cargue los SKUs reales."
+)
+CSV_FORMULA_PREFIXES = frozenset({"=", "+", "-", "@", "\t", "\r"})
 
 
 @dataclass(frozen=True)
@@ -148,14 +155,6 @@ def resolve_config_path(
     return packaged_config_path()
 
 
-def _as_str_tuple(value: Any) -> tuple[str, ...]:
-    if not value:
-        return ()
-    if isinstance(value, str):
-        return (value,)
-    return tuple(str(item) for item in value if str(item).strip())
-
-
 def _parse_skus(raw: Any) -> tuple[CoreSku, ...]:
     items: list[CoreSku] = []
     for row in raw or []:
@@ -172,7 +171,6 @@ def _parse_skus(raw: Any) -> tuple[CoreSku, ...]:
 
 def _config_from_mapping(data: Mapping[str, Any]) -> CoreLinesConfig:
     territory_raw = data.get("territory") or {}
-    vendor = data.get("vendor_match") or {}
     mapping = TerritoryMapping(
         key_field=str(territory_raw.get("key_field") or "vendedor_codigo").strip(),
         label_field=str(territory_raw.get("label_field") or "VendedorFactura").strip(),
@@ -183,8 +181,6 @@ def _config_from_mapping(data: Mapping[str, Any]) -> CoreLinesConfig:
     return CoreLinesConfig(
         placeholder=bool(data.get("placeholder", True)),
         territory=mapping,
-        proveedor_contains=_as_str_tuple(vendor.get("proveedor_contains")),
-        marca_contains=_as_str_tuple(vendor.get("marca_contains")),
         skus=skus,
     )
 
@@ -228,46 +224,83 @@ def load_core_lines_config(path: Path | str) -> CoreLinesConfig:
     return _config_from_mapping(loaded)
 
 
-def matches_vendor_tokens(row: Mapping[str, Any], config: CoreLinesConfig) -> bool:
-    blob = " ".join(
-        str(row.get(key) or "") for key in ("proveedor", "marca", "marca_name")
-    ).upper()
-    tokens = tuple(
-        token.upper()
-        for token in config.proveedor_contains + config.marca_contains
-        if token.strip()
-    )
-    return any(token in blob for token in tokens)
+_EXCLUDED_PRODUCT_NAMES: tuple[str, ...] | None = None
+
+
+def excluded_product_names() -> tuple[str, ...]:
+    """Same names as ``SalesQueryRunner`` / manager_report helpers."""
+    global _EXCLUDED_PRODUCT_NAMES
+    if _EXCLUDED_PRODUCT_NAMES is None:
+        path = (
+            Path(__file__).resolve().parents[1]
+            / "analysis"
+            / "manager_report"
+            / "helpers.py"
+        )
+        spec = importlib.util.spec_from_file_location("depotru_mr_helpers", path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"No se pudo cargar {path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _EXCLUDED_PRODUCT_NAMES = tuple(
+            str(name) for name in module.EXCLUDED_PRODUCT_NAMES
+        )
+    return _EXCLUDED_PRODUCT_NAMES
+
+
+def _is_positive_sale(row: Mapping[str, Any]) -> bool:
+    revenue = float(row.get("revenue") or 0)
+    quantity = float(row.get("quantity") or 0)
+    return revenue > 0 and quantity > 0
+
+
+def _is_excluded_product_name(name: object) -> bool:
+    cleaned = str(name or "").strip().upper()
+    if not cleaned:
+        return False
+    return cleaned in {item.strip().upper() for item in excluded_product_names()}
 
 
 def find_zero_penetration(
     sales_rows: Sequence[Mapping[str, Any]],
     config: CoreLinesConfig,
 ) -> list[GapRow]:
-    """Core Lines SKUs with no sales in an active territory, ranked by potential."""
+    """Core Lines SKUs with no positive sales in a territory that sold others."""
     core = {item.sku.strip().upper(): item for item in config.skus}
     territory_revenue: dict[str, float] = {}
     territory_label: dict[str, str] = {}
     sold: dict[str, set[str]] = {}
+    sold_other: set[str] = set()
     company_sku_revenue: dict[str, float] = {}
 
     for row in sales_rows:
         key = str(row.get("territory_key") or "").strip()
         if not key:
             continue
-        sku = str(row.get("sku") or "").strip()
+        if _is_excluded_product_name(row.get("product_name")):
+            continue
+        if not _is_positive_sale(row):
+            continue
+        sku_code = str(row.get("sku") or "").strip()
         revenue = float(row.get("revenue") or 0)
         territory_revenue[key] = territory_revenue.get(key, 0.0) + revenue
         label = str(row.get("territory_label") or key).strip() or key
         territory_label[key] = label
-        if sku:
-            sold.setdefault(key, set()).add(sku.upper())
-            company_sku_revenue[sku.upper()] = (
-                company_sku_revenue.get(sku.upper(), 0.0) + revenue
+        if sku_code:
+            sku_key = sku_code.upper()
+            sold.setdefault(key, set()).add(sku_key)
+            company_sku_revenue[sku_key] = (
+                company_sku_revenue.get(sku_key, 0.0) + revenue
             )
+            if sku_key not in core:
+                sold_other.add(key)
 
     ranked = sorted(
-        territory_revenue.items(),
+        (
+            (key, revenue)
+            for key, revenue in territory_revenue.items()
+            if key in sold_other
+        ),
         key=lambda item: (-item[1], item[0]),
     )
     rank_by_key = {key: index + 1 for index, (key, _rev) in enumerate(ranked)}
@@ -282,15 +315,17 @@ def find_zero_penetration(
         missing.sort(
             key=lambda item: (-company_sku_revenue.get(item.sku.upper(), 0.0), item.sku)
         )
-        for sku in missing:
+        for core_item in missing:
             gaps.append(
                 GapRow(
                     territory_key=key,
                     territory_label=territory_label.get(key, key),
                     territory_revenue=revenue,
-                    sku=sku.sku,
-                    sku_name=sku.name,
-                    company_sku_revenue=company_sku_revenue.get(sku.sku.upper(), 0.0),
+                    sku=core_item.sku,
+                    sku_name=core_item.name,
+                    company_sku_revenue=company_sku_revenue.get(
+                        core_item.sku.upper(), 0.0
+                    ),
                     territory_rank=rank_by_key[key],
                 )
             )
@@ -323,6 +358,7 @@ def synthetic_sales_rows(
             "sku": "AKZO-DEMO-001",
             "product_name": "Pintura demo línea núcleo 1",
             "revenue": 800_000,
+            "quantity": 8,
             "proveedor": "AKZO-DEMO-VENDOR",
             "marca": "AKZO-DEMO-MARCA",
         },
@@ -332,6 +368,7 @@ def synthetic_sales_rows(
             "sku": "SKU-OTRO-001",
             "product_name": "Cemento demo",
             "revenue": 4_200_000,
+            "quantity": 40,
             "proveedor": "OTRO-DEMO",
             "marca": "OTRO",
         },
@@ -341,6 +378,7 @@ def synthetic_sales_rows(
             "sku": "SKU-OTRO-002",
             "product_name": "Broca demo",
             "revenue": 1_200_000,
+            "quantity": 12,
             "proveedor": "OTRO-DEMO",
             "marca": "OTRO",
         },
@@ -365,6 +403,8 @@ def build_live_report(
     config: CoreLinesConfig,
     sales_loader: Optional[SalesLoader] = None,
 ) -> CoreLinesReport:
+    if config.placeholder and sales_loader is None:
+        raise ValueError(PLACEHOLDER_LIVE_ERROR)
     loader = sales_loader or fetch_territory_sku_sales
     rows = loader(start_date.isoformat(), end_date.isoformat(), config.territory)
     return build_report(rows, config, start_date, end_date)
@@ -430,6 +470,10 @@ def build_territory_sku_sql(
     for code in excluded:
         Database.validate_sql_identifier(code, "excluded code")
     placeholders = ", ".join(["%s"] * len(excluded))
+    product_names = tuple(name.upper() for name in excluded_product_names())
+    product_clauses = " ".join(
+        "AND UPPER(LTRIM(RTRIM(bd.ArticulosNombre))) <> %s" for _ in product_names
+    )
     prov_expr = _effective_proveedor_sql()
     marca_expr = effective_marca_sql(alias="bd", pa_alias="pa")
     sql = f"""
@@ -447,14 +491,17 @@ def build_territory_sku_sql(
           ON bd.ArticulosCodigo = pa.producto_codigo
         WHERE bd.Fecha BETWEEN %s AND %s
           AND bd.DocumentosCodigo NOT IN ({placeholders})
+          AND bd.Cantidad > 0
+          AND bd.TotalSinIva > 0
           AND bd.{key_field} IS NOT NULL
           AND LTRIM(RTRIM(bd.{key_field})) <> ''
           AND bd.ArticulosCodigo IS NOT NULL
           AND LTRIM(RTRIM(bd.ArticulosCodigo)) <> ''
+          {product_clauses}
         GROUP BY LTRIM(RTRIM(bd.{key_field})), LTRIM(RTRIM(bd.ArticulosCodigo))
     """  # nosec B608
     _assert_readonly_sql(sql)
-    params: tuple[Any, ...] = (start_date, end_date, *excluded)
+    params: tuple[Any, ...] = (start_date, end_date, *excluded, *product_names)
     return sql, params
 
 
@@ -470,10 +517,20 @@ def fetch_territory_sku_sales(
     mapping: TerritoryMapping,
 ) -> list[dict[str, Any]]:
     sql, params = build_territory_sku_sql(mapping, start_date, end_date)
-    db = _open_database()
-    with db:
-        rows = db.execute_query(sql, params)
+    try:
+        db = _open_database()
+        with db:
+            rows = db.execute_query(sql, params)
+    except Exception as exc:
+        raise RuntimeError(
+            "No se pudo leer la base de datos (consulta de solo lectura). "
+            f"Detalle: {exc}"
+        ) from exc
     return list(rows or [])
+
+
+def _html(value: Any) -> str:
+    return escape("" if value is None else str(value), quote=True)
 
 
 def render_html(report: CoreLinesReport) -> str:
@@ -485,13 +542,13 @@ def render_html(report: CoreLinesReport) -> str:
         company = format_number(gap.company_sku_revenue, "TotalSinIva")
         gap_rows.append(
             "<tr>"
-            f"<td>{escape(str(gap.territory_rank))}</td>"
-            f"<td>{escape(gap.territory_label)}</td>"
-            f"<td>{escape(gap.territory_key)}</td>"
-            f"<td>{escape(gap.sku)}</td>"
-            f"<td>{escape(gap.sku_name)}</td>"
-            f"<td>{escape(potential)}</td>"
-            f"<td>{escape(company)}</td>"
+            f"<td>{_html(gap.territory_rank)}</td>"
+            f"<td>{_html(gap.territory_label)}</td>"
+            f"<td>{_html(gap.territory_key)}</td>"
+            f"<td>{_html(gap.sku)}</td>"
+            f"<td>{_html(gap.sku_name)}</td>"
+            f"<td>{_html(potential)}</td>"
+            f"<td>{_html(company)}</td>"
             "</tr>"
         )
     if not gap_rows:
@@ -504,10 +561,10 @@ def render_html(report: CoreLinesReport) -> str:
     if report.config.placeholder:
         placeholder_note = (
             "<p class='note'><strong>Marcador sintético:</strong> la lista de "
-            "SKUs y los tokens de proveedor/marca son de demostración "
-            "(<code>AKZO-DEMO-*</code>). No son códigos reales de catálogo. "
-            "Edite <code>akzonobel_core_lines.yaml</code> antes de un corrido "
-            "en vivo.</p>"
+            "SKUs es de demostración (<code>AKZO-DEMO-*</code>). No son "
+            "códigos reales de catálogo. Edite "
+            "<code>akzonobel_core_lines.yaml</code> y ponga "
+            "<code>placeholder: false</code> antes de un corrido en vivo.</p>"
         )
 
     return f"""<!DOCTYPE html>
@@ -528,10 +585,10 @@ def render_html(report: CoreLinesReport) -> str:
   <h1>Líneas núcleo AkzoNobel — SKUs sin penetración por territorio</h1>
   {placeholder_note}
   <p>
-    Periodo: {escape(report.start_date.isoformat())} a
-    {escape(report.end_date.isoformat())}.
-    Dimensión: <code>{escape(mapping.key_field)}</code> /
-    <code>{escape(mapping.label_field)}</code>
+    Periodo: {_html(report.start_date.isoformat())} a
+    {_html(report.end_date.isoformat())}.
+    Dimensión: <code>{_html(mapping.key_field)}</code> /
+    <code>{_html(mapping.label_field)}</code>
     (dueño comercial de <code>manager_report</code> /
     <code>presupuesto_vendedores</code> por defecto).
   </p>
@@ -558,7 +615,7 @@ def render_html(report: CoreLinesReport) -> str:
   </table>
   <p>
     Consultas de ventas en <code>banco_datos</code> excluyen
-    <code>DocumentosCodigo NOT IN ({escape(excluded)})</code>.
+    <code>DocumentosCodigo NOT IN ({_html(excluded)})</code>.
     Solo lectura; no hay SQL de escritura.
   </p>
 </body>
@@ -566,35 +623,41 @@ def render_html(report: CoreLinesReport) -> str:
 """
 
 
+def csv_guard_cell(value: Any) -> str:
+    """Prefix spreadsheet-formula cells so Excel/LibreOffice will not execute them."""
+    text = "" if value is None else str(value)
+    if text[:1] in CSV_FORMULA_PREFIXES:
+        return "'" + text
+    return text
+
+
 def render_csv(report: CoreLinesReport) -> str:
     buffer = io.StringIO()
-    writer = csv.DictWriter(
-        buffer,
-        fieldnames=[
-            "RangoPotencial",
-            "Territorio",
-            "CodigoTerritorio",
-            "SKU",
-            "Producto",
-            "VentasTerritorio",
-            "VentasSKUEmpresa",
-            "PeriodoInicio",
-            "PeriodoFin",
-        ],
-    )
+    fieldnames = [
+        "RangoPotencial",
+        "Territorio",
+        "CodigoTerritorio",
+        "SKU",
+        "Producto",
+        "VentasTerritorio",
+        "VentasSKUEmpresa",
+        "PeriodoInicio",
+        "PeriodoFin",
+    ]
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
     writer.writeheader()
     for gap in report.gaps:
         writer.writerow(
             {
-                "RangoPotencial": gap.territory_rank,
-                "Territorio": gap.territory_label,
-                "CodigoTerritorio": gap.territory_key,
-                "SKU": gap.sku,
-                "Producto": gap.sku_name,
-                "VentasTerritorio": gap.territory_revenue,
-                "VentasSKUEmpresa": gap.company_sku_revenue,
-                "PeriodoInicio": report.start_date.isoformat(),
-                "PeriodoFin": report.end_date.isoformat(),
+                "RangoPotencial": csv_guard_cell(gap.territory_rank),
+                "Territorio": csv_guard_cell(gap.territory_label),
+                "CodigoTerritorio": csv_guard_cell(gap.territory_key),
+                "SKU": csv_guard_cell(gap.sku),
+                "Producto": csv_guard_cell(gap.sku_name),
+                "VentasTerritorio": csv_guard_cell(gap.territory_revenue),
+                "VentasSKUEmpresa": csv_guard_cell(gap.company_sku_revenue),
+                "PeriodoInicio": csv_guard_cell(report.start_date.isoformat()),
+                "PeriodoFin": csv_guard_cell(report.end_date.isoformat()),
             }
         )
     return buffer.getvalue()
@@ -624,10 +687,18 @@ def apply_dimension(
     return CoreLinesConfig(
         placeholder=config.placeholder,
         territory=TerritoryMapping(key_field=key_field, label_field=label_field),
-        proveedor_contains=config.proveedor_contains,
-        marca_contains=config.marca_contains,
         skus=config.skus,
     )
+
+
+def parse_iso_date(raw: str, flag: str) -> date:
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"Fecha no válida en {flag}: '{raw}'. "
+            "Use el formato ISO 8601 AAAA-MM-DD."
+        ) from exc
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -640,49 +711,60 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--synthetic",
         action="store_true",
-        help="Dry-run with synthetic fixtures (no database).",
+        help="Prueba con datos sintéticos (sin base de datos).",
     )
     parser.add_argument(
         "--output-dir",
         default="",
-        help="Directory for HTML/CSV (default: OUTPUT_DIR/akzonobel_core_lines).",
+        help="Carpeta para HTML/CSV (por defecto: OUTPUT_DIR/akzonobel_core_lines).",
     )
     parser.add_argument(
         "--run-date",
         default="",
-        help="Reference date, ISO 8601 YYYY-MM-DD (default period: last month).",
+        help="Fecha de referencia, ISO 8601 AAAA-MM-DD (periodo: mes anterior).",
     )
     parser.add_argument(
         "--start-date",
         default="",
-        help="Period start, ISO 8601 YYYY-MM-DD.",
+        help="Inicio del periodo, ISO 8601 AAAA-MM-DD.",
     )
     parser.add_argument(
         "--end-date",
         default="",
-        help="Period end, ISO 8601 YYYY-MM-DD.",
+        help="Fin del periodo, ISO 8601 AAAA-MM-DD.",
     )
     parser.add_argument(
         "--config",
         default="",
-        help="YAML/JSON/CSV Core Lines list (default: packaged synthetic file).",
+        help="Lista YAML/JSON/CSV de líneas núcleo (por defecto: archivo sintético).",
     )
     parser.add_argument(
         "--dimension",
         default="",
-        help="Territory dimension: vendedor (default), ciudad, departamento.",
+        help=(
+            "Dimensión de territorio: vendedor (predeterminada), "
+            "ciudad, departamento."
+        ),
     )
     return parser.parse_args(argv)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
-    run_date = date.fromisoformat(args.run_date) if args.run_date else date.today()
-    if args.start_date and args.end_date:
-        start_date = date.fromisoformat(args.start_date)
-        end_date = date.fromisoformat(args.end_date)
-    else:
-        start_date, end_date = last_complete_month(run_date)
+    try:
+        run_date = (
+            parse_iso_date(args.run_date, "--run-date")
+            if args.run_date
+            else date.today()
+        )
+        if args.start_date and args.end_date:
+            start_date = parse_iso_date(args.start_date, "--start-date")
+            end_date = parse_iso_date(args.end_date, "--end-date")
+        else:
+            start_date, end_date = last_complete_month(run_date)
+    except ValueError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 1
 
     if args.output_dir:
         output_dir = Path(args.output_dir).expanduser()
@@ -705,11 +787,18 @@ def main(argv: Optional[list[str]] = None) -> int:
             end_date=end_date,
         )
     else:
-        report = build_live_report(
-            start_date=start_date,
-            end_date=end_date,
-            config=config,
-        )
+        if config.placeholder:
+            print(f"❌ {PLACEHOLDER_LIVE_ERROR}", file=sys.stderr)
+            return 1
+        try:
+            report = build_live_report(
+                start_date=start_date,
+                end_date=end_date,
+                config=config,
+            )
+        except RuntimeError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 1
 
     result = write_report(report, output_dir)
     print(f"Informe HTML: {result.html_path}")
