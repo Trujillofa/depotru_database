@@ -127,6 +127,34 @@ def test_settings_defaults_without_env(isolated_config_env):
     )
 
 
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("true", True),
+        ("TRUE", True),
+        ("1", True),
+        ("yes", True),
+        ("on", True),
+        ("false", False),
+        ("FALSE", False),
+        ("0", False),
+        ("no", False),
+        ("off", False),
+        ("", True),
+        ("   ", True),
+        ("maybe", True),
+    ],
+)
+def test_settings_smtp_use_tls_boolean_tokens(isolated_config_env, raw, expected):
+    isolated_config_env.setenv("SMTP_USE_TLS", raw)
+    assert Settings().SMTP_USE_TLS is expected
+
+
+def test_settings_smtp_use_tls_defaults_on(isolated_config_env):
+    isolated_config_env.delenv("SMTP_USE_TLS", raising=False)
+    assert Settings().SMTP_USE_TLS is True
+
+
 def test_settings_smtp_optional_overrides(isolated_config_env):
     isolated_config_env.setenv("SMTP_HOST", "smtp.example.test")
     isolated_config_env.setenv("SMTP_PORT", "465")

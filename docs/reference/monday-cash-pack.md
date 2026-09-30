@@ -16,7 +16,7 @@ Output is a Spanish (Colombian) HTML body plus an `.eml` draft. Existing cartera
 
 The job writes a **draft/preview** only. `--send` is off unless you pass it. The systemd unit and the documented cron line **do not** include `--send`.
 
-Sending uses optional SMTP fields on the existing pydantic `Settings` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `MAIL_FROM`, `MAIL_TO`). There are no new raw `os.getenv` reads. If SMTP is missing, `--send` fails and nothing is mailed.
+Sending uses optional SMTP fields on the existing pydantic `Settings` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `MAIL_FROM`, `MAIL_TO`). `SMTP_USE_TLS` accepts true/1/yes/on (default on). `--send` calls `starttls()` with `ssl.create_default_context()`. There are no new raw `os.getenv` reads. If SMTP is missing, `--send` fails and nothing is mailed.
 
 ## How to run locally (synthetic, no DB)
 
@@ -70,12 +70,13 @@ systemctl --user status depotru-monday-cash-pack.timer
 Cron fallback (commented in `deploy/depotru-schedule.cron.example`):
 
 ```
-45 8 * * 1 TZ=America/Bogota cd /path/to/depotru_database && \
+CRON_TZ=America/Bogota
+45 8 * * 1 cd /path/to/depotru_database && \
   PYTHONPATH=src python scripts/reports/run_monday_cash_pack.py \
   >> ~/business_reports/monday_cash_pack.log 2>&1
 ```
 
-Set the host timezone to America/Bogota or adjust `OnCalendar`.
+The systemd timer uses `OnCalendar=Mon *-*-* 08:45:00 America/Bogota` (opt-in).
 
 ## Regenerating
 

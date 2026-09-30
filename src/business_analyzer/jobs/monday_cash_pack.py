@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import logging
 import smtplib
+import ssl
 import sys
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -33,6 +35,8 @@ DEFAULT_TOP_N = 15
 DRAFT_FROM = "depotru-monday-cash@localhost"
 DRAFT_TO = "preview@localhost"
 
+logger = logging.getLogger(__name__)
+
 _FORMAT_NUMBER = None
 
 
@@ -41,6 +45,9 @@ def format_number(value: Any, column_name: str = "") -> str:
 
     ``business_analyzer.ai`` hydrates API keys on import; the Monday pack must
     stay runnable for ``--synthetic`` drafts without AI secrets.
+
+    Currency sign placement is ``-$250.000`` (minus before ``$``), matching
+    the digits from ``format_number``.
     """
     global _FORMAT_NUMBER
     if _FORMAT_NUMBER is None:
@@ -53,7 +60,10 @@ def format_number(value: Any, column_name: str = "") -> str:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         _FORMAT_NUMBER = module.format_number
-    return _FORMAT_NUMBER(value, column_name)
+    text = _FORMAT_NUMBER(value, column_name)
+    if text.startswith("$-"):
+        return "-$" + text[2:]
+    return text
 
 
 @dataclass
@@ -436,9 +446,9 @@ def default_attachment_writer(
         pdf_path = output_dir / f"CARTERA_AGING_{as_of}.pdf"
         write_cartera_pdf(report, pdf_path, insights=insights)
         paths.append(pdf_path)
-    except (OSError, RuntimeError, ValueError, ImportError):
+    except (OSError, RuntimeError, ValueError, ImportError) as exc:
         # Optional PDF; the HTML draft is enough if ReportLab is missing.
-        pass
+        logger.warning("No se adjuntó el PDF de cartera: %s", exc)
     return paths
 
 
@@ -469,9 +479,9 @@ def build_live_pack(
             week_start.isoformat(), week_end.isoformat(), str(kpi_path)
         )
         attachments.append(Path(written))
-    except (OSError, RuntimeError, ValueError, ImportError):
+    except (OSError, RuntimeError, ValueError, ImportError) as exc:
         # KPI markdown is optional; the email body still has north-star numbers.
-        pass
+        logger.warning("No se adjuntó el tablero KPI semanal: %s", exc)
     return build_pack(
         run_date=run_date,
         as_of_date=as_of_date,
@@ -503,11 +513,11 @@ def render_email_html(pack: MondayCashPack) -> str:
     kpi_orders = format_number(pack.kpi.order_count, "Cantidad")
 
     overdue_rows = []
-    for row, fmt in zip(pack.overdue, money["overdue"]):
+    for overdue, fmt in zip(pack.overdue, money["overdue"]):
         overdue_rows.append(
             "<tr>"
-            f"<td>{escape(row.customer_name)}</td>"
-            f"<td>{escape(row.seller_name)}</td>"
+            f"<td>{escape(overdue.customer_name)}</td>"
+            f"<td>{escape(overdue.seller_name)}</td>"
             f"<td>{escape(fmt['amount'])}</td>"
             f"<td>{escape(fmt['days'])}</td>"
             f"<td>{escape(fmt['total'])}</td>"
@@ -519,12 +529,12 @@ def render_email_html(pack: MondayCashPack) -> str:
         )
 
     sku_rows = []
-    for row, fmt in zip(pack.negative_skus, money["skus"]):
-        flag = "Sí" if row.is_sika else "No"
+    for sku, fmt in zip(pack.negative_skus, money["skus"]):
+        flag = "Sí" if sku.is_sika else "No"
         sku_rows.append(
             "<tr>"
-            f"<td>{escape(row.sku)}</td>"
-            f"<td>{escape(row.product_name)}</td>"
+            f"<td>{escape(sku.sku)}</td>"
+            f"<td>{escape(sku.product_name)}</td>"
             f"<td>{escape(fmt['profit'])}</td>"
             f"<td>{escape(fmt['margin'])}</td>"
             f"<td>{escape(flag)}</td>"
@@ -630,12 +640,12 @@ def render_email_text(pack: MondayCashPack) -> str:
         "",
         "Cuentas por cobrar vencidas:",
     ]
-    for row, fmt in zip(pack.overdue, money["overdue"]):
-        lines.append(f"- {row.customer_name}: {fmt['amount']} ({fmt['days']} días)")
+    for overdue, fmt in zip(pack.overdue, money["overdue"]):
+        lines.append(f"- {overdue.customer_name}: {fmt['amount']} ({fmt['days']} días)")
     lines.extend(["", "SKUs con margen negativo / SIKA:"])
-    for row, fmt in zip(pack.negative_skus, money["skus"]):
-        flag = "SIKA" if row.is_sika else ""
-        lines.append(f"- {row.sku} {row.product_name}: {fmt['margin']} {flag}")
+    for sku, fmt in zip(pack.negative_skus, money["skus"]):
+        flag = "SIKA" if sku.is_sika else ""
+        lines.append(f"- {sku.sku} {sku.product_name}: {fmt['margin']} {flag}")
     lines.extend(
         [
             "",
@@ -701,7 +711,7 @@ def send_draft(eml_path: Path, settings: Optional[Settings] = None) -> None:
     from_addr = (cfg.MAIL_FROM or cfg.SMTP_USER or DRAFT_FROM).strip()
     with smtplib.SMTP(host, int(cfg.SMTP_PORT), timeout=30) as smtp:  # nosec B323
         if cfg.SMTP_USE_TLS:
-            smtp.starttls()
+            smtp.starttls(context=ssl.create_default_context())
         if cfg.SMTP_USER:
             smtp.login(cfg.SMTP_USER, cfg.SMTP_PASSWORD or "")
         smtp.sendmail(from_addr, recipients, raw)
@@ -738,7 +748,8 @@ def render_sika_markdown(json_path: Path, output_path: Path) -> Path:
 def schedule_line() -> str:
     return (
         "# Opt-in. Mondays 08:45 America/Bogota. Draft only — do not add --send.\n"
-        "45 8 * * 1 TZ=America/Bogota "
+        "CRON_TZ=America/Bogota\n"
+        "45 8 * * 1 "
         "cd /path/to/depotru_database && PYTHONPATH=src "
         "python scripts/reports/run_monday_cash_pack.py "
         ">> ~/business_reports/monday_cash_pack.log 2>&1"
@@ -767,11 +778,15 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default="",
         help="Directory for HTML/.eml drafts (default: OUTPUT_DIR/monday_cash_pack).",
     )
-    parser.add_argument("--run-date", default="", help="Reference date YYYY-MM-DD.")
+    parser.add_argument(
+        "--run-date",
+        default="",
+        help="Reference date, ISO 8601 YYYY-MM-DD.",
+    )
     parser.add_argument(
         "--as-of-date",
         default="",
-        help="Cartera as-of date YYYY-MM-DD (default: yesterday / week end).",
+        help="Cartera as-of date, ISO 8601 YYYY-MM-DD (default: week end).",
     )
     parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N)
     parser.add_argument(

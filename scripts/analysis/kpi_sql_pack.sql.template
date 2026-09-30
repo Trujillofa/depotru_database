@@ -18,7 +18,7 @@ Core formulas:
 
 CRITICAL BUSINESS RULE:
 Always exclude test/cancelled document types:
-DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
 
 Usage:
 1) Set @start_date and @end_date
@@ -40,7 +40,7 @@ WITH base AS (
         ValorCosto,
         Cantidad
     FROM banco_datos
-    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
       AND Fecha BETWEEN @start_date AND @end_date
 )
 SELECT
@@ -84,7 +84,7 @@ SELECT
         ELSE SUM(TotalMasIva) * 1.0 / COUNT(*)
     END AS Ticket_Promedio
 FROM banco_datos
-WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
   AND Fecha BETWEEN @start_date AND @end_date
 GROUP BY categoria, subcategoria
 ORDER BY Ganancia_Bruta DESC;
@@ -108,7 +108,7 @@ WITH sku_metrics AS (
         END AS Margen_Bruto_Pct,
         COUNT(*) AS Transacciones
     FROM banco_datos
-    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
       AND Fecha BETWEEN @start_date AND @end_date
     GROUP BY ArticulosCodigo, ArticulosNombre, categoria
 ),
@@ -154,7 +154,7 @@ WITH customer_sales AS (
             ELSE SUM(TotalMasIva) * 1.0 / COUNT(*)
         END AS Ticket_Promedio
     FROM banco_datos
-    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
       AND Fecha BETWEEN @start_date AND @end_date
     GROUP BY TercerosNombres
 ),
@@ -192,7 +192,7 @@ SELECT TOP 50
         ELSE SUM(TotalMasIva) * 1.0 / COUNT(*)
     END AS Ticket_Promedio
 FROM banco_datos
-WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
   AND Fecha BETWEEN @start_date AND @end_date
 GROUP BY TercerosNombres
 ORDER BY Facturacion_Con_IVA DESC;
@@ -215,7 +215,7 @@ SELECT
         ELSE (SUM(TotalSinIva - ValorCosto) * 100.0 / SUM(TotalSinIva))
     END AS Margen_Bruto_Pct
 FROM banco_datos
-WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
   AND Fecha BETWEEN @start_date AND @end_date
 GROUP BY categoria
 ORDER BY Ticket_Promedio DESC;
@@ -235,7 +235,7 @@ SELECT
     END AS Tasa_Devolucion_Pct,
     SUM(TotalSinIva - ValorCosto) AS Ganancia_Bruta
 FROM banco_datos
-WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
   AND Fecha BETWEEN @start_date AND @end_date
 GROUP BY categoria
 ORDER BY Tasa_Devolucion_Pct DESC;
@@ -260,7 +260,7 @@ SELECT
     SUM(TotalSinIva - ValorCosto) AS Ganancia_Bruta,
     COUNT(*) AS Numero_Transacciones
 FROM banco_datos
-WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
   AND Fecha BETWEEN @start_date AND @end_date
 GROUP BY DATENAME(WEEKDAY, Fecha)
 ORDER BY Volumen_Vendido DESC;
@@ -286,7 +286,7 @@ WITH cartera_snapshot AS (
 ventas_periodo AS (
     SELECT SUM(TotalSinIva) AS ventas_netas
     FROM banco_datos
-    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+    WHERE DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
       AND Fecha BETWEEN @start_date AND @end_date
 ),
 cartera_agg AS (
@@ -390,7 +390,7 @@ WITH actual_sales AS (
     FROM banco_datos bd
     WHERE bd.periodo = @periodo
       AND bd.Fecha BETWEEN @month_start AND @end_date
-      AND bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+      AND bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
       AND UPPER(LTRIM(RTRIM(bd.ArticulosNombre))) NOT IN (
           'SERVICIO DE CORTE', 'BOLSA BIODEGRADABLE PARA ENTREGA'
       )
@@ -465,7 +465,7 @@ WITH base AS (
     LEFT JOIN productos_adicional pa
         ON bd.ArticulosCodigo COLLATE DATABASE_DEFAULT
          = pa.producto_codigo COLLATE DATABASE_DEFAULT
-    WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS')
+    WHERE bd.DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')
       AND bd.Fecha BETWEEN @start_date AND @end_date
 )
 SELECT

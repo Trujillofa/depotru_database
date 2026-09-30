@@ -12,7 +12,8 @@
 
 # Monday cash pack — 08:45 America/Bogota (opt-in; draft only, never --send)
 # Prefer systemd: ./scripts/ops/install_monday_cash_pack_timer.sh  (does not enable)
-# 45 8 * * 1 TZ=America/Bogota cd /home/yderf/Projects/depotru_database && PYTHONPATH=src uv run python scripts/reports/run_monday_cash_pack.py >> ~/business_reports/monday_cash_pack.log 2>&1
+# CRON_TZ=America/Bogota
+# 45 8 * * 1 cd /home/yderf/Projects/depotru_database && PYTHONPATH=src uv run python scripts/reports/run_monday_cash_pack.py >> ~/business_reports/monday_cash_pack.log 2>&1
 
 # Weekly Vanna training refresh (optional) — Sunday 03:00
 # 0 3 * * 0 cd /home/yderf/Projects/depotru_database && PYTHONPATH=src uv run python scripts/utils/retrain_vanna.py --reset >> ~/business_reports/cron.log 2>&1

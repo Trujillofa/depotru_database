@@ -376,7 +376,8 @@ class SalesQueryRunner:
                     MAX(bd.ArticulosCodigo) AS sku,
                     SUM(bd.TotalSinIva) AS revenue,
                     SUM(bd.ValorCosto) AS cost,
-                    SUM(bd.Cantidad) AS quantity
+                    SUM(bd.Cantidad) AS quantity,
+                    MAX({prov_expr}) AS proveedor
                 {enriched_from}
                 GROUP BY bd.ArticulosNombre
                 HAVING SUM(bd.Cantidad) >= 5

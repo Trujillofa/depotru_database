@@ -1,9 +1,9 @@
 [Unit]
 Description=Timer: Monday cash pack draft (08:45 America/Bogota)
-# Host timezone should be America/Bogota, or adjust OnCalendar.
+# Opt-in only. OnCalendar timezone is America/Bogota (not the host TZ).
 
 [Timer]
-OnCalendar=Mon *-*-* 08:45:00
+OnCalendar=Mon *-*-* 08:45:00 America/Bogota
 Persistent=true
 Unit=depotru-monday-cash-pack.service
 

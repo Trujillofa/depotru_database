@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from email import message_from_bytes
 from pathlib import Path
@@ -167,9 +168,8 @@ def test_format_pack_numbers_colombian():
     formatted = mcp.format_pack_numbers(overdue, skus)
     assert formatted["overdue"][0]["amount"] == "$2.500.000"
     assert formatted["overdue"][0]["days"] == "110"
-    assert formatted["skus"][0]["profit"].startswith("$-") or formatted["skus"][0][
-        "profit"
-    ].startswith("-$")
+    assert formatted["skus"][0]["profit"] == "-$250.000"
+    assert mcp.format_number(-250_000, "Ganancia") == "-$250.000"
     assert "," in formatted["skus"][0]["margin"]
     assert formatted["skus"][0]["margin"].endswith("%")
 
@@ -179,6 +179,7 @@ def test_render_email_html_spanish_and_format_number():
     pack = mcp.build_synthetic_pack(run_date=date(2026, 9, 29), top_n=5)
     html = mcp.render_email_html(pack)
     assert "Paquete de caja" in html
+    assert "2026-09-29" in html
     assert "Cuentas por cobrar" in html
     assert "margen negativo" in html.lower()
     assert "SIKA" in html
@@ -330,6 +331,8 @@ def test_send_draft_uses_settings_not_raw_env(tmp_path: Path):
 
     smtp_cls.assert_called_once_with("smtp.example.test", 587, timeout=30)
     smtp.starttls.assert_called_once()
+    tls_kwargs = smtp.starttls.call_args.kwargs
+    assert tls_kwargs["context"] is not None
     smtp.login.assert_called_once_with("placeholder_user", "placeholder_password")
     smtp.sendmail.assert_called_once()
     args = smtp.sendmail.call_args[0]
@@ -405,8 +408,16 @@ def test_optional_sika_json_uses_existing_generator(tmp_path: Path):
 @pytest.mark.unit
 def test_print_schedule_mentions_bogota_and_no_send():
     line = mcp.schedule_line()
-    command = line.splitlines()[-1]
-    assert "08:45" in line or "8:45" in line
+    jobs = [
+        raw
+        for raw in line.splitlines()
+        if raw.strip() and not raw.lstrip().startswith("#")
+    ]
+    command = jobs[-1]
+    assert "CRON_TZ=America/Bogota" in line
+    assert " TZ=" not in command
+    assert not command.startswith("TZ=")
+    assert "08:45" in line or " 8 " in command
     assert "America/Bogota" in line
     assert "--send" not in command
 
@@ -527,7 +538,9 @@ def test_default_attachment_writer_writes_html(tmp_path: Path):
 
 
 @pytest.mark.unit
-def test_build_live_pack_skips_failed_kpi_writer(tmp_path: Path):
+def test_build_live_pack_skips_failed_kpi_writer(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
     report = build_report_from_rows(
         _cartera_snapshot_rows(),
         as_of_date="2026-09-27",
@@ -537,27 +550,30 @@ def test_build_live_pack_skips_failed_kpi_writer(tmp_path: Path):
     def _boom(_start: str, _end: str, _output: str) -> Path:
         raise RuntimeError("kpi unavailable")
 
-    pack = mcp.build_live_pack(
-        run_date=date(2026, 9, 29),
-        as_of_date="2026-09-27",
-        top_n=5,
-        output_dir=tmp_path,
-        cartera_loader=lambda _as_of, _top_n: report,
-        sales_loader=lambda _start, _end: {
-            "summary": {
-                "total_with_iva": 1,
-                "total_without_iva": 1,
-                "total_cost": 1,
-                "total_quantity": 1,
-                "order_count": 1,
+    with caplog.at_level(logging.WARNING):
+        pack = mcp.build_live_pack(
+            run_date=date(2026, 9, 29),
+            as_of_date="2026-09-27",
+            top_n=5,
+            output_dir=tmp_path,
+            cartera_loader=lambda _as_of, _top_n: report,
+            sales_loader=lambda _start, _end: {
+                "summary": {
+                    "total_with_iva": 1,
+                    "total_without_iva": 1,
+                    "total_cost": 1,
+                    "total_quantity": 1,
+                    "order_count": 1,
+                },
+                "product_margins": [],
             },
-            "product_margins": [],
-        },
-        kpi_writer=_boom,
-        attachment_writer=lambda _report, _out: [],
-    )
+            kpi_writer=_boom,
+            attachment_writer=lambda _report, _out: [],
+        )
     assert pack.kpi.order_count == 1
     assert pack.attachments == []
+    assert "KPI" in caplog.text
+    assert "kpi unavailable" in caplog.text
 
 
 @pytest.mark.unit
@@ -583,7 +599,10 @@ def test_systemd_unit_never_sends():
         raw for raw in service.splitlines() if raw.startswith("ExecStart=")
     )
     assert "--send" not in exec_line
-    assert "08:45" in timer
+    assert "OnCalendar=Mon *-*-* 08:45:00 America/Bogota" in timer
+    cron = (repo / "deploy/depotru-schedule.cron.example").read_text(encoding="utf-8")
+    assert "CRON_TZ=America/Bogota" in cron
+    assert "TZ=America/Bogota cd" not in cron
 
 
 @pytest.mark.unit
@@ -608,7 +627,9 @@ def test_send_draft_without_tls_or_user(tmp_path: Path):
 
 
 @pytest.mark.unit
-def test_default_attachment_writer_skips_failed_pdf(tmp_path: Path):
+def test_default_attachment_writer_skips_failed_pdf(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
     report = build_report_from_rows(
         _cartera_snapshot_rows(),
         as_of_date="2026-09-27",
@@ -618,9 +639,12 @@ def test_default_attachment_writer_skips_failed_pdf(tmp_path: Path):
         "business_analyzer.reports.cartera_pdf.write_cartera_pdf",
         side_effect=RuntimeError("pdf fail"),
     ):
-        paths = mcp.default_attachment_writer(report, tmp_path)
+        with caplog.at_level(logging.WARNING):
+            paths = mcp.default_attachment_writer(report, tmp_path)
     assert len(paths) == 1
     assert paths[0].suffix == ".html"
+    assert "PDF" in caplog.text
+    assert "pdf fail" in caplog.text
 
 
 @pytest.mark.unit
@@ -679,6 +703,22 @@ def test_is_sika_from_sku_or_marca():
     assert mcp.is_sika_product({"sku": "SIKA-1", "product_name": "Sellador"})
     assert mcp.is_sika_product({"marca": "Sika", "product_name": "Sellador"})
     assert not mcp.is_sika_product({"product_name": "Cemento gris Demo", "sku": "X"})
+
+
+@pytest.mark.unit
+def test_is_sika_from_proveedor_when_name_and_sku_have_no_sika():
+    """Live product_margins now selects proveedor; vendor-only match must work."""
+    row = {
+        "product_name": "Impermeabilizante Demo",
+        "sku": "SKU-DEMO-004",
+        "revenue": 100_000,
+        "cost": 150_000,
+        "proveedor": "SIKA COLOMBIA",
+    }
+    assert mcp.is_sika_product(row) is True
+    selected = mcp.select_negative_margin_skus([row], top_n=5)
+    assert selected[0].is_sika is True
+    assert selected[0].sku == "SKU-DEMO-004"
 
 
 @pytest.mark.unit
