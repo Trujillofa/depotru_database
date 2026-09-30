@@ -11,11 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from business_analyzer.core.config import get_settings
+from business_analyzer.core.config import read_assistant_chat_log
 
 
 def default_log_path() -> Path:
-    configured = (get_settings().ASSISTANT_CHAT_LOG or "").strip()
+    configured = (read_assistant_chat_log() or "").strip()
     if configured:
         return Path(configured).expanduser()
     return Path("data/assistant/chat_log.jsonl")

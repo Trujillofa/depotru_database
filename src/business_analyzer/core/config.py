@@ -294,6 +294,15 @@ def get_settings() -> Settings:
     return Settings()
 
 
+def read_assistant_chat_log() -> Optional[str]:
+    """Read ``ASSISTANT_CHAT_LOG`` without constructing ``Settings``.
+
+    ``Settings()`` validates every field; an unrelated invalid value such as
+    ``DB_PORT=abc`` must not disable assistant logging.
+    """
+    return _blank_to_none(os.getenv("ASSISTANT_CHAT_LOG"))
+
+
 def require_env(
     name: str, validation_func: Callable = None, error_msg: str = None
 ) -> str:

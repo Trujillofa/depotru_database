@@ -29,6 +29,30 @@ nombres de archivo y la consola) antes de compartirla o abrir un issue.**
 La salida no incluye `session_id` ni el texto de las respuestas. El
 `cluster_id` sale de un hash del texto ya redactado.
 
+### Brechas conocidas
+
+Quedan huecos a propósito o porque el heurístico no llega. Un humano debe
+mirar estos casos (y cualquier otro) antes de compartir:
+
+- Números en palabras más allá de cero–nueve seguidos (`once`, `veinte`).
+- Ofuscaciones nuevas o dominios partidos de forma rara.
+- Contraseñas en texto libre **sin** etiqueta (`contraseña`, `clave:`,
+  `password es`, `PIN`, `OTP`, `cvv`).
+- Tratamientos o presentaciones que no estén en la lista (solo
+  Sr./Sra./don/doña/señor/señora, `Cliente:` / `cliente` + nombre en
+  mayúscula, `me llamo`, `a nombre de`, `habla` / `atiende` + nombre).
+  **No** se redacta `soy constructor`, `soy nuevo` ni `cliente frecuente`.
+- `apto` / `barrio` / `casa` / `torre` / `manzana` / `conjunto` sin un
+  número al lado; `calle 45 de cemento` puede marcarse como dirección.
+- Códigos de producto de 7 a 12 dígitos **sin** separadores ni etiqueta
+  (`referencia 7701234`) se dejan. Teléfonos/tarjetas con espacios o
+  guiones, o 13+ dígitos seguidos, sí se redactan. El canje es menos
+  falsos positivos en ferretería a cambio de revisar a mano.
+- `--draft` solo borra archivos regulares (no enlaces, no carpetas) cuyo
+  nombre es exactamente `borrador_(guia|issue)_c<hex de 12>.md`. No toca
+  `borrador_mis_notas.md` ni nada en subcarpetas. Sin `--draft` no borra
+  borradores.
+
 La **lista top 10 de preguntas reales sin guía** se obtiene ejecutando este
 script contra el registro privado en una máquina que lo tenga. Las guías de
 esas preguntas se pueden redactar después. Este repositorio solo incluye un
@@ -47,7 +71,9 @@ depotru-mine-chat-guides --synthetic --output-dir /tmp/chat_guides_mining
 Espere `SYNTHETIC:` en el Markdown/CSV. Revise
 `unmatched_question_clusters.md` / `.csv`. `--draft` escribe
 `borrador_guia_*.md` y `borrador_issue_*.md` (nunca publica una guía ni abre
-un issue). Cada corrida borra los `borrador_*.md` viejos de esa carpeta.
+un issue). Con `--draft` solo se quitan borradores previos generados por
+esta herramienta (`borrador_(guia|issue)_c<hex>.md`); no se tocan archivos
+del usuario.
 
 ## Cómo ejecutarlo (registro privado)
 

@@ -20,13 +20,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, TextIO
 
-from business_analyzer.core.config import Settings, get_settings
+from business_analyzer.core.config import Settings, read_assistant_chat_log
 from modules.assistant.problem_guides import match_guide
 
 DEFAULT_LOG_RELATIVE = Path("data/assistant/chat_log.jsonl")
 DEFAULT_TOP_N = 10
 JACCARD_THRESHOLD = 0.5
 CLUSTER_MAX_GROUPS = 2000
+MAX_MSG_CHARS = 800
+MAX_LINE_BYTES = 4096
+_GENERATED_DRAFT_RE = re.compile(r"^borrador_(?:guia|issue)_c[0-9a-f]{12}\.md$")
 
 MSG_MISSING = (
     "No se encontró el archivo de registro de chat (chat_log.jsonl). "
@@ -99,10 +102,6 @@ STOPWORDS = frozenset(
     }
 )
 
-_ZERO_WIDTH = dict.fromkeys(
-    map(ord, "\u200b\u200c\u200d\u2060\ufeff\u00ad"),
-    None,
-)
 _DASH_TRANS = str.maketrans(
     {
         "\u2010": "-",
@@ -115,59 +114,120 @@ _DASH_TRANS = str.maketrans(
     }
 )
 
-# Bounded quantifiers — avoid nested +/+ email/doc backtracking.
+# Bounded quantifiers — collapse whitespace first; avoid nested +/+ backtracking.
 _EMAIL_RE = re.compile(
-    r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}"
-    r"\.[A-Za-z]{2,24}",
+    r"(?<![\w.%+-])[\w.%+-]{1,64}@[\w.-]{1,253}\.[\w]{2,24}",
     re.I,
 )
-_OBFUSCATED_AT_RE = re.compile(r"\[at\]|\(at\)", re.I)
-_ARROBA_RE = re.compile(r"\s+arroba\s+", re.I)
-_OBFUSCATED_DOT_RE = re.compile(r"\[dot\]|\(dot\)", re.I)
-_WORD_DOT_RE = re.compile(r"(?<=\w)\s+dot\s+(?=\w)", re.I)
+_OBFUSCATED_AT_RE = re.compile(r"\[(?:at|arroba)\]|\((?:at|arroba)\)", re.I)
+_ARROBA_RE = re.compile(r"\s+(?:arroba|at)\s+", re.I)
+_OBFUSCATED_DOT_RE = re.compile(r"\[(?:dot|punto)\]|\((?:dot|punto)\)", re.I)
+_WORD_DOT_RE = re.compile(r"(?<=\w)\s+(?:dot|punto)\s+(?=\w)", re.I)
+_URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>\"']{1,512}", re.I)
 _QUERY_SECRET_RE = re.compile(
-    r"(?:[?&]|https?://\S+[?&])(?:token|key|api[_-]?key|secret|"
-    r"password|pwd|access[_-]?token)=[^\s&#]{1,256}",
+    r"(?:[?&]|https?://\S+[?&])(?:token|key|api[_-]?key|apikey|secret|"
+    r"password|pwd|pass|auth|sig|code|session|sid|client_secret|"
+    r"refresh_token|access[_-]?token)=[^\s&#]{1,256}",
     re.I,
 )
 _BEARER_RE = re.compile(r"\bBearer\s+\S{6,512}", re.I)
+_BASIC_RE = re.compile(r"\bBasic\s+[A-Za-z0-9+/]{8,512}={0,2}")
+_JWT_RE = re.compile(
+    r"\beyJ[A-Za-z0-9_-]{4,512}\.[A-Za-z0-9_-]{4,512}\.[A-Za-z0-9_-]{4,512}\b"
+)
+_PASSWORD_RE = re.compile(
+    r"(?:contrase[nñ]a|clave|password|passwd|pwd|db_password)\s*"
+    r"(?:es|[:=])\s*\S{1,256}"
+    r"|[\"']password[\"']\s*:\s*[\"'][^\"']{1,256}[\"']",
+    re.I,
+)
+_PIN_OTP_RE = re.compile(r"\b(?:pin|otp|cvv|cvc)\b\s*[:=]?\s*\S{2,16}", re.I)
 _KV_SECRET_RE = re.compile(
     r"\b(?:password|pwd|api[_-]?key|token|secret|access[_-]?token)"
     r"\s*[:=]\s*\S{1,512}",
     re.I,
 )
-_GITHUB_RE = re.compile(
-    r"\b(?:ghp_[A-Za-z0-9]{8,255}|github_pat_[A-Za-z0-9_]{8,255})\b"
+_KEY_PREFIX_RE = re.compile(
+    r"\b(?:sk_live_|sk_test_|pk_live_|pk_test_|rk_live_|gho_|ghs_|ghu_|"
+    r"ghp_|github_pat_|sk-ant-|sk-proj-|sk-|xai-|xoxp-|xoxb-)"
+    r"[A-Za-z0-9_-]{4,512}\b"
 )
-_AWS_RE = re.compile(r"\bAKIA[0-9A-Z]{8,20}\b")
-_SK_RE = re.compile(r"\b(?:sk-ant-|sk-proj-|sk-|xai-)[A-Za-z0-9_-]{6,512}\b")
+_AWS_RE = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{8,20}\b")
+_UUID_RE = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b",
+    re.I,
+)
 _IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _IPV6_RE = re.compile(
-    r"\b(?:[0-9a-f]{1,4}:){1,6}:[0-9a-f]{1,4}\b"
-    r"|\b[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){2,7}\b",
+    r"(?<![\da-f:])(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}(?![\da-f:])",
+    re.I,
+)
+_MAC_RE = re.compile(
+    r"\b[0-9a-f]{2}(?::[0-9a-f]{2}){5}\b|\b[0-9a-f]{2}(?:-[0-9a-f]{2}){5}\b",
     re.I,
 )
 _LABEL_ID_RE = re.compile(
-    r"\b(?:facturas?|fv|remisi[oó]n(?:es)?|pedidos?|orden(?:es)?|nit|cc|"
-    r"c[eé]dulas?|pasaportes?|tel(?:[eé]fonos?)?|cel(?:ulares?)?)\b"
-    r"[\s:.\-]*"
+    r"\b(?:facturas?|fv|fed|remisi[oó]n(?:es)?|pedidos?|orden(?:es)?|nit|cc|"
+    r"c[eé]dulas?|pasaportes?|tel(?:[eé]fonos?)?|cel(?:ulares?)?|cuentas?)\b"
+    r"[\s:.#\-]*"
     r"(?:[A-Za-z]{1,6}[\s.\-])?\d[\d\s.,\-]{0,24}",
     re.I,
 )
-_NAME_RE = re.compile(
-    r"\b(?:me\s+llamo|mi\s+nombre\s+es|soy|cliente)\s+(?:\S+\s+){0,3}\S+",
+_DOC_CODE_RE = re.compile(r"\b[A-Z]{2,8}-\d{3,8}\b")
+_GH_REF_RE = re.compile(r"\bGH-\d{1,8}\b", re.I)
+_NAME_INTRO_RE = re.compile(
+    r"\b(?:me\s+llamo|mi\s+nombre\s+es|a\s+nombre\s+de)\s+" r"(?:\S+\s+){0,3}\S+",
     re.I,
 )
+_NAME_TITLE_RE = re.compile(
+    r"\b(?:[Ss]r\.?|[Ss]ra\.?|[Dd]oña|[Dd]ona|[Dd]on|[Ss]e[nñ]or|"
+    r"[Ss]e[nñ]ora)\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+"
+    r"(?:\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+){0,3}"
+)
+_NAME_SOY_RE = re.compile(
+    r"\b[Ss]oy\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+"
+    r"(?:\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+){0,3}"
+)
+_NAME_CLIENTE_RE = re.compile(
+    r"\b[Cc]liente\s*:\s*(?:\S+\s+){0,3}\S+"
+    r"|\b[Cc]liente\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+"
+    r"(?:\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+){0,3}"
+)
+_NAME_HABLA_RE = re.compile(
+    r"\b(?:[Hh]abla|[Aa]tiende)\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+"
+    r"(?:\s+[A-ZÁÉÍÓÚÑÜ][\wÁÉÍÓÚÑÜáéíóúñü]+){0,3}"
+)
 _ADDR_RE = re.compile(
-    r"\b(?:calle|carrera|cra|cll|cl|kr|avenida|av\.?|diagonal|"
-    r"transversal|trans)\s+[\w#.\-]+(?:\s+[\w#.\-]+){0,6}",
+    r"\b(?:calle|cll\.?|cl\.?|carrera|cra\.?|kra|kr\.?|avenida|av\.?|"
+    r"diagonal|diag\.?|transversal|trans\.?|tv\.?|apto\.?|apartamento|"
+    r"torre|casa|barrio|manzana|conjunto)\s+"
+    r"(?=\S*\d)[\w#.\-]+(?:\s+[\w#.\-]+){0,6}",
     re.I,
 )
 _HEX_RE = re.compile(r"\b[0-9a-f]{20,256}\b", re.I)
 _B64_RE = re.compile(r"\b[A-Za-z0-9+/]{24,512}={0,2}\b")
-_DIGIT_RUN_RE = re.compile(r"\d(?:[\s.,\-/\(\)]*\d){6,}")
+_GROUP_PHONE_RE = re.compile(r"\b\d{1,4}(?:[\s\-]\d{1,4}){2,5}\b")
+_SHORT_PHONE_RE = re.compile(r"\b\d{3,4}[\s\-]\d{3,4}\b")
+_CARD_SEP_RE = re.compile(r"\b\d{4}(?:[\s\-]\d{4}){2,4}\b")
+_CARD_CONTIG_RE = re.compile(r"\b\d{13,19}\b")
+_DIGIT_WORD_RE = re.compile(
+    r"\b(?:cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\b",
+    re.I,
+)
+_DIGIT_WORD_MAP = {
+    "cero": "0",
+    "uno": "1",
+    "dos": "2",
+    "tres": "3",
+    "cuatro": "4",
+    "cinco": "5",
+    "seis": "6",
+    "siete": "7",
+    "ocho": "8",
+    "nueve": "9",
+}
 _PLACEHOLDER_DUP_RE = re.compile(
-    r"\b(email|tel|documento|numero|secreto|nombre|direccion|url)" r"(?:\s+\1)+\b",
+    r"\b(email|tel|documento|numero|secreto|nombre|direccion|url|ref)" r"(?:\s+\1)+\b",
     re.I,
 )
 _UNSAFE_CSV_PREFIX = frozenset({"=", "+", "-", "@", "\t", "\r"})
@@ -284,39 +344,89 @@ class MineResult:
     empty: bool
 
 
+def _strip_invisible(text: str) -> str:
+    """Drop Cf, combining marks, CGJ and variation selectors after NFKC."""
+    out: list[str] = []
+    for char in text:
+        code = ord(char)
+        category = unicodedata.category(char)
+        if category in {"Cf", "Mn"}:
+            continue
+        if code == 0x034F or 0xFE00 <= code <= 0xFE0F:
+            continue
+        out.append(char)
+    return "".join(out)
+
+
 def prepare_for_redaction(text: str) -> str:
-    """NFKC, strip zero-width chars, normalize dashes/spaces, then obfuscation."""
-    value = unicodedata.normalize("NFKC", text or "")
-    value = value.translate(_ZERO_WIDTH)
+    """Collapse whitespace first, then NFKC, strip format marks, deobfuscate."""
+    if not text:
+        return ""
+    value = re.sub(r"\s+", " ", text).strip()
+    if len(value) > MAX_MSG_CHARS:
+        value = value[:MAX_MSG_CHARS]
+    value = unicodedata.normalize("NFKC", value)
+    value = _strip_invisible(value)
     value = value.translate(_DASH_TRANS)
-    value = re.sub(r"[\u00a0\u2000-\u200a\u202f\u205f]", " ", value)
     value = _OBFUSCATED_AT_RE.sub("@", value)
     value = _ARROBA_RE.sub("@", value)
     value = _OBFUSCATED_DOT_RE.sub(".", value)
     value = _WORD_DOT_RE.sub(".", value)
     value = re.sub(r"\s*@\s*", "@", value)
-    value = re.sub(r"(?<=\w)\s*\.\s*(?=\w)", ".", value)
+    value = re.sub(r"(?<=[a-záéíóúñ])\s*\.\s*(?=[a-záéíóúñ])", ".", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _replace_digit_words(text: str) -> str:
+    return _DIGIT_WORD_RE.sub(
+        lambda match: _DIGIT_WORD_MAP[match.group(0).lower()], text
+    )
+
+
+def _redact_phone_like(text: str) -> str:
+    def _if_long(match: re.Match[str]) -> str:
+        digits = re.sub(r"\D", "", match.group(0))
+        return " numero " if len(digits) >= 7 else match.group(0)
+
+    value = _CARD_SEP_RE.sub(_if_long, text)
+    value = _GROUP_PHONE_RE.sub(_if_long, value)
+    value = _SHORT_PHONE_RE.sub(_if_long, value)
+    value = _CARD_CONTIG_RE.sub(" numero ", value)
     return value
 
 
 def redact_pii(text: str) -> str:
     """Best-effort PII/secret redaction. A human must still review output."""
     value = prepare_for_redaction(text)
+    value = _replace_digit_words(value)
+    value = re.sub(r"\((\d+)\)", r"\1", value)
+    value = _URL_RE.sub(" url ", value)
     value = _QUERY_SECRET_RE.sub(" url ", value)
     value = _BEARER_RE.sub(" secreto ", value)
+    value = _BASIC_RE.sub(" secreto ", value)
+    value = _JWT_RE.sub(" secreto ", value)
+    value = _PASSWORD_RE.sub(" secreto ", value)
+    value = _PIN_OTP_RE.sub(" secreto ", value)
     value = _KV_SECRET_RE.sub(" secreto ", value)
-    value = _GITHUB_RE.sub(" secreto ", value)
+    value = _KEY_PREFIX_RE.sub(" secreto ", value)
     value = _AWS_RE.sub(" secreto ", value)
-    value = _SK_RE.sub(" secreto ", value)
+    value = _UUID_RE.sub(" secreto ", value)
     value = _EMAIL_RE.sub(" email ", value)
     value = _IPV6_RE.sub(" numero ", value)
     value = _IPV4_RE.sub(" numero ", value)
+    value = _MAC_RE.sub(" numero ", value)
     value = _LABEL_ID_RE.sub(" documento ", value)
-    value = _NAME_RE.sub(" nombre ", value)
+    value = _DOC_CODE_RE.sub(" documento ", value)
+    value = _GH_REF_RE.sub(" ref ", value)
+    value = _NAME_INTRO_RE.sub(" nombre ", value)
+    value = _NAME_TITLE_RE.sub(" nombre ", value)
+    value = _NAME_SOY_RE.sub(" nombre ", value)
+    value = _NAME_CLIENTE_RE.sub(" nombre ", value)
+    value = _NAME_HABLA_RE.sub(" nombre ", value)
     value = _ADDR_RE.sub(" direccion ", value)
     value = _HEX_RE.sub(" secreto ", value)
     value = _B64_RE.sub(" secreto ", value)
-    value = _DIGIT_RUN_RE.sub(" numero ", value)
+    value = _redact_phone_like(value)
     value = re.sub(r"\s+", " ", value).strip()
     return _PLACEHOLDER_DUP_RE.sub(r"\1", value)
 
@@ -349,8 +459,10 @@ def jaccard(left: frozenset[str], right: frozenset[str]) -> float:
 
 
 def escape_markdown(text: str) -> str:
-    """Neutralize table breaks, HTML, @mentions and issue-close keywords."""
+    """Neutralize table breaks, HTML, URLs, @mentions and issue-close keywords."""
     value = text or ""
+    value = _URL_RE.sub("url", value)
+    value = _GH_REF_RE.sub("ref", value)
     for src, dest in _MD_SPECIALS:
         value = value.replace(src, dest)
     return value
@@ -367,8 +479,10 @@ def resolve_log_path(
 ) -> Path:
     if explicit is not None and str(explicit).strip():
         return Path(explicit).expanduser()
-    snapshot = settings if settings is not None else get_settings()
-    configured = (snapshot.ASSISTANT_CHAT_LOG or "").strip()
+    if settings is not None:
+        configured = (settings.ASSISTANT_CHAT_LOG or "").strip()
+    else:
+        configured = (read_assistant_chat_log() or "").strip()
     if configured:
         return Path(configured).expanduser()
     return DEFAULT_LOG_RELATIVE
@@ -477,6 +591,8 @@ def mine_chat_log(path: Path, *, top: int = DEFAULT_TOP_N) -> MineResult:
     lines: List[str] = []
     skipped_decode = 0
     for raw in data.splitlines():
+        if len(raw) > MAX_LINE_BYTES:
+            raw = raw[:MAX_LINE_BYTES]
         try:
             lines.append(raw.decode("utf-8"))
         except UnicodeDecodeError:
@@ -485,17 +601,26 @@ def mine_chat_log(path: Path, *, top: int = DEFAULT_TOP_N) -> MineResult:
         if skipped_decode:
             return _empty_result(MSG_EMPTY, skipped=skipped_decode)
         return _empty_result(MSG_EMPTY)
-    result = mine_chat_log_text("\n".join(lines) + "\n", top=top)
-    if skipped_decode:
+    records, skipped = _records_from_lines(lines)
+    unmatched = [row for row in records if not row.matched]
+    if not unmatched:
         return MineResult(
-            clusters=result.clusters,
-            records_read=result.records_read,
-            unmatched=result.unmatched,
-            skipped_lines=result.skipped_lines + skipped_decode,
-            message=result.message,
-            empty=result.empty,
+            clusters=(),
+            records_read=len(records),
+            unmatched=0,
+            skipped_lines=skipped + skipped_decode,
+            message=MSG_ALL_MATCHED if records else MSG_EMPTY,
+            empty=True,
         )
-    return result
+    clusters = top_unmatched_clusters(cluster_unmatched(unmatched), n=top)
+    return MineResult(
+        clusters=tuple(clusters),
+        records_read=len(records),
+        unmatched=len(unmatched),
+        skipped_lines=skipped + skipped_decode,
+        message="",
+        empty=False,
+    )
 
 
 def cluster_unmatched(
@@ -683,12 +808,30 @@ def _safe_filename(cluster_id: str) -> str:
     return (cleaned or "cluster")[:80]
 
 
-def _clear_stale_drafts(output_dir: Path) -> None:
-    for stale in output_dir.glob("borrador_*.md"):
+def _is_generated_draft_file(path: Path) -> bool:
+    if not _GENERATED_DRAFT_RE.fullmatch(path.name):
+        return False
+    try:
+        if path.is_symlink():
+            return False
+        return path.is_file()
+    except OSError:
+        return False
+
+
+def _clear_generated_drafts(output_dir: Path) -> None:
+    """Remove only regular files named like this tool's drafts. Never glob users."""
+    try:
+        entries = list(output_dir.iterdir())
+    except OSError as exc:
+        raise ChatLogMineError(MSG_OUTPUT_PERMISSION) from exc
+    for entry in entries:
+        if not _is_generated_draft_file(entry):
+            continue
         try:
-            stale.unlink()
-        except OSError as exc:
-            raise ChatLogMineError(MSG_OUTPUT_PERMISSION) from exc
+            entry.unlink()
+        except OSError:
+            continue
 
 
 def write_outputs(
@@ -703,7 +846,8 @@ def write_outputs(
         output_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise ChatLogMineError(MSG_OUTPUT_PERMISSION) from exc
-    _clear_stale_drafts(output_dir)
+    if write_drafts:
+        _clear_generated_drafts(output_dir)
     written: dict[str, Path] = {}
     md_path = output_dir / "unmatched_question_clusters.md"
     csv_path = output_dir / "unmatched_question_clusters.csv"

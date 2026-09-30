@@ -20,17 +20,18 @@ def _fresh_registry():
 
 @pytest.mark.unit
 @pytest.mark.module_assistant
-def test_default_log_path_uses_settings(
+def test_default_log_path_reads_env_without_building_settings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     target = tmp_path / "from-settings-chat.jsonl"
-    ignored = tmp_path / "from-env-only.jsonl"
+    monkeypatch.setenv("ASSISTANT_CHAT_LOG", str(target))
+    monkeypatch.setenv("DB_PORT", "abc")
 
-    class _Snapshot:
-        ASSISTANT_CHAT_LOG = str(target)
+    def _boom() -> object:
+        raise AssertionError("default_log_path must not construct Settings")
 
-    monkeypatch.setenv("ASSISTANT_CHAT_LOG", str(ignored))
-    monkeypatch.setattr("modules.assistant.logging.get_settings", lambda: _Snapshot())
+    monkeypatch.setattr("business_analyzer.core.config.get_settings", _boom)
+    monkeypatch.setattr("business_analyzer.core.config.Settings", _boom)
     assert default_log_path() == target
 
 

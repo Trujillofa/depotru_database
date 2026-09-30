@@ -18,6 +18,7 @@ from business_analyzer.core.config import (
     Settings,
     get_env_or_test_default,
     hydrate_ai_config,
+    read_assistant_chat_log,
     require_env,
     resolve_database_settings,
 )
@@ -187,6 +188,14 @@ def test_settings_assistant_chat_log_path_override(isolated_config_env):
     )
     settings = Settings()
     assert settings.ASSISTANT_CHAT_LOG == "/tmp/synthetic-assistant-chat-log.jsonl"
+
+
+def test_read_assistant_chat_log_skips_full_settings(isolated_config_env):
+    isolated_config_env.setenv(
+        "ASSISTANT_CHAT_LOG", "/tmp/synthetic-assistant-chat-log.jsonl"
+    )
+    isolated_config_env.setenv("DB_PORT", "abc")
+    assert read_assistant_chat_log() == "/tmp/synthetic-assistant-chat-log.jsonl"
 
 
 def test_settings_env_overrides(isolated_config_env):

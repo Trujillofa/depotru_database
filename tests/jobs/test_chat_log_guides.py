@@ -464,39 +464,99 @@ def test_plural_one_grupo(tmp_path: Path, capsys):
     assert "1 grupos" not in text
 
 
-def test_stale_drafts_are_removed(tmp_path: Path):
+def test_unrelated_user_files_survive_without_draft(tmp_path: Path):
     log = _write_log(
         tmp_path / "chat_log.jsonl",
         [_line("SYNTHETIC: horario de atencion sede demo")],
     )
     out = tmp_path / "out"
     out.mkdir()
-    stale = out / "borrador_guia_OLD.md"
-    stale.write_text("stale", encoding="utf-8")
+    notes = out / "borrador_mis_notas.md"
+    notes.write_text("notas del usuario", encoding="utf-8")
+    letter = out / "borrador_carta_abuela.md"
+    letter.write_text("carta", encoding="utf-8")
+    contract = out / "borrador_contrato.md"
+    contract.write_text("contrato", encoding="utf-8")
+    generated = out / "borrador_guia_c0123456789ab.md"
+    generated.write_text("old generated", encoding="utf-8")
     assert clg.main(["--log-path", str(log), "--output-dir", str(out)]) == 0
-    assert not stale.exists()
-    assert list(out.glob("borrador_*.md")) == []
+    assert notes.read_text(encoding="utf-8") == "notas del usuario"
+    assert letter.read_text(encoding="utf-8") == "carta"
+    assert contract.read_text(encoding="utf-8") == "contrato"
+    assert generated.read_text(encoding="utf-8") == "old generated"
 
 
-def test_stale_drafts_are_replaced_on_draft_rerun(tmp_path: Path):
+def test_unrelated_user_files_survive_with_draft(tmp_path: Path):
     log = _write_log(
         tmp_path / "chat_log.jsonl",
         [_line("SYNTHETIC: horario de atencion sede demo")],
     )
     out = tmp_path / "out"
     out.mkdir()
-    leftover = out / "borrador_guia_cpreviousrun.md"
-    leftover.write_text("leftover from previous run", encoding="utf-8")
-    leftover_issue = out / "borrador_issue_cpreviousrun.md"
-    leftover_issue.write_text("leftover issue", encoding="utf-8")
+    notes = out / "borrador_mis_notas.md"
+    notes.write_text("notas del usuario", encoding="utf-8")
+    leftover = out / "borrador_guia_c0123456789ab.md"
+    leftover.write_text("old generated", encoding="utf-8")
+    leftover_issue = out / "borrador_issue_c0123456789ab.md"
+    leftover_issue.write_text("old issue", encoding="utf-8")
+    not_hex = out / "borrador_guia_cpreviousrun.md"
+    not_hex.write_text("user-ish name", encoding="utf-8")
     assert clg.main(["--log-path", str(log), "--output-dir", str(out), "--draft"]) == 0
+    assert notes.read_text(encoding="utf-8") == "notas del usuario"
+    assert not_hex.read_text(encoding="utf-8") == "user-ish name"
+    assert not leftover.exists()
+    assert not leftover_issue.exists()
     names = {path.name for path in out.glob("borrador_*.md")}
-    assert leftover.name not in names
-    assert leftover_issue.name not in names
-    assert any(name.startswith("borrador_guia_") for name in names)
-    assert any(name.startswith("borrador_issue_") for name in names)
-    for path in out.glob("borrador_*.md"):
-        assert "leftover" not in path.read_text(encoding="utf-8")
+    assert "borrador_mis_notas.md" in names
+    assert any(name.startswith("borrador_guia_c") for name in names)
+
+
+def test_symlink_named_like_draft_is_not_unlinked(tmp_path: Path):
+    log = _write_log(
+        tmp_path / "chat_log.jsonl",
+        [_line("SYNTHETIC: horario de atencion sede demo")],
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    target = tmp_path / "outside_secret.md"
+    target.write_text("destino externo", encoding="utf-8")
+    link = out / "borrador_guia_cabcdef012345.md"
+    link.symlink_to(target)
+    assert clg.main(["--log-path", str(log), "--output-dir", str(out), "--draft"]) == 0
+    assert link.is_symlink()
+    assert target.read_text(encoding="utf-8") == "destino externo"
+
+
+def test_subdir_draft_is_not_touched(tmp_path: Path):
+    log = _write_log(
+        tmp_path / "chat_log.jsonl",
+        [_line("SYNTHETIC: horario de atencion sede demo")],
+    )
+    out = tmp_path / "out"
+    nested = out / "sub"
+    nested.mkdir(parents=True)
+    nested_file = nested / "borrador_guia_c0123456789ab.md"
+    nested_file.write_text("nested", encoding="utf-8")
+    assert clg.main(["--log-path", str(log), "--output-dir", str(out), "--draft"]) == 0
+    assert nested_file.read_text(encoding="utf-8") == "nested"
+
+
+def test_directory_named_like_draft_does_not_abort(tmp_path: Path, capsys):
+    log = _write_log(
+        tmp_path / "chat_log.jsonl",
+        [_line("SYNTHETIC: horario de atencion sede demo")],
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    decoy = out / "borrador_x.md"
+    decoy.mkdir()
+    generated_dir = out / "borrador_guia_c0123456789ab.md"
+    generated_dir.mkdir()
+    code = clg.main(["--log-path", str(log), "--output-dir", str(out), "--draft"])
+    assert code == 0
+    assert decoy.is_dir()
+    assert generated_dir.is_dir()
+    assert "permiso" not in capsys.readouterr().out.lower()
 
 
 def test_output_dir_file_is_spanish_error(tmp_path: Path, capsys):
@@ -714,6 +774,213 @@ def test_cli_adversarial_synthetic_leaks_on_all_surfaces(tmp_path: Path, capsys)
         assert "Juan" not in path.name
         assert "311222" not in path.name
         assert "example.test" not in path.name
+
+
+def _cli_blobs(stdout: str, out: Path) -> str:
+    blobs = [stdout]
+    for path in out.rglob("*"):
+        blobs.append(path.name)
+        if path.is_file() and not path.is_symlink():
+            blobs.append(path.read_text(encoding="utf-8", errors="replace"))
+    return "\n".join(blobs)
+
+
+def test_cli_review2_leaks_on_all_surfaces(tmp_path: Path, capsys):
+    lrm = "\u200e"
+    rlm = "\u200f"
+    lre = "\u202a"
+    vs16 = "\ufe0f"
+    cgj = "\u034f"
+    messages = [
+        "SYNTHETIC: juan (arroba) example punto test cemento demo",
+        "SYNTHETIC: ñu arroba example.test varilla demo",
+        "SYNTHETIC: cvv 123 horario demo",
+        "SYNTHETIC: FED-12351 cotizacion demo",
+        "SYNTHETIC: orden #12352 unica demo",
+        "SYNTHETIC: www.tienda.example.test/pedido/98765 brocas demo",
+        "SYNTHETIC: sk_live_FakeStripeLiveKey99 domingo demo",
+        "SYNTHETIC: cliente: Ramiro Demo Perez portal demo",
+        "SYNTHETIC: Sr. Hernando Demo envio demo",
+        "SYNTHETIC: contraseña: SuperClave99 material demo",
+        "SYNTHETIC: clave: OtraClave99 herramienta demo",
+        "SYNTHETIC: password es PassEs99 atencion demo",
+        'SYNTHETIC: "password":"QuotedPass99" electronica demo',
+        "SYNTHETIC: DB_PASSWORD=DbPass99 domicilio demo",
+        "SYNTHETIC: PIN 4321 cotizacion demo",
+        "SYNTHETIC: OTP 998877 sede demo",
+        "SYNTHETIC: cvc 321 barrio demo",
+        "SYNTHETIC: sk_test_FakeStripeTestKey99 clave demo",
+        "SYNTHETIC: pk_live_FakePublishable99 cuanto demo",
+        "SYNTHETIC: rk_live_FakeRestricted99 vale demo",
+        "SYNTHETIC: gho_FakeOauthToken99 precio demo",
+        "SYNTHETIC: ghs_FakeServerToken99 horario demo",
+        "SYNTHETIC: ghu_FakeUserToken99 cemento demo",
+        "SYNTHETIC: ASIAIOSFODNN7EXAMPLE varilla demo",
+        "SYNTHETIC: xoxp-FakeSlackUser99 brocas demo",
+        "SYNTHETIC: xoxb-FakeSlackBot99 domingo demo",
+        "SYNTHETIC: jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c mayorista demo",
+        "SYNTHETIC: uuid 123e4567-e89b-12d3-a456-426614174000 portal demo",
+        "SYNTHETIC: Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ== envio demo",
+        "SYNTHETIC: https://example.test/x?auth=AuthParam99 material demo",
+        "SYNTHETIC: https://example.test/x?sig=SigParam99 herramienta demo",
+        "SYNTHETIC: https://example.test/x?code=CodeParam99 atencion demo",
+        "SYNTHETIC: https://example.test/x?session=SessParam99 electronica demo",
+        "SYNTHETIC: https://example.test/x?sid=SidParam99 domicilio demo",
+        "SYNTHETIC: https://example.test/x?pass=PassParam99 cotizacion demo",
+        "SYNTHETIC: https://example.test/x?client_secret=ClientSecret99 unica demo",
+        "SYNTHETIC: https://example.test/x?refresh_token=RefreshTok99 sede demo",
+        "SYNTHETIC: https://example.test/x?key=UrlKey99 barrio demo",
+        "SYNTHETIC: https://example.test/x?apikey=ApiKeyParam99 clave demo",
+        "SYNTHETIC: https://usuario:claveoculta99@host.example.test cuanto demo",
+        "SYNTHETIC: ana at example dot test vale demo",
+        "SYNTHETIC: ana arroba example punto test precio demo",
+        "SYNTHETIC: luis (arroba) example (punto) test horario demo",
+        "SYNTHETIC: ipv6 ::1 cemento demo",
+        "SYNTHETIC: mac 00-1A-2B-3C-4D-5E varilla demo",
+        "SYNTHETIC: mac 00:1a:2b:3c:4d:5f brocas demo",
+        f"SYNTHETIC: tel 311{lrm}222{rlm}3366 domingo demo",
+        f"SYNTHETIC: tel 311{lre}222{vs16}3367 mayorista demo",
+        f"SYNTHETIC: tel 311{cgj}2223368 portal demo",
+        "SYNTHETIC: 311 dos dos dos 4411 envio demo",
+        "SYNTHETIC: Sra. Marta Demo material demo",
+        "SYNTHETIC: doña Elena Demo herramienta demo",
+        "SYNTHETIC: don Pedro Demo atencion demo",
+        "SYNTHETIC: señor Carlos Demo electronica demo",
+        "SYNTHETIC: habla Lucia Demo domicilio demo",
+        "SYNTHETIC: atiende Mario Demo cotizacion demo",
+        "SYNTHETIC: a nombre de Sofia Demo unica demo",
+        "SYNTHETIC: Cll. 10 20 sede demo",
+        "SYNTHETIC: Cra. 8 15 barrio demo",
+        "SYNTHETIC: Kra 4 6 clave demo",
+        "SYNTHETIC: Diag. 30 2 cuanto demo",
+        "SYNTHETIC: Tv 11 3 vale demo",
+        "SYNTHETIC: apto 501 precio demo",
+        "SYNTHETIC: torre 4 horario demo",
+        "SYNTHETIC: casa 88 cemento demo",
+        "SYNTHETIC: barrio 12 varilla demo",
+        "SYNTHETIC: manzana 7 brocas demo",
+        "SYNTHETIC: conjunto 9 domingo demo",
+        "SYNTHETIC: GH-99 referencia demo",
+    ]
+    leaks = [
+        "juan (arroba) example punto test",
+        "juan@example.test",
+        "example.test",
+        "cvv 123",
+        "FED-12351",
+        "orden #12352",
+        "#12352",
+        "www.tienda.example.test/pedido/98765",
+        "tienda.example.test",
+        "sk_live_FakeStripeLiveKey99",
+        "Ramiro Demo Perez",
+        "Hernando Demo",
+        "SuperClave99",
+        "OtraClave99",
+        "PassEs99",
+        "QuotedPass99",
+        "DbPass99",
+        "PIN 4321",
+        "OTP 998877",
+        "cvc 321",
+        "sk_test_FakeStripeTestKey99",
+        "pk_live_FakePublishable99",
+        "rk_live_FakeRestricted99",
+        "gho_FakeOauthToken99",
+        "ghs_FakeServerToken99",
+        "ghu_FakeUserToken99",
+        "ASIAIOSFODNN7EXAMPLE",
+        "xoxp-FakeSlackUser99",
+        "xoxb-FakeSlackBot99",
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+        "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+        "123e4567-e89b-12d3-a456-426614174000",
+        "QWxhZGRpbjpvcGVuIHNlc2FtZQ==",
+        "AuthParam99",
+        "SigParam99",
+        "CodeParam99",
+        "SessParam99",
+        "SidParam99",
+        "PassParam99",
+        "ClientSecret99",
+        "RefreshTok99",
+        "UrlKey99",
+        "ApiKeyParam99",
+        "usuario:claveoculta99",
+        "claveoculta99",
+        "ana at example dot test",
+        "ana@example.test",
+        "luis@example.test",
+        "::1",
+        "00-1A-2B-3C-4D-5E",
+        "00:1a:2b:3c:4d:5f",
+        "3112223366",
+        "3112223367",
+        "3112223368",
+        "311 dos dos dos 4411",
+        "Marta Demo",
+        "Elena Demo",
+        "Pedro Demo",
+        "Carlos Demo",
+        "Lucia Demo",
+        "Mario Demo",
+        "Sofia Demo",
+        "Cll. 10 20",
+        "Cra. 8 15",
+        "Kra 4 6",
+        "Diag. 30 2",
+        "Tv 11 3",
+        "apto 501",
+        "torre 4",
+        "casa 88",
+        "barrio 12",
+        "manzana 7",
+        "conjunto 9",
+        "GH-99",
+    ]
+    log = _write_log(tmp_path / "chat_log.jsonl", [_line(msg) for msg in messages])
+    out = tmp_path / "out"
+    code = clg.main(
+        ["--log-path", str(log), "--output-dir", str(out), "--draft", "--top", "80"]
+    )
+    assert code == 0
+    combined = _cli_blobs(capsys.readouterr().out, out)
+    missing = [token for token in leaks if token in combined]
+    assert missing == [], missing
+    for cluster in clg.mine_chat_log(log, top=80).clusters:
+        assert cluster.cluster_id not in leaks
+        for token in leaks:
+            assert token not in cluster.cluster_id
+
+
+def test_soy_constructor_is_not_redacted_as_name():
+    redacted = clg.redact_pii(
+        "SYNTHETIC: soy constructor y soy nuevo cliente frecuente"
+    )
+    assert "constructor" in redacted
+    assert "nuevo" in redacted
+    assert "frecuente" in redacted
+    assert "nombre" not in redacted
+
+
+def test_bare_product_code_is_not_generic_numero():
+    redacted = clg.redact_pii("SYNTHETIC: referencia 7701234 cemento demo")
+    assert "7701234" in redacted
+    assert "numero" not in redacted
+
+
+def test_prepare_collapses_whitespace_first():
+    text = " " * 40000 + "SYNTHETIC: hola"
+    redacted = clg.prepare_for_redaction(text)
+    assert "hola" in redacted
+    assert "  " not in redacted
+
+
+def test_escape_markdown_neutralizes_urls_and_gh_refs():
+    text = clg.escape_markdown("ver https://example.test/x y GH-99 y www.demo.test/a")
+    assert "https://example.test/x" not in text
+    assert "www.demo.test/a" not in text
+    assert "GH-99" not in text
 
 
 @pytest.fixture
