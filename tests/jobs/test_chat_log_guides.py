@@ -93,6 +93,39 @@ def test_redact_email_split_by_newline_around_dot():
     assert "demo" not in hardware_display.split()
 
 
+def test_email_join_does_not_eat_name_triggers_or_cuanto():
+    """A complete address plus prose must not steal the next word as TLD."""
+    name_cases = (
+        "SYNTHETIC: juan@gmail.com, soy Ana Demo cuanto",
+        "SYNTHETIC: juan@gmail.com, me llamo Ana Demo cuanto",
+        "SYNTHETIC: juan@gmail.com, mi nombre es Ana Demo cuanto",
+        "SYNTHETIC: juan@gmail.com, cliente Ana Demo cuanto",
+        "SYNTHETIC: juan@gmail.com, nombre: Ana Demo cuanto",
+        "SYNTHETIC: juan@gmail.com,\nsoy Ana Demo cuanto",
+    )
+    for raw in name_cases:
+        redacted = clg.redact_pii(raw)
+        displayed = clg.project_for_display(redacted)
+        assert "email" in redacted.lower(), raw
+        assert "nombre" in redacted.lower(), raw
+        assert "juan@gmail" not in redacted.lower(), raw
+        tokens = displayed.split()
+        assert "ana" not in tokens, (raw, displayed)
+        assert "demo" not in tokens, (raw, displayed)
+        assert "juan" not in tokens, (raw, displayed)
+        assert "gmail" not in tokens, (raw, displayed)
+
+    cement = clg.redact_pii("SYNTHETIC: correo juan@gmail.com, cuanto vale el cemento")
+    cement_display = clg.project_for_display(cement)
+    assert "email" in cement.lower()
+    assert "cuanto" in cement.lower()
+    assert "cuanto" in cement_display.split()
+    assert "cemento" in cement_display.split()
+    assert "juan@gmail.com.cuanto" not in clg.prepare_for_redaction(
+        "correo juan@gmail.com, cuanto vale el cemento", keep_newlines=True
+    )
+
+
 def test_redact_email_phone_digits_and_document_numbers():
     raw = (
         "SYNTHETIC: enviar a demo.user@example.test tel +57 300 123 4567 "
@@ -1414,8 +1447,8 @@ def test_repeated_pin_labels_scale_near_linear():
     for redacted in (out_n, out_4n):
         assert "pin" not in redacted.lower()
         assert "secreto" in redacted.lower()
-    # 4× input; allow wide CI slop. Quadratic growth would be ~16×.
-    assert t_4n < (t_n * 12) + 1.5, (t_n, t_4n)
+    # 4× input; allow CI slop but stay well under quadratic (~16×).
+    assert t_4n < (t_n * 10) + 0.4, (t_n, t_4n)
 
 
 def test_inner_label_does_not_cross_sentence_end():
@@ -1497,6 +1530,9 @@ _FORBIDDEN_ALLOWLIST_FRAGMENTS = frozenset(
         "nivelaci",
         "sif",
         "xic",
+        "xico",
+        "impermeabil",
+        "ferreter",
         "ete",
         "tap",
         "tel",
@@ -1617,7 +1653,14 @@ def test_allowlist_keeps_cal_as_real_word():
 def test_allowlist_fragment_rule_is_explicit_not_prefix():
     """Fragments are an explicit denylist, not 'prefix of a longer word'."""
     assert "ilumina" in _FORBIDDEN_ALLOWLIST_FRAGMENTS
-    assert "ilumina" not in _read_allowlist_words()
+    assert "xico" in _FORBIDDEN_ALLOWLIST_FRAGMENTS
+    assert "impermeabil" in _FORBIDDEN_ALLOWLIST_FRAGMENTS
+    assert "ferreter" in _FORBIDDEN_ALLOWLIST_FRAGMENTS
+    words = _read_allowlist_words()
+    assert "ilumina" not in words
+    assert "xico" not in words
+    assert "impermeabil" not in words
+    assert "ferreter" not in words
     assert _is_truncated_allowlist_stem("ilumina") is False
     assert _is_truncated_allowlist_stem("material") is False
     assert _is_truncated_allowlist_stem("cal") is False
