@@ -71,6 +71,28 @@ def test_redact_obfuscated_email_after_normalize():
     assert "email" in redacted
 
 
+def test_redact_email_split_by_newline_around_dot():
+    """A newline around the domain dot must still redact as email."""
+    gmail = clg.redact_pii("SYNTHETIC: juan@gmail.\ncom cuanto demo")
+    assert "juan@gmail" not in gmail.lower()
+    assert "gmail." not in gmail.lower()
+    assert "email" in gmail
+    gmail_display = clg.project_for_display(gmail)
+    assert "juan" not in gmail_display
+    assert "gmail" not in gmail_display
+
+    prepared = clg.prepare_for_redaction("juan@gmail.\ncom", keep_newlines=True)
+    assert "juan@gmail.com" in prepared
+
+    hardware = clg.redact_pii("SYNTHETIC: material@cemento.\ndemo cuanto")
+    assert "material@cemento" not in hardware.lower()
+    assert "email" in hardware
+    hardware_display = clg.project_for_display(hardware)
+    assert "material" not in hardware_display.split()
+    assert "cemento" not in hardware_display.split()
+    assert "demo" not in hardware_display.split()
+
+
 def test_redact_email_phone_digits_and_document_numbers():
     raw = (
         "SYNTHETIC: enviar a demo.user@example.test tel +57 300 123 4567 "
@@ -1380,14 +1402,20 @@ def test_labeled_passphrase_consumes_rest_of_sentence():
     assert "cemento" in bounded.lower()
 
 
-def test_repeated_pin_labels_are_linear_time():
-    payload = ("pin " * 5000).rstrip()
-    start = time.perf_counter()
-    redacted = clg._redact_labeled_passphrases(payload)
-    elapsed = time.perf_counter() - start
-    assert "pin" not in redacted.lower()
-    assert "secreto" in redacted.lower()
-    assert elapsed < 0.5, elapsed
+def test_repeated_pin_labels_scale_near_linear():
+    def _run(n: int) -> tuple[float, str]:
+        payload = ("pin " * n).rstrip()
+        start = time.perf_counter()
+        redacted = clg._redact_labeled_passphrases(payload)
+        return time.perf_counter() - start, redacted
+
+    t_n, out_n = _run(2000)
+    t_4n, out_4n = _run(8000)
+    for redacted in (out_n, out_4n):
+        assert "pin" not in redacted.lower()
+        assert "secreto" in redacted.lower()
+    # 4× input; allow wide CI slop. Quadratic growth would be ~16×.
+    assert t_4n < (t_n * 12) + 1.5, (t_n, t_4n)
 
 
 def test_inner_label_does_not_cross_sentence_end():
@@ -1439,27 +1467,11 @@ _DETACHED_SUFFIX_RE = re.compile(
     r"(?:stico|ptico|ctrico|ctrica|ltico|sicas|mpara|mparas)$"
 )
 _INCOMPLETE_STEM_RE = re.compile(r"(?:si|ci|ig|corr|eri|iad)$")
-_STEM_COMPLETIONS = ("izante", "izar", "izacion", "osivo", "osiva")
-
-
-def _is_truncated_allowlist_stem(word: str, vocab: set[str]) -> bool:
-    """True for incomplete Spanish stems or detached suffixes."""
-    if len(word) >= 5 and _INCOMPLETE_STEM_RE.search(word):
-        if not word.endswith(("cion", "sion", "cia", "cio", "cie")):
-            return True
-    if len(word) >= 5 and word.endswith("er") and f"{word}ia" in vocab:
-        return True
-    if len(word) >= 6 and any(
-        f"{word}{suffix}" in vocab for suffix in _STEM_COMPLETIONS
-    ):
-        return True
-    if word.endswith("ag") and f"{word}ue" in vocab:
-        return True
-    return bool(_DETACHED_SUFFIX_RE.fullmatch(word))
-
-
-def test_allowlist_txt_rejects_names_junk_and_duplicates():
-    forbidden_names = {
+# Real short words that look like stems/prefixes of longer entries.
+# Do not infer fragments from "word is a prefix of another word".
+_ALLOWLIST_REAL_WORD_EXCEPTIONS = frozenset({"cal"})
+_FORBIDDEN_ALLOWLIST_NAMES = frozenset(
+    {
         "ada",
         "marco",
         "mina",
@@ -1473,12 +1485,15 @@ def test_allowlist_txt_rejects_names_junk_and_duplicates():
         "huila",
         "mica",
     }
-    forbidden_fragments = {
+)
+_FORBIDDEN_ALLOWLIST_FRAGMENTS = frozenset(
+    {
         "hidr",
         "xido",
         "bsika",
         "bdrywall",
         "iluminaci",
+        "ilumina",
         "nivelaci",
         "sif",
         "xic",
@@ -1520,9 +1535,10 @@ def test_allowlist_txt_rejects_names_junk_and_duplicates():
         "x",
         "xyz",
         "ruc",
-        "cal",
     }
-    allowed_short = {
+)
+_ALLOWED_SHORT = frozenset(
+    {
         "a",
         "al",
         "de",
@@ -1547,23 +1563,64 @@ def test_allowlist_txt_rejects_names_junk_and_duplicates():
         "y",
         "ya",
     }
-    text = clg._ALLOWLIST_PATH.read_text(encoding="utf-8")
+)
+
+
+def _read_allowlist_words() -> list[str]:
     words: list[str] = []
-    for line in text.splitlines():
+    for line in clg._ALLOWLIST_PATH.read_text(encoding="utf-8").splitlines():
         raw = line.split("#", 1)[0].strip().lower()
         if not raw:
             continue
-        assert raw.isascii() and raw.isalpha(), raw
         words.append(raw)
+    return words
+
+
+def _is_truncated_allowlist_stem(word: str) -> bool:
+    """True for incomplete Spanish stems or detached suffixes.
+
+    Real words in ``_ALLOWLIST_REAL_WORD_EXCEPTIONS`` are never fragments.
+    This does not treat a word as truncated just because a longer cousin
+    exists (``material`` must stay allowed if ``materializar`` is added).
+    """
+    if word in _ALLOWLIST_REAL_WORD_EXCEPTIONS:
+        return False
+    if len(word) >= 5 and _INCOMPLETE_STEM_RE.search(word):
+        if not word.endswith(("cion", "sion", "cia", "cio", "cie")):
+            return True
+    return bool(_DETACHED_SUFFIX_RE.fullmatch(word))
+
+
+def test_allowlist_txt_rejects_names_junk_and_duplicates():
+    words = _read_allowlist_words()
     assert words
     assert len(words) == len(set(words))
-    vocab = set(words)
     for word in words:
-        assert word not in forbidden_names
-        assert word not in forbidden_fragments
+        assert word.isascii() and word.isalpha(), word
+        assert word not in _FORBIDDEN_ALLOWLIST_NAMES
+        assert word not in _FORBIDDEN_ALLOWLIST_FRAGMENTS
         if len(word) < 3:
-            assert word in allowed_short, word
-        assert not _is_truncated_allowlist_stem(word, vocab), word
+            assert word in _ALLOWED_SHORT, word
+        assert not _is_truncated_allowlist_stem(word), word
+
+
+def test_allowlist_keeps_cal_as_real_word():
+    words = set(_read_allowlist_words())
+    assert "cal" in words
+    assert "cal" in _ALLOWLIST_REAL_WORD_EXCEPTIONS
+    rec = clg.parse_record(_line("SYNTHETIC: precio de la cal"))
+    assert rec is not None
+    assert "cal" in rec.displayed.split()
+    assert rec.displayed == "synthetic precio de la cal"
+
+
+def test_allowlist_fragment_rule_is_explicit_not_prefix():
+    """Fragments are an explicit denylist, not 'prefix of a longer word'."""
+    assert "ilumina" in _FORBIDDEN_ALLOWLIST_FRAGMENTS
+    assert "ilumina" not in _read_allowlist_words()
+    assert _is_truncated_allowlist_stem("ilumina") is False
+    assert _is_truncated_allowlist_stem("material") is False
+    assert _is_truncated_allowlist_stem("cal") is False
 
 
 def test_missing_allowlist_logs_warning(tmp_path: Path, caplog):

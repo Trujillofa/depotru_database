@@ -180,6 +180,7 @@ cadenas
 caida
 caja
 cajas
+cal
 calcula
 calentador
 calibre

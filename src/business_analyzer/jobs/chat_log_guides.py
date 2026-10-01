@@ -153,6 +153,11 @@ _EMAIL_RE = re.compile(
     r"(?<![\w.%+-])[\w.%+-]{1,64}@[\w.-]{1,253}[.,][\w]{2,24}",
     re.I,
 )
+# Join "user@host.\ncom" so _EMAIL_RE still sees one address after keep_newlines.
+_EMAIL_SPLIT_DOT_RE = re.compile(
+    r"((?<![\w.%+-])[\w.%+-]{1,64}@[\w.-]{1,253})\s*[.,]\s*([\w]{2,24})",
+    re.I,
+)
 _OBFUSCATED_AT_RE = re.compile(r"\[(?:at|arroba)\]|\((?:at|arroba)\)", re.I)
 _ARROBA_RE = re.compile(r"\s+(?:arroba|at)\s+", re.I)
 _UNDERSCORE_ARROBA_RE = re.compile(r"_arroba_", re.I)
@@ -488,6 +493,7 @@ def prepare_for_redaction(text: str, *, keep_newlines: bool = False) -> str:
     value = _WORD_DOT_RE.sub(".", value)
     value = re.sub(r"\s*@\s*", "@", value)
     value = re.sub(r"(?<=[a-záéíóúñ])[^\S\n]*\.[^\S\n]*(?=[a-záéíóúñ])", ".", value)
+    value = _EMAIL_SPLIT_DOT_RE.sub(r"\1.\2", value)
     if keep_newlines:
         return re.sub(r"[^\S\n]+", " ", value).strip()
     return re.sub(r"\s+", " ", value).strip()

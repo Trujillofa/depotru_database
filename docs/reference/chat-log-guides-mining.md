@@ -64,8 +64,12 @@ estos casos (y cualquier otro) antes de compartir:
   contraseña **sin** etiqueta puede dejar palabras de la lista.
 - Casos que **no** se redactan hoy: `clave_X` (el `_` une el token y
   evita `\b`), `clave! X` (`!` cierra la oración antes del valor),
-  `clave es X.Y` (el primer `.` corta y deja `Y`) y `clave es Dr. X Y`
-  (el punto de `Dr.` corta igual).
+  `clave? X` (`?` cierra igual), `clave es X.Y` (el primer `.` corta y
+  deja `Y`) y `clave es Dr. X Y` (el punto de `Dr.` corta igual).
+- Secretos partidos en varias líneas: el salto cierra la oración, así
+  que `passphrase es caballo` + salto + `bateria grapa` deja `grapa`, y
+  `clave` + salto + `X` + salto + `Y` deja X e Y. Solo salen palabras
+  de la lista blanca.
 - Nombres: se quitaron de la lista blanca entradas tipo nombre propio
   (`ada`, `marco`, `mina`, `cielo`, `blanca`, `estrella`, `diamante`,
   `cortes`, `luz`, `neiva`, `huila`, `mica`). Un nombre que coincida con
