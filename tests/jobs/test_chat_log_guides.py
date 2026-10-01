@@ -5,8 +5,10 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 import random
 import re
+import time
 from pathlib import Path
 
 import pytest
@@ -1049,14 +1051,12 @@ def test_project_for_display_drops_unknown_words_and_digits():
 
 
 def test_digit_words_stay_words_on_display():
-    rec = clg.parse_record(_line("SYNTHETIC: necesito uno dos tres de cemento"))
+    rec = clg.parse_record(_line("SYNTHETIC: necesito uno dos de cemento"))
     assert rec is not None
     assert "1" not in rec.displayed
     assert "2" not in rec.displayed
-    assert "3" not in rec.displayed
     assert "uno" in rec.displayed
     assert "dos" in rec.displayed
-    assert "tres" in rec.displayed
     assert "cada 1" not in rec.displayed
 
 
@@ -1312,3 +1312,291 @@ def test_regex_layer_catches_review_digit_shapes():
         assert leak not in redacted
         assert leak not in displayed
         assert not any(char.isdigit() for char in displayed)
+
+
+def test_three_or_more_digit_words_collapse_to_numero():
+    rec = clg.parse_record(_line("SYNTHETIC: cinco tres dos de cemento demo"))
+    assert rec is not None
+    assert "cinco" not in rec.displayed
+    assert "tres" not in rec.displayed
+    assert "dos" not in rec.displayed
+    assert "numero" in rec.displayed
+    assert "cemento" in rec.displayed
+    long_run = clg.redact_pii(
+        "SYNTHETIC: tres uno uno dos dos dos siete siete cero uno cemento"
+    )
+    assert "tres" not in long_run.split()
+    assert "uno" not in long_run.split()
+    assert "numero" in long_run
+    pair = clg.parse_record(_line("SYNTHETIC: necesito uno dos de cemento"))
+    assert pair is not None
+    assert "uno" in pair.displayed
+    assert "dos" in pair.displayed
+    assert "1" not in pair.displayed
+    assert "2" not in pair.displayed
+
+
+def test_clave_and_pin_word_are_redacted_as_secrets():
+    samples = (
+        "SYNTHETIC: clave grapa material demo",
+        "SYNTHETIC: pin grapa material demo",
+        "SYNTHETIC: password grapa material demo",
+        "SYNTHETIC: passphrase grapa material demo",
+    )
+    for raw in samples:
+        redacted = clg.redact_pii(raw)
+        displayed = clg.project_for_display(redacted)
+        assert "grapa" not in redacted.lower()
+        assert "grapa" not in displayed
+        assert "secreto" in redacted.lower()
+
+
+def test_labeled_passphrase_consumes_rest_of_sentence():
+    multi = clg.redact_pii("SYNTHETIC: passphrase es caballo bateria grapa correcta")
+    for leak in ("caballo", "bateria", "grapa", "correcta"):
+        assert leak not in multi.lower()
+    assert "secreto" in multi.lower()
+
+    two_words = clg.redact_pii("SYNTHETIC: passphrase grapa cemento")
+    assert "grapa" not in two_words.lower()
+    assert "cemento" not in two_words.lower()
+
+    punctuated = (
+        "SYNTHETIC: la clave, es grapa",
+        "SYNTHETIC: clave - grapa cemento",
+        "SYNTHETIC: pass: grapa",
+        "SYNTHETIC: codigo secreto grapa",
+        "SYNTHETIC: clave...grapa",
+        "SYNTHETIC: contraseña del wifi es grapa",
+    )
+    for raw in punctuated:
+        redacted = clg.redact_pii(raw)
+        assert "grapa" not in redacted.lower(), raw
+        assert "secreto" in redacted.lower()
+
+    bounded = clg.redact_pii("SYNTHETIC: passphrase grapa caballo. precio cemento demo")
+    assert "grapa" not in bounded.lower()
+    assert "caballo" not in bounded.lower()
+    assert "cemento" in bounded.lower()
+
+
+def test_repeated_pin_labels_are_linear_time():
+    payload = ("pin " * 5000).rstrip()
+    start = time.perf_counter()
+    redacted = clg._redact_labeled_passphrases(payload)
+    elapsed = time.perf_counter() - start
+    assert "pin" not in redacted.lower()
+    assert "secreto" in redacted.lower()
+    assert elapsed < 0.5, elapsed
+
+
+def test_inner_label_does_not_cross_sentence_end():
+    helper = clg._redact_labeled_passphrases("clave grapa pin. precio cemento")
+    assert "precio cemento" in helper
+    assert "grapa" not in helper.lower()
+    redacted = clg.redact_pii("SYNTHETIC: clave grapa pin. precio cemento")
+    assert "grapa" not in redacted.lower()
+    assert "cemento" in redacted.lower()
+    assert "precio" in redacted.lower()
+
+
+def test_token_secreto_redacts_following_value():
+    one = clg.redact_pii("SYNTHETIC: token secreto grapa material demo")
+    assert "grapa" not in one.lower()
+    assert "secreto" in one.lower()
+    labeled = clg.redact_pii("SYNTHETIC: token secreto: caballo bateria")
+    assert "caballo" not in labeled.lower()
+    assert "bateria" not in labeled.lower()
+
+
+def test_passphrase_redaction_does_not_cross_newline():
+    redacted = clg.redact_pii("SYNTHETIC: clave es grapa\nNecesito cemento demo")
+    assert "grapa" not in redacted.lower()
+    assert "cemento" in redacted.lower()
+
+
+def test_unique_cluster_ids_uses_per_key_nonce():
+    shared = [
+        clg.QuestionCluster(
+            cluster_id="cabcdefghijkl",
+            count=1,
+            representative="synthetic precio",
+            examples=(),
+            normalized="synthetic precio",
+        )
+        for _ in range(40)
+    ]
+    result = clg._unique_cluster_ids(shared)
+    ids = [item.cluster_id for item in result]
+    assert len(ids) == len(set(ids))
+    assert ids[0] == "cabcdefghijkl"
+    assert ids[1] == clg.cluster_id_for("synthetic precio\nsynthetic precio\n1")
+    assert ids[2] == clg.cluster_id_for("synthetic precio\nsynthetic precio\n2")
+    assert ids[39] == clg.cluster_id_for("synthetic precio\nsynthetic precio\n39")
+
+
+_DETACHED_SUFFIX_RE = re.compile(
+    r"(?:stico|ptico|ctrico|ctrica|ltico|sicas|mpara|mparas)$"
+)
+_INCOMPLETE_STEM_RE = re.compile(r"(?:si|ci|ig|corr|eri|iad)$")
+_STEM_COMPLETIONS = ("izante", "izar", "izacion", "osivo", "osiva")
+
+
+def _is_truncated_allowlist_stem(word: str, vocab: set[str]) -> bool:
+    """True for incomplete Spanish stems or detached suffixes."""
+    if len(word) >= 5 and _INCOMPLETE_STEM_RE.search(word):
+        if not word.endswith(("cion", "sion", "cia", "cio", "cie")):
+            return True
+    if len(word) >= 5 and word.endswith("er") and f"{word}ia" in vocab:
+        return True
+    if len(word) >= 6 and any(
+        f"{word}{suffix}" in vocab for suffix in _STEM_COMPLETIONS
+    ):
+        return True
+    if word.endswith("ag") and f"{word}ue" in vocab:
+        return True
+    return bool(_DETACHED_SUFFIX_RE.fullmatch(word))
+
+
+def test_allowlist_txt_rejects_names_junk_and_duplicates():
+    forbidden_names = {
+        "ada",
+        "marco",
+        "mina",
+        "cielo",
+        "blanca",
+        "estrella",
+        "diamante",
+        "cortes",
+        "luz",
+        "neiva",
+        "huila",
+        "mica",
+    }
+    forbidden_fragments = {
+        "hidr",
+        "xido",
+        "bsika",
+        "bdrywall",
+        "iluminaci",
+        "nivelaci",
+        "sif",
+        "xic",
+        "ete",
+        "tap",
+        "tel",
+        "rot",
+        "met",
+        "asf",
+        "cer",
+        "mpara",
+        "sicas",
+        "stico",
+        "ptico",
+        "lica",
+        "ctrico",
+        "ibre",
+        "tica",
+        "cicl",
+        "divisi",
+        "fundaci",
+        "habitaci",
+        "filtraci",
+        "inspecci",
+        "presi",
+        "despu",
+        "desag",
+        "hormig",
+        "carpinter",
+        "tuber",
+        "grifer",
+        "anticorr",
+        "averi",
+        "averiad",
+        "epox",
+        "fe",
+        "fv",
+        "oc",
+        "x",
+        "xyz",
+        "ruc",
+        "cal",
+    }
+    allowed_short = {
+        "a",
+        "al",
+        "de",
+        "e",
+        "el",
+        "en",
+        "es",
+        "la",
+        "le",
+        "lo",
+        "me",
+        "mi",
+        "ni",
+        "no",
+        "o",
+        "se",
+        "si",
+        "su",
+        "te",
+        "tu",
+        "un",
+        "y",
+        "ya",
+    }
+    text = clg._ALLOWLIST_PATH.read_text(encoding="utf-8")
+    words: list[str] = []
+    for line in text.splitlines():
+        raw = line.split("#", 1)[0].strip().lower()
+        if not raw:
+            continue
+        assert raw.isascii() and raw.isalpha(), raw
+        words.append(raw)
+    assert words
+    assert len(words) == len(set(words))
+    vocab = set(words)
+    for word in words:
+        assert word not in forbidden_names
+        assert word not in forbidden_fragments
+        if len(word) < 3:
+            assert word in allowed_short, word
+        assert not _is_truncated_allowlist_stem(word, vocab), word
+
+
+def test_missing_allowlist_logs_warning(tmp_path: Path, caplog):
+    missing = tmp_path / "no-such-allowlist.txt"
+    with caplog.at_level(logging.WARNING):
+        vocab = clg.load_allowlist(missing)
+    assert "pregunta" in vocab
+    assert any(
+        "lista blanca" in record.message.lower()
+        or "allowlist" in record.message.lower()
+        for record in caplog.records
+    )
+
+
+def test_same_projection_clusters_do_not_collide(tmp_path: Path):
+    rows = [
+        _line("SYNTHETIC: precio qzxalpha qzxbeta qzxgamma"),
+        _line("SYNTHETIC: precio qzxdelta qzxepsilon qxzzeta"),
+    ]
+    records = [clg.parse_record(row) for row in rows]
+    records = [row for row in records if row is not None]
+    assert [row.displayed for row in records] == [
+        "synthetic precio",
+        "synthetic precio",
+    ]
+    clusters = clg.cluster_unmatched(records)
+    assert len(clusters) == 2
+    ids = [cluster.cluster_id for cluster in clusters]
+    assert len(ids) == len(set(ids))
+    out = tmp_path / "out"
+    written = clg.write_outputs(clusters, out, write_drafts=True)
+    drafts = list(out.glob("borrador_guia_*.md"))
+    assert len(drafts) == 2
+    csv_text = written["csv"].read_text(encoding="utf-8-sig")
+    reader = list(csv.DictReader(io.StringIO(csv_text)))
+    assert {row["cluster_id"] for row in reader} == set(ids)

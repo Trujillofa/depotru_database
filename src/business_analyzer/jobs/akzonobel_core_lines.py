@@ -19,6 +19,7 @@ import json
 import sys
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from decimal import Decimal
 from html import escape
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
@@ -218,7 +219,13 @@ def load_core_lines_config(path: Path | str) -> CoreLinesConfig:
             "PyYAML es necesario para leer el YAML de líneas núcleo. "
             "Pase un .json o .csv, o instale las dependencias del proyecto."
         ) from exc
-    loaded = yaml.safe_load(text) or {}
+    try:
+        loaded = yaml.safe_load(text) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(
+            "El archivo YAML de líneas núcleo no es válido. "
+            "Revise la sintaxis (indentación, comillas y listas)."
+        ) from exc
     if not isinstance(loaded, Mapping):
         raise ValueError("El archivo de configuración debe ser un mapeo YAML/JSON.")
     return _config_from_mapping(loaded)
@@ -428,37 +435,13 @@ def _assert_readonly_sql(sql: str) -> None:
         raise ValueError("La consulta de territorio debe comenzar con SELECT.")
 
 
-def _effective_proveedor_sql(alias: str = "bd") -> str:
-    """Same COALESCE/CASE as ``SalesQueryRunner._effective_proveedor_sql``."""
-    raw = (
-        f"COALESCE({alias}.proveedor COLLATE DATABASE_DEFAULT, "
-        f"pa.proveedor_descripcion COLLATE DATABASE_DEFAULT, '')"
-    )
-    return f"""
-        CASE
-          WHEN UPPER(LTRIM(RTRIM({raw}))) IN (
-              '', 'S/I', 'S.I', 'SIN PROVEEDOR', 'N/A', '.', 'SIN IVA', 'NA'
-          ) OR LEN(LTRIM(RTRIM({raw}))) <= 2
-          THEN NULL
-          ELSE LTRIM(RTRIM(COALESCE(
-              NULLIF(LTRIM(RTRIM({alias}.proveedor COLLATE DATABASE_DEFAULT)), ''),
-              NULLIF(
-                  LTRIM(RTRIM(pa.proveedor_descripcion COLLATE DATABASE_DEFAULT)),
-                  ''
-              )
-          )))
-        END
-        """
-
-
 def build_territory_sku_sql(
     mapping: TerritoryMapping,
     start_date: str,
     end_date: str,
 ) -> tuple[str, tuple[Any, ...]]:
-    """Read-only sales-by-territory/SKU query. Reuses kernel + product_attrs."""
+    """Read-only sales-by-territory/SKU query on ``banco_datos`` only."""
     from business_analyzer.core.database import Database
-    from business_analyzer.core.product_attrs import effective_marca_sql
 
     db_name = Database.validate_sql_identifier(Config.DB_NAME, "database")
     table_name = Database.validate_sql_identifier(Config.DB_TABLE, "table")
@@ -474,8 +457,6 @@ def build_territory_sku_sql(
     product_clauses = " ".join(
         "AND UPPER(LTRIM(RTRIM(bd.ArticulosNombre))) <> %s" for _ in product_names
     )
-    prov_expr = _effective_proveedor_sql()
-    marca_expr = effective_marca_sql(alias="bd", pa_alias="pa")
     sql = f"""
         SELECT
             LTRIM(RTRIM(bd.{key_field})) AS territory_key,
@@ -483,12 +464,8 @@ def build_territory_sku_sql(
             LTRIM(RTRIM(bd.ArticulosCodigo)) AS sku,
             MAX(bd.ArticulosNombre) AS product_name,
             SUM(bd.TotalSinIva) AS revenue,
-            SUM(bd.Cantidad) AS quantity,
-            MAX({prov_expr}) AS proveedor,
-            MAX({marca_expr}) AS marca
+            SUM(bd.Cantidad) AS quantity
         FROM [{db_name}].[dbo].[{table_name}] bd
-        LEFT JOIN [{db_name}].[dbo].[productos_adicional] pa
-          ON bd.ArticulosCodigo = pa.producto_codigo
         WHERE bd.Fecha BETWEEN %s AND %s
           AND bd.DocumentosCodigo NOT IN ({placeholders})
           AND bd.Cantidad > 0
@@ -523,8 +500,7 @@ def fetch_territory_sku_sales(
             rows = db.execute_query(sql, params)
     except Exception as exc:
         raise RuntimeError(
-            "No se pudo leer la base de datos (consulta de solo lectura). "
-            f"Detalle: {exc}"
+            "No se pudo leer la base de datos (consulta de solo lectura)."
         ) from exc
     return list(rows or [])
 
@@ -595,7 +571,9 @@ def render_html(report: CoreLinesReport) -> str:
   <p>
     Un territorio entra al ranking si vendió <em>otros</em> productos en el
     periodo y no vendió el SKU de líneas núcleo. El potencial es la
-    facturación neta del territorio (<code>TotalSinIva</code>).
+    suma de las líneas positivas del territorio
+    (<code>TotalSinIva &gt; 0</code> y <code>Cantidad &gt; 0</code>);
+    las devoluciones no se netean.
   </p>
   <table>
     <thead>
@@ -624,8 +602,19 @@ def render_html(report: CoreLinesReport) -> str:
 
 
 def csv_guard_cell(value: Any) -> str:
-    """Prefix spreadsheet-formula cells so Excel/LibreOffice will not execute them."""
-    text = "" if value is None else str(value)
+    """Prefix formula-like *strings* so Excel/LibreOffice will not execute them.
+
+    Numbers (including negatives) are written as-is. Only text cells that
+    start with ``= + - @`` / tab / CR get a leading quote.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        text = str(value)
+    elif isinstance(value, (int, float, Decimal)):
+        return str(value)
+    else:
+        text = str(value)
     if text[:1] in CSV_FORMULA_PREFIXES:
         return "'" + text
     return text
@@ -669,7 +658,7 @@ def write_report(report: CoreLinesReport, output_dir: Path) -> WriteResult:
     html_path = output_dir / f"{stem}.html"
     csv_path = output_dir / f"{stem}.csv"
     html_path.write_text(render_html(report), encoding="utf-8")
-    csv_path.write_text(render_csv(report), encoding="utf-8")
+    csv_path.write_text(render_csv(report), encoding="utf-8-sig")
     return WriteResult(html_path=html_path, csv_path=csv_path)
 
 
@@ -766,12 +755,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"❌ {exc}", file=sys.stderr)
         return 1
 
-    if args.output_dir:
-        output_dir = Path(args.output_dir).expanduser()
-    else:
-        output_dir = Config.ensure_output_dir() / "akzonobel_core_lines"
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     try:
         config = load_core_lines_config(resolve_config_path(args.config or None))
         config = apply_dimension(config, args.dimension)
@@ -799,6 +782,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         except RuntimeError as exc:
             print(f"❌ {exc}", file=sys.stderr)
             return 1
+
+    if args.output_dir:
+        output_dir = Path(args.output_dir).expanduser()
+    else:
+        output_dir = Config.ensure_output_dir() / "akzonobel_core_lines"
 
     result = write_report(report, output_dir)
     print(f"Informe HTML: {result.html_path}")

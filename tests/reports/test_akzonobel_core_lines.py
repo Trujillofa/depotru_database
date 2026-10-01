@@ -6,6 +6,7 @@ import csv
 import re
 import sqlite3
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -460,7 +461,7 @@ def test_sql_is_readonly_and_excludes_test_docs():
         assert code in params
     assert "vendedor_codigo" in sql
     assert "VendedorFactura" in sql
-    assert "productos_adicional" in lowered
+    assert "productos_adicional" not in lowered
     assert "totalsiniva" in lowered
     assert "between %s and %s" in lowered
     assert "cantidad > 0" in lowered
@@ -1232,3 +1233,138 @@ def test_main_live_database_error_is_spanish(tmp_path: Path, capsys):
     assert code == 1
     err = capsys.readouterr().err
     assert "No se pudo leer la base de datos" in err
+
+
+@pytest.mark.unit
+def test_live_sql_has_no_unused_vendor_join():
+    mapping = acl.TerritoryMapping(
+        key_field="vendedor_codigo",
+        label_field="VendedorFactura",
+    )
+    sql, _params = acl.build_territory_sku_sql(
+        mapping,
+        start_date="2026-08-01",
+        end_date="2026-08-31",
+    )
+    lowered = sql.lower()
+    assert "productos_adicional" not in lowered
+    assert "proveedor" not in lowered
+    assert "marca" not in lowered
+    assert "left join" not in lowered
+    assert "articuloscodigo" in lowered.replace(" ", "")
+
+
+@pytest.mark.unit
+def test_fetch_database_error_hides_driver_text(monkeypatch):
+    class _Boom:
+        def __enter__(self):
+            raise ConnectionError("Login failed for user sa on host prod-db.internal")
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(acl, "_open_database", lambda: _Boom())
+    mapping = acl.TerritoryMapping(
+        key_field="vendedor_codigo",
+        label_field="VendedorFactura",
+    )
+    with pytest.raises(RuntimeError, match="base de datos") as caught:
+        acl.fetch_territory_sku_sales("2026-08-01", "2026-08-31", mapping)
+    message = str(caught.value)
+    assert "prod-db" not in message
+    assert "Login failed" not in message
+    assert " sa " not in f" {message} "
+    assert "Detalle:" not in message
+
+
+@pytest.mark.unit
+def test_invalid_yaml_raises_clear_value_error(tmp_path: Path):
+    path = tmp_path / "broken.yaml"
+    path.write_text("placeholder: [unterminated\n  skus:\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="YAML") as caught:
+        acl.load_core_lines_config(path)
+    assert "traceback" not in str(caught.value).lower()
+
+
+@pytest.mark.unit
+def test_main_invalid_yaml_is_spanish(tmp_path: Path, capsys):
+    path = tmp_path / "broken.yaml"
+    path.write_text("placeholder: [unterminated\n", encoding="utf-8")
+    code = acl.main(
+        [
+            "--synthetic",
+            "--config",
+            str(path),
+            "--output-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "YAML" in err or "yaml" in err.lower()
+    assert (
+        "líneas núcleo" in err.lower()
+        or "lineas nucleo" in err.lower()
+        or "config" in err.lower()
+    )
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.unit
+def test_html_does_not_call_positive_sum_net_billing():
+    report = acl.build_report(
+        sales_rows=_sales_rows(),
+        config=_config(),
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 31),
+    )
+    html = acl.render_html(report)
+    assert "facturación neta" not in html.lower()
+    assert "facturacion neta" not in html.lower()
+    assert "líneas positivas" in html.lower() or "lineas positivas" in html.lower()
+    assert "no se netean" in html.lower() or "no se netea" in html.lower()
+
+
+@pytest.mark.unit
+def test_csv_guard_cell_skips_numeric_values():
+    assert acl.csv_guard_cell(-400_000) == "-400000"
+    assert acl.csv_guard_cell(-12.5) == "-12.5"
+    assert acl.csv_guard_cell(5_000_000) == "5000000"
+    assert acl.csv_guard_cell("-400000") == "'-400000"
+    assert acl.csv_guard_cell("+12") == "'+12"
+    assert acl.csv_guard_cell(Decimal("-12.50")) == "-12.50"
+    assert acl.csv_guard_cell(Decimal("12.50")) == "12.50"
+
+
+@pytest.mark.unit
+def test_write_report_csv_has_utf8_bom(tmp_path: Path):
+    report = acl.build_synthetic_report(
+        run_date=date(2026, 9, 30),
+        config=_config(),
+    )
+    result = acl.write_report(report, tmp_path)
+    raw = result.csv_path.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")
+    text = result.csv_path.read_text(encoding="utf-8-sig")
+    assert "Territorio" in text
+    assert "Ana Demo" in text
+
+
+@pytest.mark.unit
+def test_main_placeholder_does_not_create_output_dir(tmp_path: Path, capsys):
+    cfg = _live_yaml(tmp_path / "placeholder.yaml", placeholder=True)
+    output = tmp_path / "fresh_out"
+    code = acl.main(
+        [
+            "--config",
+            str(cfg),
+            "--output-dir",
+            str(output),
+            "--run-date",
+            "2026-09-30",
+        ]
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "marcador sintético" in err.lower()
+    assert not output.exists()

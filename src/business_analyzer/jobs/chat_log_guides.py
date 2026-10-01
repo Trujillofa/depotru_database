@@ -13,6 +13,7 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import re
 import sys
 import unicodedata
@@ -63,6 +64,12 @@ MSG_BEST_EFFORT = (
     "Redacción de mejor esfuerzo (lista blanca + regex). Un humano debe "
     "revisar la salida antes de compartirla o abrir un issue."
 )
+MSG_ALLOWLIST_MISSING = (
+    "No se encontró el archivo de lista blanca (%s). "
+    "Se usa solo el vocabulario mínimo."
+)
+
+logger = logging.getLogger(__name__)
 
 STOPWORDS = frozenset(
     {
@@ -173,6 +180,20 @@ _PASSWORD_RE = re.compile(
     re.I,
 )
 _PIN_OTP_RE = re.compile(r"\b(?:pin|otp|cvv|cvc)\b\s*[:=]?\s*\S{2,16}", re.I)
+_PASSPHRASE_LABEL_RE = re.compile(
+    r"\b(?:"
+    r"clave|contrase[nñ]a|password|passwd|pwd|psw|passphrase|"
+    r"pin|otp|pass|c[oó]digo\s+secreto|token\s+secreto"
+    r")\b",
+    re.I,
+)
+_PASSPHRASE_SEP = frozenset(" \t,.:-=…")
+_SENTENCE_END = frozenset(".!?\n")
+_DIGIT_WORD = r"(?:cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)"
+_DIGIT_WORD_RUN_RE = re.compile(
+    rf"\b{_DIGIT_WORD}(?:\s+{_DIGIT_WORD}){{2,}}\b",
+    re.I,
+)
 _KV_SECRET_RE = re.compile(
     r"\b(?:password|pwd|psw|api[_-]?key|apikey|token|secret|access[_-]?token)"
     r"\s*[:=]\s*\S{1,512}",
@@ -414,6 +435,7 @@ def load_allowlist(path: Optional[Path] = None) -> frozenset[str]:
     try:
         text = target.read_text(encoding="utf-8")
     except OSError:
+        logger.warning(MSG_ALLOWLIST_MISSING, target)
         return frozenset(words)
     for line in text.splitlines():
         raw = line.split("#", 1)[0].strip().lower()
@@ -436,7 +458,7 @@ def project_for_display(
     vocab = ALLOWLIST if allowlist is None else allowlist
     folded = fold_letters(text)
     kept = [token for token in _LETTER_TOKEN_RE.findall(folded) if token in vocab]
-    displayed = " ".join(kept)
+    displayed = collapse_digit_word_runs(" ".join(kept))
     if len(displayed) > MAX_MSG_CHARS:
         displayed = displayed[:MAX_MSG_CHARS]
         if " " in displayed:
@@ -444,11 +466,16 @@ def project_for_display(
     return displayed.strip()
 
 
-def prepare_for_redaction(text: str) -> str:
+def prepare_for_redaction(text: str, *, keep_newlines: bool = False) -> str:
     """Collapse whitespace first, then NFKC, strip format marks, deobfuscate."""
     if not text:
         return ""
-    value = re.sub(r"\s+", " ", text).strip()
+    if keep_newlines:
+        value = text.replace("\r\n", "\n").replace("\r", "\n")
+        value = re.sub(r"[^\S\n]+", " ", value)
+        value = re.sub(r"\n+", "\n", value).strip()
+    else:
+        value = re.sub(r"\s+", " ", text).strip()
     if len(value) > MAX_REDACT_CHARS:
         value = value[:MAX_REDACT_CHARS]
     value = unicodedata.normalize("NFKC", value)
@@ -460,8 +487,42 @@ def prepare_for_redaction(text: str) -> str:
     value = _OBFUSCATED_DOT_RE.sub(".", value)
     value = _WORD_DOT_RE.sub(".", value)
     value = re.sub(r"\s*@\s*", "@", value)
-    value = re.sub(r"(?<=[a-záéíóúñ])\s*\.\s*(?=[a-záéíóúñ])", ".", value)
+    value = re.sub(r"(?<=[a-záéíóúñ])[^\S\n]*\.[^\S\n]*(?=[a-záéíóúñ])", ".", value)
+    if keep_newlines:
+        return re.sub(r"[^\S\n]+", " ", value).strip()
     return re.sub(r"\s+", " ", value).strip()
+
+
+def collapse_digit_word_runs(text: str) -> str:
+    """Replace 3+ consecutive Spanish digit-words with ``numero``."""
+    value = _DIGIT_WORD_RUN_RE.sub(" numero ", text or "")
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _redact_labeled_passphrases(text: str) -> str:
+    """Redact from a secret label through the end of the sentence."""
+    if not text:
+        return ""
+    pieces: list[str] = []
+    pos = 0
+    for match in _PASSPHRASE_LABEL_RE.finditer(text):
+        if match.start() < pos:
+            continue
+        cursor = match.end()
+        while cursor < len(text) and text[cursor] in _PASSPHRASE_SEP:
+            cursor += 1
+        if cursor >= len(text) or text[cursor] in _SENTENCE_END:
+            continue
+        stop = len(text)
+        for index in range(cursor, len(text)):
+            if text[index] in _SENTENCE_END:
+                stop = index
+                break
+        pieces.append(text[pos : match.start()])
+        pieces.append(" secreto ")
+        pos = stop
+    pieces.append(text[pos:])
+    return "".join(pieces)
 
 
 def _redact_digit_run(match: re.Match[str]) -> str:
@@ -501,13 +562,14 @@ def _redact_phone_like(text: str) -> str:
 
 def redact_pii(text: str) -> str:
     """Best-effort PII/secret redaction. A human must still review output."""
-    value = prepare_for_redaction(text)
+    value = prepare_for_redaction(text, keep_newlines=True)
     value = re.sub(r"\((\d+)\)", r"\1", value)
     value = _URL_RE.sub(" url ", value)
     value = _QUERY_SECRET_RE.sub(" url ", value)
     value = _BEARER_RE.sub(" secreto ", value)
     value = _BASIC_RE.sub(" secreto ", value)
     value = _JWT_RE.sub(" secreto ", value)
+    value = _redact_labeled_passphrases(value)
     value = _PASSWORD_RE.sub(" secreto ", value)
     value = _PIN_OTP_RE.sub(" secreto ", value)
     value = _KV_SECRET_RE.sub(" secreto ", value)
@@ -532,6 +594,7 @@ def redact_pii(text: str) -> str:
     value = _HEX_RE.sub(" secreto ", value)
     value = _B64_RE.sub(" secreto ", value)
     value = _redact_phone_like(value)
+    value = collapse_digit_word_runs(value)
     value = re.sub(r"\s+", " ", value).strip()
     return _PLACEHOLDER_DUP_RE.sub(r"\1", value)
 
@@ -790,7 +853,42 @@ def cluster_unmatched(
 
     built = [_build_cluster(members) for members in merged]
     built.extend(_build_cluster(members) for _key, members in overflow)
-    return built
+    return _unique_cluster_ids(built)
+
+
+def _unique_cluster_ids(
+    clusters: Sequence[QuestionCluster],
+) -> list[QuestionCluster]:
+    """Keep ``cluster_id`` unique when two groups project to the same text."""
+    used: set[str] = set()
+    next_nonce: dict[tuple[str, str], int] = {}
+    unique: list[QuestionCluster] = []
+    for cluster in clusters:
+        cid = cluster.cluster_id
+        if cid not in used:
+            used.add(cid)
+            unique.append(cluster)
+            continue
+        key = (cluster.representative, cluster.normalized)
+        nonce = next_nonce.get(key, 0) + 1
+        cid = cluster_id_for(f"{cluster.representative}\n{cluster.normalized}\n{nonce}")
+        while cid in used:
+            nonce += 1
+            cid = cluster_id_for(
+                f"{cluster.representative}\n{cluster.normalized}\n{nonce}"
+            )
+        next_nonce[key] = nonce
+        used.add(cid)
+        unique.append(
+            QuestionCluster(
+                cluster_id=cid,
+                count=cluster.count,
+                representative=cluster.representative,
+                examples=cluster.examples,
+                normalized=cluster.normalized,
+            )
+        )
+    return unique
 
 
 def _build_cluster(members: Sequence[QuestionRecord]) -> QuestionCluster:

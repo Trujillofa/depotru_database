@@ -53,12 +53,29 @@ La lista blanca evita que un token desconocido o un dígito salga a un
 archivo, pero **no es una garantía de privacidad**. Un humano debe mirar
 estos casos (y cualquier otro) antes de compartir:
 
-- Palabras de la lista blanca que forman parte de un secreto mal etiquetado
-  (`clave` sola, sin valor) siguen visibles; el valor se intenta redactar
-  con regex y, si falla, se descarta por no estar en la lista.
-- Números en palabras (`once`, `veinte`, `trescientos`) no son dígitos; si
-  están en la lista (`uno`…`nueve`) se muestran como palabras. Eso es
-  intencional: no se convierten a `1`/`2`/`3`.
+- Tras `clave`, `pin`, `password`, `passphrase`, `contraseña`,
+  `codigo secreto` o `token secreto`, se redacta el resto de la oración
+  (hasta `.` `!` `?` o un salto de línea), también si hay coma, guion,
+  puntos o `:` (`clave, es X`, `clave - X`). Una etiqueta que cae dentro
+  de un tramo ya redactado no vuelve a abrir el span ni cruza el
+  terminador (`clave grapa pin. precio cemento` deja `precio cemento`).
+  Eso también se come texto inocente (`la clave al vendedor` →
+  `la secreto`). `clave` sola, sin valor, sigue visible. Una frase de
+  contraseña **sin** etiqueta puede dejar palabras de la lista.
+- Casos que **no** se redactan hoy: `clave_X` (el `_` une el token y
+  evita `\b`), `clave! X` (`!` cierra la oración antes del valor),
+  `clave es X.Y` (el primer `.` corta y deja `Y`) y `clave es Dr. X Y`
+  (el punto de `Dr.` corta igual).
+- Nombres: se quitaron de la lista blanca entradas tipo nombre propio
+  (`ada`, `marco`, `mina`, `cielo`, `blanca`, `estrella`, `diamante`,
+  `cortes`, `luz`, `neiva`, `huila`, `mica`). Un nombre que coincida con
+  otra palabra de ferretería o de función que siga en el `.txt` puede
+  mostrarse.
+- Números deletreados: tres o más palabras-dígito seguidas (`cero`…`nueve`,
+  p. ej. `cinco tres dos` o `tres uno uno dos dos dos`) se colapsan a
+  `numero`. Una o dos (`uno dos`) se muestran como palabras; no se
+  convierten a `1`/`2`/`3`. Compuestos (`once`, `veinte`, `trescientos`)
+  no son dígitos-palabra y, si están en la lista, se muestran.
 - Un término nuevo de ferretería que no esté en el `.txt` desaparece de la
   salida (falso negativo de vocabulario). Agréguelo a la lista a mano.
 - La capa regex aún puede etiquetar de más: un NIT de 9 dígitos o un
@@ -66,9 +83,9 @@ estos casos (y cualquier otro) antes de compartir:
   `SKU-123456` **no** se marca como documento (el `123456` no se muestra).
 - Ofuscaciones nuevas o dominios partidos de forma rara pueden no
   coincidir con el regex; la lista blanca igual impide que salgan.
-- Contraseñas en texto libre **sin** etiqueta (`contraseña`, `clave:`,
-  `psw`, `pwd`, `apikey`, `token de acceso`, `PIN`, `OTP`, `cvv`) pueden
-  no entrar al regex; si el valor no está en la lista, no se muestra.
+- Contraseñas en texto libre **sin** etiqueta (`apikey` suelta, token
+  sin `clave`/`pin`/`password`) pueden no entrar al regex; si el valor
+  no está en la lista, no se muestra.
 - Tratamientos (`Sr.`, `Dr.`, `Ing.`, `cliente:`, `atendido por`, …) son
   heurísticos. `soy constructor` / `soy nuevo` / `cliente frecuente` no
   se tratan como nombre.
