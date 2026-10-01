@@ -48,18 +48,29 @@ is Phase 4+ and is out of scope here.
 catalog (extracted 2026-10-01, read-only `SELECT` on `banco_datos`, excluding
 `XY` / `AS` / `TS` / `YX` / `ISC`):
 
-- Vinílico (ERP `Vinilico` / `VINILICO`)
+`marca` values match the ERP / packaged YAML tokens (no accent):
+
+- Vinilico (comercialmente Vinílico; ERP `VINILICO`)
 - Viniltex
 - Koraza
-- Pintulux 3en1 (ERP `Pintulux`)
+- Pintulux (comercialmente Pintulux 3en1)
 - Estucomastic
 - Experto Pro (ERP names `VINILO EXPERTO PRO …`)
 
 The list includes bases, special-price, promotion, and S/I versions. Matching
 is by `ArticulosCodigo` only. The live query reads `banco_datos` only; it does
-not join `productos_adicional` or select `proveedor` / `marca`. SKUs are
-quoted 10-digit strings so YAML cannot drop leading zeros. Each row may carry
-an optional `marca` field (ignored by JSON/CSV files that omit it).
+not join `productos_adicional` or select `proveedor` / `marca`.
+`ArticulosCodigo` is text (`nvarchar(20)`). SKUs must be quoted 10-digit
+ASCII strings (`[0-9]{10}` via `re.fullmatch`); the loader rejects ints,
+bools, floats, Unicode digits, mixed letters/hyphens, shorter codes, and
+trailing newlines, and it does not pad zeros. The only non-numeric exception
+is the synthetic fixture `AKZO-DEMO-N`. Duplicate SKUs fail the load. Each
+row may carry an optional `marca` field (ignored by JSON/CSV files that omit
+it).
+
+Matching is in Python after the read-only `SELECT` (there is no SQL `IN`
+list). An ERP `ArticulosCodigo` that is not exactly 10 ASCII digits simply
+does not match the Core Lines list.
 
 Akzo line names that do not appear verbatim in the ERP were covered by **brand
 family**, not by inventing codes:
@@ -73,8 +84,10 @@ single Core Line): `0030070245`, `0030070414`, `0090060157`, `0090060205`,
 `0090060211`, `0090060212`.
 
 The shipped file is labelled `placeholder: false` (249 unique SKUs). Live mode
-will query the database. `--synthetic` and unit tests use built-in
-`AKZO-DEMO-*` fixtures and **do not** read this YAML.
+will query the database. `--synthetic` and most unit tests use built-in
+`AKZO-DEMO-*` fixtures and **do not** read this YAML. One catalog test
+(`test_shipped_yaml_is_real_erp_core_lines_catalog`) reads the packaged YAML
+to lock those 249 unique 10-digit SKUs.
 
 These are our own product codes, **not** customer data. Do not add customer
 names, NIT, or vendor workbook dumps to git.

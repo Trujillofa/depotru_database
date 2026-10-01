@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import random
+import re
+import sqlite3
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -219,6 +222,120 @@ def test_product_margins_sql_picks_highest_value_vendor_not_alpha_max(
     upper = margin_sql.upper()
     for verb in ("INSERT ", "UPDATE ", "DELETE ", "MERGE ", "DROP ", "ALTER "):
         assert verb not in upper
+
+
+def _mssql_to_sqlite(sql: str) -> str:
+    sql = re.sub(r"\[([^\]]+)\]\.\[dbo\]\.\[([^\]]+)\]", r"\2", sql)
+    sql = sql.replace(" COLLATE DATABASE_DEFAULT", "")
+    sql = re.sub(r"\bLEN\(", "LENGTH(", sql)
+    return sql.replace("%s", "?")
+
+
+@pytest.mark.unit
+def test_product_margins_sql_tie_break_uses_later_fecha_not_alpha_max():
+    """Tied value/qty/name, NULL vendor, returns, shuffled rows.
+
+    Uses sqlite plus the production ranking CTEs. The live FROM clause is
+    replaced by a sqlite snippet so this does not change production SQL.
+    Demo product/vendor names only — no customer data.
+
+    Counterfactual mutations of the rendered SQL must change winners:
+    name DESC, dropping quantity, or dropping ``WHERE proveedor IS NOT NULL``.
+    """
+    runner = _runner()
+    enriched_from = """
+        FROM banco_datos bd
+        LEFT JOIN productos_adicional pa
+          ON bd.ArticulosCodigo = pa.producto_codigo
+        WHERE bd.Fecha BETWEEN %s AND %s
+          AND bd.DocumentosCodigo NOT IN (%s, %s, %s, %s, %s)
+    """
+    sql = _mssql_to_sqlite(
+        runner._product_margins_sql(
+            enriched_from, SalesQueryRunner._effective_proveedor_sql()
+        )
+    )
+    params = (
+        "2024-05-01",
+        "2024-05-31",
+        "XY",
+        "AS",
+        "TS",
+        "YX",
+        "ISC",
+    )
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE banco_datos (
+            Fecha TEXT,
+            TotalSinIva REAL,
+            ValorCosto REAL,
+            Cantidad REAL,
+            ArticulosCodigo TEXT,
+            ArticulosNombre TEXT,
+            DocumentosCodigo TEXT,
+            proveedor TEXT
+        );
+        CREATE TABLE productos_adicional (
+            producto_codigo TEXT,
+            proveedor_descripcion TEXT
+        );
+        """
+    )
+    rows = [
+        ("2024-05-20", 1000, 800, 5, "SKU-QTY-B", "Estuco demo", "FED", "SIKA-QTY"),
+        ("2024-05-12", 800, 400, 5, "SKU-NAME-Z", "Vinilo demo", "FED", "ZETA-NAME"),
+        ("2024-05-18", 9000, 100, 9, "SKU-NULL-1", "Koraza demo", "FED", None),
+        ("2024-05-10", 1000, 800, 8, "SKU-QTY-A", "Estuco demo", "FED", "ZETA-QTY"),
+        ("2024-05-17", 8000, 100, 8, "SKU-NULL-2", "Koraza demo", "FED", ""),
+        ("2024-05-12", 800, 400, 5, "SKU-NAME-S", "Vinilo demo", "FED", "SIKA-NAME"),
+        ("2024-05-19", -100, 50, -1, "SKU-NEG", "Koraza demo", "FED", "GHOST-DEMO"),
+        ("2024-05-01", 500, 200, 5, "SKU-REAL", "Koraza demo", "FED", "BETA-REAL"),
+        ("2024-05-21", 50000, 1, 50, "SKU-XY", "Estuco demo", "XY", "OMIT-DEMO"),
+        ("2024-05-10", 600, 300, 5, "SKU-DATE-S", "Pintura demo", "FED", "SIKA-DATE"),
+        ("2024-05-20", 600, 300, 5, "SKU-DATE-Z", "Pintura demo", "FED", "ZETA-DATE"),
+    ]
+    random.Random(65).shuffle(rows)
+    conn.executemany(
+        """
+        INSERT INTO banco_datos (
+            Fecha, TotalSinIva, ValorCosto, Cantidad, ArticulosCodigo,
+            ArticulosNombre, DocumentosCodigo, proveedor
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+
+    def _by_product(query: str) -> dict[str, dict]:
+        fetched = [dict(row) for row in conn.execute(query, params).fetchall()]
+        return {str(row["product_name"]): row for row in fetched}
+
+    result = _by_product(sql)
+    assert set(result) == {
+        "Koraza demo",
+        "Estuco demo",
+        "Vinilo demo",
+        "Pintura demo",
+    }
+    assert result["Estuco demo"]["proveedor"] == "ZETA-QTY"
+    assert result["Estuco demo"]["revenue"] == 2000
+    assert result["Estuco demo"]["quantity"] == 13
+    assert result["Vinilo demo"]["proveedor"] == "SIKA-NAME"
+    assert result["Pintura demo"]["proveedor"] == "ZETA-DATE"
+    assert result["Koraza demo"]["proveedor"] == "BETA-REAL"
+    assert result["Koraza demo"]["revenue"] == 17400
+    assert result["Koraza demo"]["quantity"] == 21
+
+    name_desc = sql.replace("proveedor ASC", "proveedor DESC")
+    assert _by_product(name_desc)["Vinilo demo"]["proveedor"] == "ZETA-NAME"
+
+    no_qty = sql.replace("vendor_quantity DESC,\n", "")
+    assert _by_product(no_qty)["Estuco demo"]["proveedor"] == "SIKA-QTY"
+
+    no_null_filter = sql.replace("WHERE proveedor IS NOT NULL", "WHERE 1=1")
+    assert _by_product(no_null_filter)["Koraza demo"]["proveedor"] is None
 
 
 @pytest.mark.unit
