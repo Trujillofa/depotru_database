@@ -281,8 +281,8 @@ def test_product_margins_sql_tie_break_uses_later_fecha_not_alpha_max():
         """
     )
     rows = (
-        ("2024-05-10", 1000, 800, 5, "SKU-DEMO-001", "Estuco demo", "FED", "ZETA-DEMO"),
-        ("2024-05-20", 1000, 800, 5, "SKU-DEMO-001", "Estuco demo", "FED", "SIKA-DEMO"),
+        ("2024-05-10", 1000, 800, 5, "SKU-DEMO-001", "Estuco demo", "FED", "SIKA-DEMO"),
+        ("2024-05-20", 1000, 800, 5, "SKU-DEMO-001", "Estuco demo", "FED", "ZETA-DEMO"),
         ("2024-04-01", 9000, 100, 9, "SKU-DEMO-001", "Estuco demo", "XY", "OMIT-DEMO"),
     )
     conn.executemany(
@@ -297,7 +297,8 @@ def test_product_margins_sql_tie_break_uses_later_fecha_not_alpha_max():
     result = [dict(row) for row in conn.execute(sql, params).fetchall()]
     assert len(result) == 1
     assert result[0]["product_name"] == "Estuco demo"
-    assert result[0]["proveedor"] == "SIKA-DEMO"
+    # Later Fecha wins. Name ASC / MIN(proveedor) would pick SIKA-DEMO.
+    assert result[0]["proveedor"] == "ZETA-DEMO"
     assert result[0]["revenue"] == 2000
     assert result[0]["cost"] == 1600
     assert result[0]["quantity"] == 10
