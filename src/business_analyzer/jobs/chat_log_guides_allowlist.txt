@@ -180,6 +180,7 @@ cadenas
 caida
 caja
 cajas
+cal
 calcula
 calentador
 calibre
@@ -1149,7 +1150,6 @@ vivo
 vocabulario
 volumen
 vuelve
-xico
 y
 ya
 yeso

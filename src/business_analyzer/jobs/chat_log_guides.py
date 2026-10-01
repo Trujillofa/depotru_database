@@ -153,6 +153,17 @@ _EMAIL_RE = re.compile(
     r"(?<![\w.%+-])[\w.%+-]{1,64}@[\w.-]{1,253}[.,][\w]{2,24}",
     re.I,
 )
+# Join only a TLD split by a newline ("user@host.\ncom"). Do not treat the
+# next prose word after ", " / "." as a TLD ("gmail.com, soy" stays intact).
+_EMAIL_TLD_ALT = (
+    "com|net|org|edu|gov|info|io|co|us|uk|es|ar|mx|pe|cl|br|"
+    "test|demo|local|invalid|example"
+)
+_EMAIL_SPLIT_DOT_RE = re.compile(
+    r"((?<![\w.%+-])[\w.%+-]{1,64}@(?:[a-z0-9-]+\.)*[a-z0-9-]{1,63})"
+    rf"[^\S\n]*[.,][^\S\n]*\n[^\S\n]*({_EMAIL_TLD_ALT})\b",
+    re.I,
+)
 _OBFUSCATED_AT_RE = re.compile(r"\[(?:at|arroba)\]|\((?:at|arroba)\)", re.I)
 _ARROBA_RE = re.compile(r"\s+(?:arroba|at)\s+", re.I)
 _UNDERSCORE_ARROBA_RE = re.compile(r"_arroba_", re.I)
@@ -243,7 +254,8 @@ _LABEL_ID_RE = re.compile(
 _DOC_CODE_RE = re.compile(r"\b(?:FV|FE|FED|OC|CC|CE|TI|NIT)-\d{1,12}\b", re.I)
 _GH_REF_RE = re.compile(r"\bGH-\d{1,8}\b", re.I)
 _NAME_INTRO_RE = re.compile(
-    r"\b(?:me\s+llamo|mi\s+nombre\s+es|a\s+nombre\s+de)\s+" r"(?:\S+\s+){0,3}\S+",
+    r"\b(?:me\s+llamo|mi\s+nombre\s+es|a\s+nombre\s+de|nombre\s*:)\s+"
+    r"(?:\S+\s+){0,3}\S+",
     re.I,
 )
 _NAME_TITLE_RE = re.compile(
@@ -488,6 +500,7 @@ def prepare_for_redaction(text: str, *, keep_newlines: bool = False) -> str:
     value = _WORD_DOT_RE.sub(".", value)
     value = re.sub(r"\s*@\s*", "@", value)
     value = re.sub(r"(?<=[a-záéíóúñ])[^\S\n]*\.[^\S\n]*(?=[a-záéíóúñ])", ".", value)
+    value = _EMAIL_SPLIT_DOT_RE.sub(r"\1.\2", value)
     if keep_newlines:
         return re.sub(r"[^\S\n]+", " ", value).strip()
     return re.sub(r"\s+", " ", value).strip()
