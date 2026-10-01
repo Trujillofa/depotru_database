@@ -175,8 +175,50 @@ def test_fetch_sql_aggregations_dispatches_all_result_sets():
     assert data["vendor_sales"][0]["vendor_name"] == "SIKA"
     assert data["marca_sales"][0]["marca_name"] == "SIKA"
     assert len(fake.calls) >= 10
-    margin_sql = next(q for q, _ in fake.calls if "HAVING SUM(bd.Cantidad)" in q)
+    margin_sql = next(q for q, _ in fake.calls if "HAVING" in q and "AS revenue" in q)
     assert "AS proveedor" in margin_sql
+
+
+@pytest.mark.unit
+def test_product_margins_sql_picks_highest_value_vendor_not_alpha_max(
+    canonical_codes,
+):
+    """MAX(proveedor) is alphabetical; SIKA must win on value, not name.
+
+    ZETA > SIKA alphabetically. The live SELECT ranks by SUM(TotalSinIva),
+    then SUM(Cantidad), then latest Fecha. Money totals stay period SUMs.
+    """
+    fake = FakeDatabase(execute_side_effect=lambda _q, _p: [])
+    runner = _runner()
+    with patch.object(SalesQueryRunner, "_open_db", return_value=fake):
+        runner.fetch_sql_aggregations()
+
+    margin_sql, params = next(
+        (q, p) for q, p in fake.calls if "HAVING" in q and "AS revenue" in q
+    )
+    compact = "".join(margin_sql.split())
+    assert "ROW_NUMBER()OVER" in compact
+    assert "vendor_revenueDESC" in compact
+    assert "vendor_quantityDESC" in compact
+    assert "last_saleDESC" in compact
+    assert "MAX(CASE" not in compact
+    assert "SUM(TotalSinIva)ASrevenue" in compact
+    assert "SUM(ValorCosto)AScost" in compact
+    assert "HAVINGSUM(Cantidad)>=5" in compact
+    assert "DocumentosCodigoNOTIN" in compact
+    assert "'XY'" not in margin_sql
+    assert "'AS'" not in margin_sql
+    assert "'TS'" not in margin_sql
+    assert "'YX'" not in margin_sql
+    assert "'ISC'" not in margin_sql
+    for code in ("XY", "AS", "TS", "YX", "ISC"):
+        assert code in canonical_codes
+        assert code in params
+    assert params[0] == "2024-05-01"
+    assert params[1] == "2024-05-31"
+    upper = margin_sql.upper()
+    for verb in ("INSERT ", "UPDATE ", "DELETE ", "MERGE ", "DROP ", "ALTER "):
+        assert verb not in upper
 
 
 @pytest.mark.unit

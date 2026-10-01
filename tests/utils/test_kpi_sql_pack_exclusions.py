@@ -16,6 +16,6 @@ def test_kpi_sql_pack_sales_filters_use_five_codes():
     text = SQL_PACK.read_text(encoding="utf-8")
     assert "NOT IN ('XY', 'AS', 'TS')" not in text
     five = "NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC')"
-    assert text.count(five) >= 12
+    assert text.count(five) == 21
     for code in CANONICAL:
         assert f"'{code}'" in text

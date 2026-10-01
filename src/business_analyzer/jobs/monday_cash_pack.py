@@ -60,7 +60,7 @@ def format_number(value: Any, column_name: str = "") -> str:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         _FORMAT_NUMBER = module.format_number
-    text = _FORMAT_NUMBER(value, column_name)
+    text = str(_FORMAT_NUMBER(value, column_name))
     if text.startswith("$-"):
         return "-$" + text[2:]
     return text

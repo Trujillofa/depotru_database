@@ -14,6 +14,9 @@ import pytest
 
 from business_analyzer.core import config as config_mod
 from business_analyzer.core.config import (
+    SMTP_USE_TLS_DEFAULT,
+    SMTP_USE_TLS_FALSE_VALUES,
+    SMTP_USE_TLS_TRUE_VALUES,
     Config,
     CustomerSegmentation,
     InventoryConfig,
@@ -161,6 +164,40 @@ def test_settings_smtp_use_tls_boolean_tokens(isolated_config_env, raw, expected
 def test_settings_smtp_use_tls_defaults_on(isolated_config_env):
     isolated_config_env.delenv("SMTP_USE_TLS", raising=False)
     assert Settings().SMTP_USE_TLS is True
+
+
+def test_smtp_use_tls_valid_values_and_default_are_explicit():
+    assert SMTP_USE_TLS_TRUE_VALUES == frozenset({"true", "1", "yes", "on"})
+    assert SMTP_USE_TLS_FALSE_VALUES == frozenset({"false", "0", "no", "off"})
+    assert SMTP_USE_TLS_DEFAULT is True
+
+
+def test_settings_smtp_use_tls_unrecognized_warns_keeps_default(
+    isolated_config_env, caplog
+):
+    isolated_config_env.setenv("SMTP_USE_TLS", "maybe")
+    with caplog.at_level("WARNING", logger="business_analyzer.core.config"):
+        settings = Settings()
+    assert settings.SMTP_USE_TLS is SMTP_USE_TLS_DEFAULT
+    assert settings.SMTP_USE_TLS is True
+    text = caplog.text
+    assert "SMTP_USE_TLS" in text
+    assert "maybe" in text
+    assert "true" in text.lower()
+    assert "false" in text.lower()
+
+
+def test_settings_smtp_use_tls_known_or_blank_do_not_warn(isolated_config_env, caplog):
+    isolated_config_env.setenv("SMTP_USE_TLS", "false")
+    with caplog.at_level("WARNING", logger="business_analyzer.core.config"):
+        assert Settings().SMTP_USE_TLS is False
+    assert "SMTP_USE_TLS" not in caplog.text
+
+    caplog.clear()
+    isolated_config_env.setenv("SMTP_USE_TLS", "   ")
+    with caplog.at_level("WARNING", logger="business_analyzer.core.config"):
+        assert Settings().SMTP_USE_TLS is True
+    assert "SMTP_USE_TLS" not in caplog.text
 
 
 def test_settings_smtp_optional_overrides(isolated_config_env):

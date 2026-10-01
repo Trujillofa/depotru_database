@@ -7,7 +7,7 @@
 Weekly ops pack for Monday morning. It **reuses existing reports** (no new sales SQL):
 
 1. Overdue receivables ranked by amount and days (`CarteraAgingRunner` / `run_cartera_aging.py`).
-2. Negative-margin SKU alert, with SIKA flagged from manager-report `product_margins` (`SalesQueryRunner.fetch_sql_aggregations`). Optional attachment via the existing `scripts/analysis/generate_sika_report.py` converter (`--sika-json`).
+2. Negative-margin SKU alert, with SIKA flagged from manager-report `product_margins` (`SalesQueryRunner.fetch_sql_aggregations`). `proveedor` is the vendor with the greatest `SUM(TotalSinIva)` for that product name (ties: `SUM(Cantidad)`, then latest `Fecha`) — not `MAX(proveedor)` alphabetical. Optional attachment via the existing `scripts/analysis/generate_sika_report.py` converter (`--sika-json`).
 3. Weekly KPI board (`scripts/utils/generate_kpi_control_board.py` / last completed Mon–Sun week).
 
 Output is a Spanish (Colombian) HTML body plus an `.eml` draft. Existing cartera HTML/PDF and the KPI markdown are attached when the live path generates them.
@@ -16,7 +16,7 @@ Output is a Spanish (Colombian) HTML body plus an `.eml` draft. Existing cartera
 
 The job writes a **draft/preview** only. `--send` is off unless you pass it. The systemd unit and the documented cron line **do not** include `--send`.
 
-Sending uses optional SMTP fields on the existing pydantic `Settings` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `MAIL_FROM`, `MAIL_TO`). `SMTP_USE_TLS` accepts true/1/yes/on (default on). `--send` calls `starttls()` with `ssl.create_default_context()`. There are no new raw `os.getenv` reads. If SMTP is missing, `--send` fails and nothing is mailed.
+Sending uses optional SMTP fields on the existing pydantic `Settings` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `MAIL_FROM`, `MAIL_TO`). `SMTP_USE_TLS` accepts true/1/yes/on and false/0/no/off (case-insensitive); default is true (TLS on). An unrecognized value logs a warning and keeps TLS on. `--send` calls `starttls()` with `ssl.create_default_context()`. There are no new raw `os.getenv` reads. If SMTP is missing, `--send` fails and nothing is mailed.
 
 ## How to run locally (synthetic, no DB)
 
