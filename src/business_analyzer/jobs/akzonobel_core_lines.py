@@ -1,12 +1,13 @@
 """AkzoNobel Core Lines — zero-penetration SKUs by territory (Phase 3 / #65).
 
-Read-only report. Core Lines membership comes from an editable YAML/JSON/CSV
-file (shipped list is a labelled synthetic placeholder). Territory defaults
-to the commercial owner already used by manager reports and presupuesto:
-``vendedor_codigo`` + ``VendedorFactura``. ``ciudad`` / ``departamento`` are
-documented banco_datos alternatives and are configurable.
+Read-only report. Core Lines membership is every ``ArticulosCodigo`` of the
+six brands in the packaged YAML (ERP catalog, not customer data). Territory
+defaults to the commercial owner already used by manager reports and
+presupuesto: ``vendedor_codigo`` + ``VendedorFactura``. ``ciudad`` /
+``departamento`` are documented banco_datos alternatives and are configurable.
 
 Sales SQL is SELECT-only and excludes test documents via the canonical list.
+``--synthetic`` uses built-in demo SKUs and does not read the packaged YAML.
 """
 
 from __future__ import annotations
@@ -84,10 +85,14 @@ class TerritoryMapping:
                 )
 
 
+ERP_SKU_WIDTH = 10
+
+
 @dataclass(frozen=True)
 class CoreSku:
     sku: str
     name: str
+    marca: str = ""
 
 
 @dataclass(frozen=True)
@@ -156,18 +161,48 @@ def resolve_config_path(
     return packaged_config_path()
 
 
+def _normalize_sku(value: Any) -> str:
+    """Keep ERP ArticulosCodigo as a 10-digit string (leading zeros)."""
+    if value is None or isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        return f"{value:0{ERP_SKU_WIDTH}d}"
+    text = str(value).strip()
+    if text.isdigit():
+        return text.zfill(ERP_SKU_WIDTH)
+    return text
+
+
 def _parse_skus(raw: Any) -> tuple[CoreSku, ...]:
     items: list[CoreSku] = []
     for row in raw or []:
         if isinstance(row, str):
-            sku = row.strip()
+            sku = _normalize_sku(row)
             name = sku
+            marca = ""
         else:
-            sku = str(row.get("sku") or "").strip()
+            sku = _normalize_sku(row.get("sku"))
             name = str(row.get("name") or sku).strip()
+            marca = str(row.get("marca") or "").strip()
         if sku:
-            items.append(CoreSku(sku=sku, name=name or sku))
+            items.append(CoreSku(sku=sku, name=name or sku, marca=marca))
     return tuple(items)
+
+
+def synthetic_core_lines_config() -> CoreLinesConfig:
+    """Demo SKUs for ``--synthetic`` and unit tests (not the packaged catalog)."""
+    return CoreLinesConfig(
+        placeholder=True,
+        territory=TerritoryMapping(
+            key_field="vendedor_codigo",
+            label_field="VendedorFactura",
+        ),
+        skus=(
+            CoreSku(sku="AKZO-DEMO-001", name="Pintura demo línea núcleo 1"),
+            CoreSku(sku="AKZO-DEMO-002", name="Pintura demo línea núcleo 2"),
+            CoreSku(sku="AKZO-DEMO-003", name="Pintura demo línea núcleo 3"),
+        ),
+    )
 
 
 def _config_from_mapping(data: Mapping[str, Any]) -> CoreLinesConfig:
@@ -199,7 +234,11 @@ def load_core_lines_config(path: Path | str) -> CoreLinesConfig:
     if suffix == ".csv":
         reader = csv.DictReader(io.StringIO(text))
         rows = [
-            {"sku": row.get("sku") or row.get("SKU"), "name": row.get("name") or ""}
+            {
+                "sku": row.get("sku") or row.get("SKU"),
+                "name": row.get("name") or "",
+                "marca": row.get("marca") or row.get("Marca") or "",
+            }
             for row in reader
         ]
         return _config_from_mapping(
@@ -398,7 +437,7 @@ def build_synthetic_report(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
 ) -> CoreLinesReport:
-    cfg = config or load_core_lines_config(packaged_config_path())
+    cfg = config or synthetic_core_lines_config()
     if start_date is None or end_date is None:
         start_date, end_date = last_complete_month(run_date)
     return build_report(synthetic_sales_rows(cfg), cfg, start_date, end_date)
@@ -694,7 +733,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Informe de líneas núcleo AkzoNobel: SKUs sin penetración por "
-            "territorio. Solo lectura. El YAML enviado es un marcador sintético."
+            "territorio. Solo lectura. El YAML empaquetado es el catálogo ERP."
         )
     )
     parser.add_argument(
@@ -725,7 +764,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--config",
         default="",
-        help="Lista YAML/JSON/CSV de líneas núcleo (por defecto: archivo sintético).",
+        help=(
+            "Lista YAML/JSON/CSV de líneas núcleo "
+            "(por defecto: catálogo empaquetado)."
+        ),
     )
     parser.add_argument(
         "--dimension",
@@ -756,7 +798,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     try:
-        config = load_core_lines_config(resolve_config_path(args.config or None))
+        if args.synthetic and not (args.config or "").strip():
+            config = synthetic_core_lines_config()
+        else:
+            config = load_core_lines_config(resolve_config_path(args.config or None))
         config = apply_dimension(config, args.dimension)
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"❌ No se pudo leer la config de líneas núcleo: {exc}", file=sys.stderr)

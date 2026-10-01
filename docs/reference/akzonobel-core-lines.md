@@ -17,13 +17,18 @@ territory that only bought those items is not active.
 
 ## Territory dimension
 
+AkzoNobel commercial coverage for this house is **regional** (Huila / Caquetá).
+The report does **not** use that regional grain. It uses the salesperson who
+owns the invoice — the only sales-territory grain existing SmartBusiness
+reports treat as “who owns the sale.”
+
 **Default: `vendedor_codigo` (key) + `VendedorFactura` (label).**
 
 That is the commercial owner already used by `manager_report` budget-vs-actual
-(`presupuesto_vendedores`) and the KPI board. It is the only sales-territory
-grain the existing SmartBusiness reports treat as “who owns the sale.”
+(`presupuesto_vendedores`) and the KPI board.
 
-Documented alternatives on `banco_datos` (set in the YAML or `--dimension`):
+Documented alternatives on `banco_datos` (set in the YAML or `--dimension`)
+if you need geography instead of salesperson:
 
 | Value | Fields | When to use |
 |-------|--------|-------------|
@@ -35,25 +40,53 @@ Documented alternatives on `banco_datos` (set in the YAML or `--dimension`):
 sales facts. Branch / sede (`DocumentosCodigo` FED/FEF/FET, Neiva vs Florencia)
 is Phase 4+ and is out of scope here.
 
-## Core Lines SKU list (synthetic placeholder)
-
-The shipped file is **not** a live catalog:
+## Core Lines SKU list (ERP catalog)
 
 `src/business_analyzer/jobs/data/akzonobel_core_lines.yaml`
 
-It is labelled `SYNTHETIC PLACEHOLDER` (`placeholder: true`). SKUs are
-`AKZO-DEMO-001` … `AKZO-DEMO-003`. Matching is by `ArticulosCodigo` only.
-The live query reads `banco_datos` only; it does not join
-`productos_adicional` or select `proveedor` / `marca`. Replace the list and
-set `placeholder: false` before a live run. Live mode **refuses** to query
-the database while `placeholder: true`. `--synthetic` and unit tests still
-work. Do not invent real AkzoNobel / Pintuco codes in git.
+**Core Lines = every reference of these six brands** in the SmartBusiness ERP
+catalog (extracted 2026-10-01, read-only `SELECT` on `banco_datos`, excluding
+`XY` / `AS` / `TS` / `YX` / `ISC`):
+
+- Vinílico (ERP `Vinilico` / `VINILICO`)
+- Viniltex
+- Koraza
+- Pintulux 3en1 (ERP `Pintulux`)
+- Estucomastic
+- Experto Pro (ERP names `VINILO EXPERTO PRO …`)
+
+The list includes bases, special-price, promotion, and S/I versions. Matching
+is by `ArticulosCodigo` only. The live query reads `banco_datos` only; it does
+not join `productos_adicional` or select `proveedor` / `marca`. SKUs are
+quoted 10-digit strings so YAML cannot drop leading zeros. Each row may carry
+an optional `marca` field (ignored by JSON/CSV files that omit it).
+
+Akzo line names that do not appear verbatim in the ERP were covered by **brand
+family**, not by inventing codes:
+
+- “Viniltex Advanced” → all Viniltex references
+- “Koraza Acrílico Mate” → all Koraza references
+- “Experto Pro” → the `VINILO EXPERTO PRO` SKUs
+
+**Intentionally omitted** mixed-brand kits (they mix families and are not a
+single Core Line): `0030070245`, `0030070414`, `0090060157`, `0090060205`,
+`0090060211`, `0090060212`.
+
+The shipped file is labelled `placeholder: false` (249 unique SKUs). Live mode
+will query the database. `--synthetic` and unit tests use built-in
+`AKZO-DEMO-*` fixtures and **do not** read this YAML.
+
+These are our own product codes, **not** customer data. Do not add customer
+names, NIT, or vendor workbook dumps to git.
 
 Override path via `--config` or Settings `AKZONOBEL_CORE_LINES_CONFIG`
-(pydantic-settings). JSON and a `sku,name` CSV are also accepted (CSV loads
-as placeholder).
+(pydantic-settings). JSON and a `sku,name` CSV are also accepted (CSV still
+loads as placeholder; an optional `marca` column is tolerated).
 
 ## How to run locally (synthetic, no DB)
+
+`--synthetic` uses fictional sales and the three `AKZO-DEMO-*` SKUs. It does
+not open the packaged catalog and does not touch the database.
 
 ```bash
 PYTHONPATH=src python scripts/reports/run_akzonobel_core_lines.py \
@@ -72,10 +105,20 @@ PYTHONPATH=src python scripts/reports/run_akzonobel_core_lines.py \
   --synthetic --dimension ciudad --output-dir /tmp/akzonobel_core_lines
 ```
 
+To dry-run the packaged 249-SKU list without a database, pass it explicitly:
+
+```bash
+PYTHONPATH=src python scripts/reports/run_akzonobel_core_lines.py \
+  --synthetic \
+  --config src/business_analyzer/jobs/data/akzonobel_core_lines.yaml \
+  --output-dir /tmp/akzonobel_core_lines
+```
+
 ## Live run (read-only SQL)
 
-Needs the usual DB Settings (`DB_HOST` / NCX, etc.) and a YAML with
-`placeholder: false`. The query is SELECT-only and keeps:
+Needs the usual DB Settings (`DB_HOST` / NCX, etc.). The packaged YAML is
+already `placeholder: false`, so a run **without** `--synthetic` issues a
+**SELECT-only** query. It never writes. It keeps:
 
 `DocumentosCodigo NOT IN ('XY','AS','TS','YX','ISC')`.
 
@@ -84,8 +127,7 @@ It also requires `Cantidad > 0` and `TotalSinIva > 0`, and excludes
 
 ```bash
 PYTHONPATH=src python scripts/reports/run_akzonobel_core_lines.py \
-  --output-dir ~/business_reports/akzonobel_core_lines \
-  --config path/to/real_core_lines.yaml
+  --output-dir ~/business_reports/akzonobel_core_lines
 ```
 
 Numbers go through `format_number` (Colombian `$1.234.567` / `45,6%`).

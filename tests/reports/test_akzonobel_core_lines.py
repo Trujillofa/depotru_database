@@ -14,6 +14,25 @@ import pytest
 
 from business_analyzer.jobs import akzonobel_core_lines as acl
 
+OMITTED_MIXED_BRAND_KITS = frozenset(
+    {
+        "0030070245",
+        "0030070414",
+        "0090060157",
+        "0090060205",
+        "0090060211",
+        "0090060212",
+    }
+)
+EXPECTED_CORE_BRANDS = {
+    "Estucomastic",
+    "Experto Pro",
+    "Viniltex",
+    "Koraza",
+    "Vinilico",
+    "Pintulux",
+}
+
 
 def _config(**overrides: object) -> acl.CoreLinesConfig:
     base = {
@@ -201,21 +220,161 @@ def test_last_complete_month_from_january():
 
 
 @pytest.mark.unit
-def test_shipped_yaml_is_labelled_synthetic_placeholder():
+def test_shipped_yaml_is_real_erp_core_lines_catalog():
     path = acl.packaged_config_path()
     assert path.is_file()
     cfg = acl.load_core_lines_config(path)
-    assert cfg.placeholder is True
+    assert cfg.placeholder is False
     assert cfg.territory.key_field == "vendedor_codigo"
     assert cfg.territory.label_field == "VendedorFactura"
     skus = [item.sku for item in cfg.skus]
-    assert skus == ["AKZO-DEMO-001", "AKZO-DEMO-002", "AKZO-DEMO-003"]
+    assert len(skus) == 249
+    assert len(set(skus)) == 249
+    for sku in skus:
+        assert isinstance(sku, str)
+        assert len(sku) == 10
+        assert sku.isdigit()
+        assert sku.startswith("0")
+        assert "AKZO-DEMO" not in sku
+    assert OMITTED_MIXED_BRAND_KITS.isdisjoint(skus)
     text = path.read_text(encoding="utf-8")
-    assert "SYNTHETIC PLACEHOLDER" in text
-    assert "placeholder: true" in text
+    assert "placeholder: false" in text
+    assert "AKZO-DEMO" not in text
+    assert "SYNTHETIC PLACEHOLDER" not in text
     assert "vendor_match" not in text
-    assert "Pintuco" not in text
-    assert "Coral" not in text
+    assert "SmartBusiness" in text
+    assert "2026-10-01" in text
+    for sku in skus:
+        assert f'sku: "{sku}"' in text
+    marcas = {item.marca for item in cfg.skus}
+    assert marcas == EXPECTED_CORE_BRANDS
+    assert all(item.marca for item in cfg.skus)
+
+
+@pytest.mark.unit
+def test_loader_preserves_leading_zeros_for_numeric_skus(tmp_path: Path):
+    yaml_path = tmp_path / "zeros.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "placeholder: false",
+                "territory:",
+                "  key_field: vendedor_codigo",
+                "  label_field: VendedorFactura",
+                "skus:",
+                "  - sku: 20040002",
+                "    name: Numeric unquoted",
+                '  - sku: "0020040003"',
+                "    name: Quoted zeros",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    yaml_cfg = acl.load_core_lines_config(yaml_path)
+    assert [item.sku for item in yaml_cfg.skus] == ["0020040002", "0020040003"]
+
+    json_path = tmp_path / "zeros.json"
+    json_path.write_text(
+        '{"placeholder": true, "skus": [{"sku": 20040002, "name": "json"}]}',
+        encoding="utf-8",
+    )
+    json_cfg = acl.load_core_lines_config(json_path)
+    assert json_cfg.skus[0].sku == "0020040002"
+
+
+@pytest.mark.unit
+def test_loader_optional_marca_is_tolerant(tmp_path: Path):
+    yaml_path = tmp_path / "marca.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "placeholder: false",
+                "skus:",
+                '  - sku: "0020040002"',
+                "    name: Estuco demo",
+                "    marca: Estucomastic",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    yaml_cfg = acl.load_core_lines_config(yaml_path)
+    assert yaml_cfg.skus[0].marca == "Estucomastic"
+
+    json_path = tmp_path / "core.json"
+    json_path.write_text(
+        '{"placeholder": true, "skus": [{"sku": "AKZO-DEMO-009", "name": "x"}]}',
+        encoding="utf-8",
+    )
+    json_cfg = acl.load_core_lines_config(json_path)
+    assert json_cfg.skus[0].sku == "AKZO-DEMO-009"
+    assert json_cfg.skus[0].marca == ""
+
+    csv_path = tmp_path / "skus.csv"
+    csv_path.write_text(
+        "sku,name\nAKZO-DEMO-010,Pintura demo csv\n",
+        encoding="utf-8",
+    )
+    csv_cfg = acl.load_core_lines_config(csv_path)
+    assert csv_cfg.skus[0].sku == "AKZO-DEMO-010"
+    assert csv_cfg.placeholder is True
+    assert csv_cfg.skus[0].marca == ""
+
+    csv_marca = tmp_path / "marca.csv"
+    csv_marca.write_text(
+        "marca,sku,name\nEstucomastic,0020040002,Estuco demo\n",
+        encoding="utf-8",
+    )
+    csv_marca_cfg = acl.load_core_lines_config(csv_marca)
+    assert csv_marca_cfg.skus[0].sku == "0020040002"
+    assert csv_marca_cfg.skus[0].marca == "Estucomastic"
+
+
+@pytest.mark.unit
+def test_synthetic_paths_ignore_packaged_real_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    fake = tmp_path / "real.yaml"
+    fake.write_text(
+        "\n".join(
+            [
+                "placeholder: false",
+                "territory:",
+                "  key_field: vendedor_codigo",
+                "  label_field: VendedorFactura",
+                "skus:",
+                '  - sku: "0020040002"',
+                "    name: ESTUCOMASTIC DEMO",
+                "    marca: Estucomastic",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(acl, "packaged_config_path", lambda: fake)
+
+    report = acl.build_synthetic_report(run_date=date(2026, 9, 30))
+    assert {item.sku for item in report.config.skus} == {
+        "AKZO-DEMO-001",
+        "AKZO-DEMO-002",
+        "AKZO-DEMO-003",
+    }
+    assert any(gap.sku == "AKZO-DEMO-002" for gap in report.gaps)
+    assert all(not item.sku.startswith("002") for item in report.config.skus)
+
+    out = tmp_path / "out"
+    code = acl.main(
+        [
+            "--synthetic",
+            "--output-dir",
+            str(out),
+            "--run-date",
+            "2026-09-30",
+        ]
+    )
+    assert code == 0
+    html = next(out.glob("*.html")).read_text(encoding="utf-8")
+    assert "AKZO-DEMO-002" in html
+    assert "0020040002" not in html
+    assert "ESTUCOMASTIC DEMO" not in html
 
 
 @pytest.mark.unit
