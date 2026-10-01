@@ -17,6 +17,7 @@ import csv
 import importlib.util
 import io
 import json
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -86,6 +87,13 @@ class TerritoryMapping:
 
 
 ERP_SKU_WIDTH = 10
+_ERP_SKU_RE = re.compile(rf"^\d{{{ERP_SKU_WIDTH}}}$")
+SKU_QUOTED_10_DIGITS_ERROR = (
+    "El SKU debe ir entre comillas y tener 10 dígitos "
+    "(ArticulosCodigo es texto nvarchar(20), no un número). "
+    "No se rellenan ceros en silencio."
+)
+SKU_DUPLICATE_ERROR = "SKU duplicado en la lista de líneas núcleo"
 
 
 @dataclass(frozen=True)
@@ -162,30 +170,46 @@ def resolve_config_path(
 
 
 def _normalize_sku(value: Any) -> str:
-    """Keep ERP ArticulosCodigo as a 10-digit string (leading zeros)."""
-    if value is None or isinstance(value, bool):
+    """Keep ERP ArticulosCodigo as a quoted 10-digit string.
+
+    Digit codes must match ``^\\d{10}$`` after strip. Int, bool and float are
+    rejected so YAML/JSON cannot drop leading zeros or pad silently.
+    Non-digit strings (``AKZO-DEMO-*``) stay valid for existing fixtures.
+    """
+    if value is None:
         return ""
-    if isinstance(value, int):
-        return f"{value:0{ERP_SKU_WIDTH}d}"
-    text = str(value).strip()
-    if text.isdigit():
-        return text.zfill(ERP_SKU_WIDTH)
+    if not isinstance(value, str):
+        raise ValueError(SKU_QUOTED_10_DIGITS_ERROR)
+    text = value.strip()
+    if not text:
+        return ""
+    if text.isdigit() and _ERP_SKU_RE.fullmatch(text) is None:
+        raise ValueError(SKU_QUOTED_10_DIGITS_ERROR)
     return text
 
 
 def _parse_skus(raw: Any) -> tuple[CoreSku, ...]:
     items: list[CoreSku] = []
+    seen: set[str] = set()
     for row in raw or []:
         if isinstance(row, str):
-            sku = _normalize_sku(row)
-            name = sku
+            sku_value: Any = row
+            name = ""
             marca = ""
-        else:
-            sku = _normalize_sku(row.get("sku"))
-            name = str(row.get("name") or sku).strip()
+        elif isinstance(row, Mapping):
+            sku_value = row.get("sku")
+            name = str(row.get("name") or "").strip()
             marca = str(row.get("marca") or "").strip()
-        if sku:
-            items.append(CoreSku(sku=sku, name=name or sku, marca=marca))
+        else:
+            raise ValueError(SKU_QUOTED_10_DIGITS_ERROR)
+        sku = _normalize_sku(sku_value)
+        if not sku:
+            continue
+        key = sku.upper()
+        if key in seen:
+            raise ValueError(f"{SKU_DUPLICATE_ERROR}: {sku}")
+        seen.add(key)
+        items.append(CoreSku(sku=sku, name=name or sku, marca=marca))
     return tuple(items)
 
 

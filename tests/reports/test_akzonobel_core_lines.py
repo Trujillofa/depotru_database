@@ -232,8 +232,7 @@ def test_shipped_yaml_is_real_erp_core_lines_catalog():
     assert len(set(skus)) == 249
     for sku in skus:
         assert isinstance(sku, str)
-        assert len(sku) == 10
-        assert sku.isdigit()
+        assert re.fullmatch(r"\d{10}", sku)
         assert sku.startswith("0")
         assert "AKZO-DEMO" not in sku
     assert OMITTED_MIXED_BRAND_KITS.isdisjoint(skus)
@@ -251,8 +250,34 @@ def test_shipped_yaml_is_real_erp_core_lines_catalog():
     assert all(item.marca for item in cfg.skus)
 
 
+def _sku_error_yaml(path: Path, sku_line: str) -> Path:
+    path.write_text(
+        "\n".join(
+            [
+                "placeholder: false",
+                "territory:",
+                "  key_field: vendedor_codigo",
+                "  label_field: VendedorFactura",
+                "skus:",
+                f"  - sku: {sku_line}",
+                "    name: SKU de prueba",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _assert_quoted_ten_digit_sku_error(
+    exc: pytest.ExceptionInfo[BaseException],
+) -> None:
+    message = str(exc.value)
+    assert "comillas" in message.lower()
+    assert "10 dígitos" in message or "10 digitos" in message.lower()
+
+
 @pytest.mark.unit
-def test_loader_preserves_leading_zeros_for_numeric_skus(tmp_path: Path):
+def test_loader_keeps_quoted_ten_digit_string_skus(tmp_path: Path):
     yaml_path = tmp_path / "zeros.yaml"
     yaml_path.write_text(
         "\n".join(
@@ -262,8 +287,6 @@ def test_loader_preserves_leading_zeros_for_numeric_skus(tmp_path: Path):
                 "  key_field: vendedor_codigo",
                 "  label_field: VendedorFactura",
                 "skus:",
-                "  - sku: 20040002",
-                "    name: Numeric unquoted",
                 '  - sku: "0020040003"',
                 "    name: Quoted zeros",
             ]
@@ -271,15 +294,98 @@ def test_loader_preserves_leading_zeros_for_numeric_skus(tmp_path: Path):
         encoding="utf-8",
     )
     yaml_cfg = acl.load_core_lines_config(yaml_path)
-    assert [item.sku for item in yaml_cfg.skus] == ["0020040002", "0020040003"]
+    assert [item.sku for item in yaml_cfg.skus] == ["0020040003"]
 
     json_path = tmp_path / "zeros.json"
     json_path.write_text(
-        '{"placeholder": true, "skus": [{"sku": 20040002, "name": "json"}]}',
+        '{"placeholder": true, "skus": [{"sku": "0020040003", "name": "json"}]}',
         encoding="utf-8",
     )
     json_cfg = acl.load_core_lines_config(json_path)
-    assert json_cfg.skus[0].sku == "0020040002"
+    assert json_cfg.skus[0].sku == "0020040003"
+
+    csv_path = tmp_path / "zeros.csv"
+    csv_path.write_text("sku,name\n0020040003,csv\n", encoding="utf-8")
+    csv_cfg = acl.load_core_lines_config(csv_path)
+    assert csv_cfg.skus[0].sku == "0020040003"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "sku_literal",
+    ["20040002", "true", "false", "20040002.0", '"002004000"'],
+)
+def test_loader_rejects_int_bool_float_and_nine_digit_skus(
+    tmp_path: Path, sku_literal: str
+):
+    path = _sku_error_yaml(tmp_path / "bad.yaml", sku_literal)
+    with pytest.raises(ValueError) as caught:
+        acl.load_core_lines_config(path)
+    _assert_quoted_ten_digit_sku_error(caught)
+
+
+@pytest.mark.unit
+def test_loader_rejects_json_int_and_bool_skus(tmp_path: Path):
+    int_path = tmp_path / "int.json"
+    int_path.write_text(
+        '{"placeholder": true, "skus": [{"sku": 20040002, "name": "json"}]}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError) as caught:
+        acl.load_core_lines_config(int_path)
+    _assert_quoted_ten_digit_sku_error(caught)
+
+    bool_path = tmp_path / "bool.json"
+    bool_path.write_text(
+        '{"placeholder": true, "skus": [{"sku": true, "name": "json"}]}',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError) as caught:
+        acl.load_core_lines_config(bool_path)
+    _assert_quoted_ten_digit_sku_error(caught)
+
+
+@pytest.mark.unit
+def test_loader_rejects_duplicate_skus(tmp_path: Path):
+    path = tmp_path / "dup.yaml"
+    path.write_text(
+        "\n".join(
+            [
+                "placeholder: false",
+                "skus:",
+                '  - sku: "0020040003"',
+                "    name: Primero",
+                '  - sku: "0020040003"',
+                "    name: Duplicado",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="duplicado") as caught:
+        acl.load_core_lines_config(path)
+    assert "0020040003" in str(caught.value)
+
+
+@pytest.mark.unit
+def test_normalize_sku_rejects_non_strings_and_does_not_pad():
+    with pytest.raises(ValueError) as caught_int:
+        acl._normalize_sku(20040002)
+    _assert_quoted_ten_digit_sku_error(caught_int)
+
+    with pytest.raises(ValueError) as caught_bool:
+        acl._normalize_sku(True)
+    _assert_quoted_ten_digit_sku_error(caught_bool)
+
+    with pytest.raises(ValueError) as caught_float:
+        acl._normalize_sku(20040002.0)
+    _assert_quoted_ten_digit_sku_error(caught_float)
+
+    with pytest.raises(ValueError) as caught_nine:
+        acl._normalize_sku("002004000")
+    _assert_quoted_ten_digit_sku_error(caught_nine)
+
+    assert acl._normalize_sku("0020040003") == "0020040003"
+    assert acl._normalize_sku("AKZO-DEMO-001") == "AKZO-DEMO-001"
 
 
 @pytest.mark.unit

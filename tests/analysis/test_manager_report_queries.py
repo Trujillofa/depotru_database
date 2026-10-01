@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import sqlite3
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -219,6 +221,86 @@ def test_product_margins_sql_picks_highest_value_vendor_not_alpha_max(
     upper = margin_sql.upper()
     for verb in ("INSERT ", "UPDATE ", "DELETE ", "MERGE ", "DROP ", "ALTER "):
         assert verb not in upper
+
+
+def _mssql_to_sqlite(sql: str) -> str:
+    sql = re.sub(r"\[([^\]]+)\]\.\[dbo\]\.\[([^\]]+)\]", r"\2", sql)
+    sql = sql.replace(" COLLATE DATABASE_DEFAULT", "")
+    sql = re.sub(r"\bLEN\(", "LENGTH(", sql)
+    return sql.replace("%s", "?")
+
+
+@pytest.mark.unit
+def test_product_margins_sql_tie_break_uses_later_fecha_not_alpha_max():
+    """Tied revenue and quantity: later Fecha wins, not alphabetical MAX.
+
+    Uses sqlite plus the production ranking CTEs. The live FROM clause is
+    replaced by a sqlite snippet so this does not change production SQL.
+    Demo product/vendor names only — no customer data.
+    """
+    runner = _runner()
+    enriched_from = """
+        FROM banco_datos bd
+        LEFT JOIN productos_adicional pa
+          ON bd.ArticulosCodigo = pa.producto_codigo
+        WHERE bd.Fecha BETWEEN %s AND %s
+          AND bd.DocumentosCodigo NOT IN (%s, %s, %s, %s, %s)
+    """
+    sql = _mssql_to_sqlite(
+        runner._product_margins_sql(
+            enriched_from, SalesQueryRunner._effective_proveedor_sql()
+        )
+    )
+    params = (
+        "2024-05-01",
+        "2024-05-31",
+        "XY",
+        "AS",
+        "TS",
+        "YX",
+        "ISC",
+    )
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        """
+        CREATE TABLE banco_datos (
+            Fecha TEXT,
+            TotalSinIva REAL,
+            ValorCosto REAL,
+            Cantidad REAL,
+            ArticulosCodigo TEXT,
+            ArticulosNombre TEXT,
+            DocumentosCodigo TEXT,
+            proveedor TEXT
+        );
+        CREATE TABLE productos_adicional (
+            producto_codigo TEXT,
+            proveedor_descripcion TEXT
+        );
+        """
+    )
+    rows = (
+        ("2024-05-10", 1000, 800, 5, "SKU-DEMO-001", "Estuco demo", "FED", "ZETA-DEMO"),
+        ("2024-05-20", 1000, 800, 5, "SKU-DEMO-001", "Estuco demo", "FED", "SIKA-DEMO"),
+        ("2024-04-01", 9000, 100, 9, "SKU-DEMO-001", "Estuco demo", "XY", "OMIT-DEMO"),
+    )
+    conn.executemany(
+        """
+        INSERT INTO banco_datos (
+            Fecha, TotalSinIva, ValorCosto, Cantidad, ArticulosCodigo,
+            ArticulosNombre, DocumentosCodigo, proveedor
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    result = [dict(row) for row in conn.execute(sql, params).fetchall()]
+    assert len(result) == 1
+    assert result[0]["product_name"] == "Estuco demo"
+    assert result[0]["proveedor"] == "SIKA-DEMO"
+    assert result[0]["revenue"] == 2000
+    assert result[0]["cost"] == 1600
+    assert result[0]["quantity"] == 10
 
 
 @pytest.mark.unit
