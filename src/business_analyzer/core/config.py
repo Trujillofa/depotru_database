@@ -85,30 +85,39 @@ def _env_str_or_default(value: Any, default: str) -> str:
     return str(value)
 
 
-_BOOL_TRUE = frozenset({"true", "1", "yes", "on"})
-_BOOL_FALSE = frozenset({"false", "0", "no", "off"})
+SMTP_USE_TLS_TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
+SMTP_USE_TLS_FALSE_VALUES = frozenset({"false", "0", "no", "off"})
+SMTP_USE_TLS_DEFAULT = True
 
 
 def _env_bool_default_true(value: Any) -> bool:
-    """Parse an optional boolean env flag; default True (used by SMTP TLS).
+    """Parse ``SMTP_USE_TLS``; default TLS on.
 
-    Accepts true/1/yes/on and false/0/no/off (case-insensitive). Blank, None,
-    and unrecognized values keep the default (TLS on).
+    Valid tokens (case-insensitive): true/1/yes/on and false/0/no/off.
+    None, blank, and unrecognized values keep ``SMTP_USE_TLS_DEFAULT``
+    (True). Unrecognized strings log a warning and do not raise.
     """
     if value is None:
-        return True
+        return SMTP_USE_TLS_DEFAULT
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return value != 0
     cleaned = str(value).strip().lower()
     if not cleaned:
+        return SMTP_USE_TLS_DEFAULT
+    if cleaned in SMTP_USE_TLS_TRUE_VALUES:
         return True
-    if cleaned in _BOOL_TRUE:
-        return True
-    if cleaned in _BOOL_FALSE:
+    if cleaned in SMTP_USE_TLS_FALSE_VALUES:
         return False
-    return True
+    logger.warning(
+        "SMTP_USE_TLS=%r is not recognized; valid values are "
+        "true/1/yes/on or false/0/no/off (case-insensitive). "
+        "Using default %s (TLS on).",
+        value,
+        SMTP_USE_TLS_DEFAULT,
+    )
+    return SMTP_USE_TLS_DEFAULT
 
 
 def _blank_to_none(value: Any) -> Optional[str]:
@@ -200,7 +209,7 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
-    SMTP_USE_TLS: bool = True
+    SMTP_USE_TLS: bool = SMTP_USE_TLS_DEFAULT
     MAIL_FROM: Optional[str] = None
     MAIL_TO: Optional[str] = None
     AKZONOBEL_CORE_LINES_CONFIG: Optional[str] = None

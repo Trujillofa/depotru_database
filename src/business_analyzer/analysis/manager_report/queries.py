@@ -137,6 +137,81 @@ class SalesQueryRunner:
     def _effective_marca_sql(alias: str = "bd") -> str:
         return effective_marca_sql(alias=alias, pa_alias="pa")
 
+    @staticmethod
+    def _product_margins_sql(enriched_from: str, prov_expr: str) -> str:
+        """Read-only product_margins SELECT (same grain, defensible vendor).
+
+        One row per ``ArticulosNombre`` with ``HAVING SUM(Cantidad) >= 5``.
+        ``revenue`` / ``cost`` / ``quantity`` stay period SUMs over all
+        vendors (money totals unchanged).
+
+        ``proveedor`` is not ``MAX(name)`` (alphabetical). Criterion: the
+        vendor with the greatest ``SUM(TotalSinIva)`` for that product
+        name; ties use greater ``SUM(Cantidad)``, then the most recent
+        ``Fecha``, then the name. Period and document exclusions come
+        from the parameterized ``enriched_from`` (XY, AS, TS, YX, ISC).
+        """
+        return f"""
+                WITH margin_sales AS (
+                    SELECT
+                        bd.ArticulosNombre AS product_name,
+                        bd.ArticulosCodigo AS sku,
+                        bd.TotalSinIva,
+                        bd.ValorCosto,
+                        bd.Cantidad,
+                        bd.Fecha,
+                        {prov_expr} AS proveedor
+                    {enriched_from}
+                ),
+                product_totals AS (
+                    SELECT
+                        product_name,
+                        MAX(sku) AS sku,
+                        SUM(TotalSinIva) AS revenue,
+                        SUM(ValorCosto) AS cost,
+                        SUM(Cantidad) AS quantity
+                    FROM margin_sales
+                    GROUP BY product_name
+                    HAVING SUM(Cantidad) >= 5
+                ),
+                vendor_value AS (
+                    SELECT
+                        product_name,
+                        proveedor,
+                        SUM(TotalSinIva) AS vendor_revenue,
+                        SUM(Cantidad) AS vendor_quantity,
+                        MAX(Fecha) AS last_sale
+                    FROM margin_sales
+                    WHERE proveedor IS NOT NULL
+                    GROUP BY product_name, proveedor
+                ),
+                ranked_vendor AS (
+                    SELECT
+                        product_name,
+                        proveedor,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY product_name
+                            ORDER BY
+                                vendor_revenue DESC,
+                                vendor_quantity DESC,
+                                last_sale DESC,
+                                proveedor ASC
+                        ) AS rn
+                    FROM vendor_value
+                )
+                SELECT
+                    p.product_name,
+                    p.sku,
+                    p.revenue,
+                    p.cost,
+                    p.quantity,
+                    v.proveedor
+                FROM product_totals p
+                LEFT JOIN ranked_vendor v
+                    ON v.product_name = p.product_name AND v.rn = 1
+                ORDER BY p.revenue DESC
+                """  # nosec B608
+
     def fetch_sales_data(self) -> List[Dict[str, Any]]:
         db = self._open_db()
         with db:
@@ -370,19 +445,7 @@ class SalesQueryRunner:
             )
 
             product_margins = db.execute_query(
-                f"""
-                SELECT
-                    bd.ArticulosNombre AS product_name,
-                    MAX(bd.ArticulosCodigo) AS sku,
-                    SUM(bd.TotalSinIva) AS revenue,
-                    SUM(bd.ValorCosto) AS cost,
-                    SUM(bd.Cantidad) AS quantity,
-                    MAX({prov_expr}) AS proveedor
-                {enriched_from}
-                GROUP BY bd.ArticulosNombre
-                HAVING SUM(bd.Cantidad) >= 5
-                ORDER BY SUM(bd.TotalSinIva) DESC
-                """,  # nosec B608
+                self._product_margins_sql(enriched_from, prov_expr),
                 params,
             )
 
