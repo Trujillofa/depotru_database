@@ -16,11 +16,11 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Dependency Review
         continue-on-error: true
-        uses: actions/dependency-review-action@v3
+        uses: actions/dependency-review-action@c74b580d73376b7750d3d2a50bfb8adc2c937507 # v3.1.5
         with:
           # Fail on critical and high severity vulnerabilities
           fail-on-severity: high
