@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import re
 import sqlite3
 from datetime import date
@@ -232,7 +233,7 @@ def test_shipped_yaml_is_real_erp_core_lines_catalog():
     assert len(set(skus)) == 249
     for sku in skus:
         assert isinstance(sku, str)
-        assert re.fullmatch(r"\d{10}", sku)
+        assert re.fullmatch(r"[0-9]{10}", sku)
         assert sku.startswith("0")
         assert "AKZO-DEMO" not in sku
     assert OMITTED_MIXED_BRAND_KITS.isdisjoint(skus)
@@ -386,6 +387,100 @@ def test_normalize_sku_rejects_non_strings_and_does_not_pad():
 
     assert acl._normalize_sku("0020040003") == "0020040003"
     assert acl._normalize_sku("AKZO-DEMO-001") == "AKZO-DEMO-001"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "sku",
+    [
+        "٠١٢٣٤٥٦٧٨٩",
+        "０１２３４５６７８９",
+        "01234567AB",
+        "0123-56789",
+        "0123 56789",
+        "0020040003\n",
+    ],
+)
+def test_normalize_sku_rejects_unicode_mixed_and_trailing_newline(sku: str):
+    with pytest.raises(ValueError) as caught:
+        acl._normalize_sku(sku)
+    _assert_quoted_ten_digit_sku_error(caught)
+
+
+@pytest.mark.unit
+def test_loader_rejects_unicode_mixed_and_trailing_newline_skus(tmp_path: Path):
+    json_path = tmp_path / "bad.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "placeholder": True,
+                "skus": [{"sku": "01234567AB", "name": "letras"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError) as caught:
+        acl.load_core_lines_config(json_path)
+    _assert_quoted_ten_digit_sku_error(caught)
+
+    newline_path = tmp_path / "newline.json"
+    newline_path.write_text(
+        json.dumps(
+            {
+                "placeholder": True,
+                "skus": [{"sku": "0020040003\n", "name": "salto"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError) as caught:
+        acl.load_core_lines_config(newline_path)
+    _assert_quoted_ten_digit_sku_error(caught)
+
+    unicode_path = tmp_path / "unicode.json"
+    unicode_path.write_text(
+        json.dumps(
+            {
+                "placeholder": True,
+                "skus": [{"sku": "٠١٢٣٤٥٦٧٨٩", "name": "unicode"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError) as caught:
+        acl.load_core_lines_config(unicode_path)
+    _assert_quoted_ten_digit_sku_error(caught)
+
+
+@pytest.mark.unit
+def test_loader_still_loads_akzo_demo_001(tmp_path: Path):
+    yaml_path = tmp_path / "demo.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "placeholder: true",
+                "skus:",
+                "  - sku: AKZO-DEMO-001",
+                "    name: Pintura demo línea núcleo 1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    yaml_cfg = acl.load_core_lines_config(yaml_path)
+    assert yaml_cfg.skus[0].sku == "AKZO-DEMO-001"
+
+    json_path = tmp_path / "demo.json"
+    json_path.write_text(
+        '{"placeholder": true, "skus": [{"sku": "AKZO-DEMO-001", "name": "x"}]}',
+        encoding="utf-8",
+    )
+    json_cfg = acl.load_core_lines_config(json_path)
+    assert json_cfg.skus[0].sku == "AKZO-DEMO-001"
+
+    csv_path = tmp_path / "demo.csv"
+    csv_path.write_text("sku,name\nAKZO-DEMO-001,Pintura demo csv\n", encoding="utf-8")
+    csv_cfg = acl.load_core_lines_config(csv_path)
+    assert csv_cfg.skus[0].sku == "AKZO-DEMO-001"
 
 
 @pytest.mark.unit

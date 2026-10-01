@@ -61,10 +61,16 @@ The list includes bases, special-price, promotion, and S/I versions. Matching
 is by `ArticulosCodigo` only. The live query reads `banco_datos` only; it does
 not join `productos_adicional` or select `proveedor` / `marca`.
 `ArticulosCodigo` is text (`nvarchar(20)`). SKUs must be quoted 10-digit
-strings (`^\d{10}$`); the loader rejects ints, bools, floats, and shorter
-digit codes, and it does not pad zeros. Duplicate SKUs fail the load. Each
+ASCII strings (`[0-9]{10}` via `re.fullmatch`); the loader rejects ints,
+bools, floats, Unicode digits, mixed letters/hyphens, shorter codes, and
+trailing newlines, and it does not pad zeros. The only non-numeric exception
+is the synthetic fixture `AKZO-DEMO-N`. Duplicate SKUs fail the load. Each
 row may carry an optional `marca` field (ignored by JSON/CSV files that omit
 it).
+
+Matching is in Python after the read-only `SELECT` (there is no SQL `IN`
+list). An ERP `ArticulosCodigo` that is not exactly 10 ASCII digits simply
+does not match the Core Lines list.
 
 Akzo line names that do not appear verbatim in the ERP were covered by **brand
 family**, not by inventing codes:

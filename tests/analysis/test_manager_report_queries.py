@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 import sqlite3
 from unittest.mock import MagicMock, patch
@@ -232,11 +233,14 @@ def _mssql_to_sqlite(sql: str) -> str:
 
 @pytest.mark.unit
 def test_product_margins_sql_tie_break_uses_later_fecha_not_alpha_max():
-    """Tied revenue and quantity: later Fecha wins, not alphabetical MAX.
+    """Tied value/qty/name, NULL vendor, returns, shuffled rows.
 
     Uses sqlite plus the production ranking CTEs. The live FROM clause is
     replaced by a sqlite snippet so this does not change production SQL.
     Demo product/vendor names only — no customer data.
+
+    Counterfactual mutations of the rendered SQL must change winners:
+    name DESC, dropping quantity, or dropping ``WHERE proveedor IS NOT NULL``.
     """
     runner = _runner()
     enriched_from = """
@@ -280,11 +284,20 @@ def test_product_margins_sql_tie_break_uses_later_fecha_not_alpha_max():
         );
         """
     )
-    rows = (
-        ("2024-05-10", 1000, 800, 5, "SKU-DEMO-001", "Estuco demo", "FED", "SIKA-DEMO"),
-        ("2024-05-20", 1000, 800, 5, "SKU-DEMO-001", "Estuco demo", "FED", "ZETA-DEMO"),
-        ("2024-04-01", 9000, 100, 9, "SKU-DEMO-001", "Estuco demo", "XY", "OMIT-DEMO"),
-    )
+    rows = [
+        ("2024-05-20", 1000, 800, 5, "SKU-QTY-B", "Estuco demo", "FED", "SIKA-QTY"),
+        ("2024-05-12", 800, 400, 5, "SKU-NAME-Z", "Vinilo demo", "FED", "ZETA-NAME"),
+        ("2024-05-18", 9000, 100, 9, "SKU-NULL-1", "Koraza demo", "FED", None),
+        ("2024-05-10", 1000, 800, 8, "SKU-QTY-A", "Estuco demo", "FED", "ZETA-QTY"),
+        ("2024-05-17", 8000, 100, 8, "SKU-NULL-2", "Koraza demo", "FED", ""),
+        ("2024-05-12", 800, 400, 5, "SKU-NAME-S", "Vinilo demo", "FED", "SIKA-NAME"),
+        ("2024-05-19", -100, 50, -1, "SKU-NEG", "Koraza demo", "FED", "GHOST-DEMO"),
+        ("2024-05-01", 500, 200, 5, "SKU-REAL", "Koraza demo", "FED", "BETA-REAL"),
+        ("2024-05-21", 50000, 1, 50, "SKU-XY", "Estuco demo", "XY", "OMIT-DEMO"),
+        ("2024-05-10", 600, 300, 5, "SKU-DATE-S", "Pintura demo", "FED", "SIKA-DATE"),
+        ("2024-05-20", 600, 300, 5, "SKU-DATE-Z", "Pintura demo", "FED", "ZETA-DATE"),
+    ]
+    random.Random(65).shuffle(rows)
     conn.executemany(
         """
         INSERT INTO banco_datos (
@@ -294,14 +307,35 @@ def test_product_margins_sql_tie_break_uses_later_fecha_not_alpha_max():
         """,
         rows,
     )
-    result = [dict(row) for row in conn.execute(sql, params).fetchall()]
-    assert len(result) == 1
-    assert result[0]["product_name"] == "Estuco demo"
-    # Later Fecha wins. Name ASC / MIN(proveedor) would pick SIKA-DEMO.
-    assert result[0]["proveedor"] == "ZETA-DEMO"
-    assert result[0]["revenue"] == 2000
-    assert result[0]["cost"] == 1600
-    assert result[0]["quantity"] == 10
+
+    def _by_product(query: str) -> dict[str, dict]:
+        fetched = [dict(row) for row in conn.execute(query, params).fetchall()]
+        return {str(row["product_name"]): row for row in fetched}
+
+    result = _by_product(sql)
+    assert set(result) == {
+        "Koraza demo",
+        "Estuco demo",
+        "Vinilo demo",
+        "Pintura demo",
+    }
+    assert result["Estuco demo"]["proveedor"] == "ZETA-QTY"
+    assert result["Estuco demo"]["revenue"] == 2000
+    assert result["Estuco demo"]["quantity"] == 13
+    assert result["Vinilo demo"]["proveedor"] == "SIKA-NAME"
+    assert result["Pintura demo"]["proveedor"] == "ZETA-DATE"
+    assert result["Koraza demo"]["proveedor"] == "BETA-REAL"
+    assert result["Koraza demo"]["revenue"] == 17400
+    assert result["Koraza demo"]["quantity"] == 21
+
+    name_desc = sql.replace("proveedor ASC", "proveedor DESC")
+    assert _by_product(name_desc)["Vinilo demo"]["proveedor"] == "ZETA-NAME"
+
+    no_qty = sql.replace("vendor_quantity DESC,\n", "")
+    assert _by_product(no_qty)["Estuco demo"]["proveedor"] == "SIKA-QTY"
+
+    no_null_filter = sql.replace("WHERE proveedor IS NOT NULL", "WHERE 1=1")
+    assert _by_product(no_null_filter)["Koraza demo"]["proveedor"] is None
 
 
 @pytest.mark.unit

@@ -87,11 +87,13 @@ class TerritoryMapping:
 
 
 ERP_SKU_WIDTH = 10
-_ERP_SKU_RE = re.compile(rf"^\d{{{ERP_SKU_WIDTH}}}$")
+_ERP_SKU_RE = re.compile(rf"[0-9]{{{ERP_SKU_WIDTH}}}")
+_DEMO_SKU_RE = re.compile(r"AKZO-DEMO-[0-9]+")
 SKU_QUOTED_10_DIGITS_ERROR = (
-    "El SKU debe ir entre comillas y tener 10 dígitos "
+    "El SKU debe ir entre comillas y tener 10 dígitos ASCII "
     "(ArticulosCodigo es texto nvarchar(20), no un número). "
-    "No se rellenan ceros en silencio."
+    "No se rellenan ceros en silencio. "
+    "Solo se admite el patrón de prueba AKZO-DEMO-N."
 )
 SKU_DUPLICATE_ERROR = "SKU duplicado en la lista de líneas núcleo"
 
@@ -170,22 +172,23 @@ def resolve_config_path(
 
 
 def _normalize_sku(value: Any) -> str:
-    """Keep ERP ArticulosCodigo as a quoted 10-digit string.
+    """Keep ERP ArticulosCodigo as a quoted 10-digit ASCII string.
 
-    Digit codes must match ``^\\d{10}$`` after strip. Int, bool and float are
+    Valid codes match ``[0-9]{10}`` with ``re.fullmatch`` (ASCII only; no
+    leading/trailing whitespace or newline). Int, bool and float are
     rejected so YAML/JSON cannot drop leading zeros or pad silently.
-    Non-digit strings (``AKZO-DEMO-*``) stay valid for existing fixtures.
+    The only non-numeric exception is the synthetic fixture
+    ``AKZO-DEMO-[0-9]+``.
     """
     if value is None:
         return ""
     if not isinstance(value, str):
         raise ValueError(SKU_QUOTED_10_DIGITS_ERROR)
-    text = value.strip()
-    if not text:
+    if not value:
         return ""
-    if text.isdigit() and _ERP_SKU_RE.fullmatch(text) is None:
-        raise ValueError(SKU_QUOTED_10_DIGITS_ERROR)
-    return text
+    if _ERP_SKU_RE.fullmatch(value) or _DEMO_SKU_RE.fullmatch(value):
+        return value
+    raise ValueError(SKU_QUOTED_10_DIGITS_ERROR)
 
 
 def _parse_skus(raw: Any) -> tuple[CoreSku, ...]:
