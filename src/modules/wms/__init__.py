@@ -2,7 +2,7 @@
 
 Phase 0 scaffold. J3 InvDetalleExistencias + KPI Q13/Q14 power this module.
 
-Website stock allowlist (issue #182): see
+Website stock allowlist (issues #182 / #395): see
 ``business_analyzer.core.website_warehouse_policy`` and CLI ``depotru-website-stock``.
 """
 

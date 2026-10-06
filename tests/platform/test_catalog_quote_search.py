@@ -31,6 +31,7 @@ def test_quote_search_sql_is_allowlisted_and_has_no_cost():
     assert "SaldoActual" in sql
     assert "ALM" in sql
     assert "CEN" not in sql  # denylist warehouse must not be in the IN-list
+    assert "'CON'" not in sql  # CON (CONTABILIDAD) is denylisted (#395)
     assert "ArticulosCosto" not in sql
     assert "ArticulosUltmoCosto" not in sql
     assert "UltimoCostoCompra" not in sql
