@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Website J3 warehouse denylist** now includes `CON` (CONTABILIDAD) to match
+  storefront policy in [depositotrujillo.co#395](https://github.com/Trujillofa/depositotrujillo.co/issues/395).
+  Full SSOT set: BDT, CEN, EXH, EXD, MDL, TRA, CON. Accounting/service SKUs
+  (`0130010001`–`0130010006`) with stock only in CON are not website-sellable.
+
 ### Added
 
 - **Hybrid stub-first LLM assistant** (`ASSISTANT_LLM=1`):
@@ -22,7 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Branch phrasing: `dónde quede`, `sede principal`
   - Guide patterns: tanque ajover/cotizar, lámina galvanizada, anticorr typos, sikagrout/grouting
 - **Website J3 warehouse allowlist** (depositotrujillo.co#182):
-  - SSOT: `website_warehouse_policy` denylist CEN/EXH/EXD/BDT/MDL/TRA
+  - SSOT: `website_warehouse_policy` denylist BDT/CEN/EXH/EXD/MDL/TRA/CON
+    (CON added for depositotrujillo.co#395 parity; see Changed above)
   - SQL: website vs excluded stock from `InvDetalleExistencias`
   - CLI: `depotru-website-stock` (impact report, Magento compare, gated MSI write)
   - Magento client: optional `post_source_items`

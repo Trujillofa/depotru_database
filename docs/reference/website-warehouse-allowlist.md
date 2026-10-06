@@ -1,6 +1,7 @@
 # Website stock — J3 warehouse allowlist
 
 **Issue:** [depositotrujillo.co#182](https://github.com/Trujillofa/depositotrujillo.co/issues/182)
+**Storefront parity:** [depositotrujillo.co#395](https://github.com/Trujillofa/depositotrujillo.co/issues/395)
 **Code SSOT:** `business_analyzer.core.website_warehouse_policy`
 **CLI:** `depotru-website-stock`
 
@@ -11,22 +12,27 @@ If **all** J3 almacenes are included, website salable qty can include stock that
 
 Magento never stores J3 codes — filtering must happen **before** Magento (B2C config) or via a controlled writer that only posts allowlisted totals.
 
-## Policy (ops 2026-07-14)
+## Policy (ops 2026-07-14; CON added 2026-08-20)
+
+Do not copy this table into other modules — import
+`WEBSITE_WAREHOUSE_DENYLIST` / `website_warehouse_allowlist()` from
+`business_analyzer.core.website_warehouse_policy`.
 
 ### Denylist (exclude)
 
 | Code | Name |
 |------|------|
+| BDT | BODEGA AJUSTES TEMPORALES |
 | CEN | 005 GARANTIAS |
 | EXH | BOD EXHIBICION ALMACEN |
 | EXD | BOD EXHIBICION DISTRIBUCIONES |
-| BDT | BODEGA AJUSTES TEMPORALES |
 | MDL | MERCADO LIBRE |
 | TRA | MCIA COMITECAFE |
+| CON | CONTABILIDAD (accounting/service SKUs 0130010001–0130010006) |
 
 ### Allowlist (include)
 
-ALM, SUR, BD6, BOD, DIS, FLO, B.ROT, CON
+ALM, SUR, BD6, BOD, DIS, FLO, B.ROT
 
 ### Magento dual source
 

@@ -1,4 +1,4 @@
-"""Website-facing J3 warehouse allowlist / denylist (issue #182).
+"""Website-facing J3 warehouse allowlist / denylist (issues #182 / #395).
 
 Magento only stores MSI sources ``default`` and ``CENTRO``; J3 warehouse codes
 never appear on Magento rows. b2c.smart-business.app aggregates ERP stock
@@ -6,7 +6,8 @@ before POST /V1/inventory/source-items.
 
 This module is the **SSOT** for which J3 ``AlmacenCodigo`` values may count
 toward website sellable stock. Magento dual-source sum (default+CENTRO) is
-intentional for promos — see sibling repo issue Trujillofa/depositotrujillo.co#182.
+intentional for promos — see sibling repo issues
+Trujillofa/depositotrujillo.co#182 and #395 (CON added to denylist).
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ ALL_J3_WAREHOUSE_CODES: Tuple[str, ...] = (
     "EXD",
 )
 
-# Exclude from website / B2C aggregation (ops decision 2026-07-14).
+# Exclude from website / B2C aggregation (ops 2026-07-14; CON 2026-08-20 / #395).
 WEBSITE_WAREHOUSE_DENYLIST: FrozenSet[str] = frozenset(
     {
         "CEN",  # 005 GARANTIAS
@@ -40,6 +41,7 @@ WEBSITE_WAREHOUSE_DENYLIST: FrozenSet[str] = frozenset(
         "BDT",  # BODEGA AJUSTES TEMPORALES
         "MDL",  # MERCADO LIBRE
         "TRA",  # MCIA COMITECAFE
+        "CON",  # CONTABILIDAD (accounting/service SKUs 0130010001-0130010006)
     }
 )
 
@@ -50,6 +52,7 @@ WEBSITE_WAREHOUSE_DENYLIST_LABELS = {
     "BDT": "BODEGA AJUSTES TEMPORALES",
     "MDL": "MERCADO LIBRE",
     "TRA": "MCIA COMITECAFE",
+    "CON": "CONTABILIDAD",
 }
 
 # Magento MSI sources that feed website stock "Total Disponible" (stock_id=3).
@@ -106,4 +109,5 @@ def policy_summary() -> dict:
             "default + CENTRO (intentional for promos)."
         ),
         "issue": "Trujillofa/depositotrujillo.co#182",
+        "storefront_policy_issue": "Trujillofa/depositotrujillo.co#395",
     }
