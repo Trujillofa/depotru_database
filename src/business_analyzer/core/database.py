@@ -36,6 +36,7 @@ try:
     NAVICAT_CIPHER_AVAILABLE = True
 except ImportError:
     NAVICAT_CIPHER_AVAILABLE = False
+    Navicat12Crypto = None
 
 try:
     # nosec B413: pyCrypto is deprecated but used as fallback for Navicat password decryption
