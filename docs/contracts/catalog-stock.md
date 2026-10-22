@@ -6,31 +6,35 @@
 > No modifica implementación, tests ni `builtins.py`. No se ejecutan pruebas en esta fase.
 >
 > **Supersede el borrador anterior:** la decisión vigente de Fredy permite cifras exactas de
-> existencia como **dato de herramienta**. Se eliminan los estados gruesos (`hay` /
-> `pocas_unidades` / `no_hay`) y el umbral propuesto `5`; se sustituyen por cantidades exactas en
-> base-10, sin `float`, sin redondeo y sin umbrales. El valor `5` **no** está aprobado y no aparece
-> en este contrato.
+> existencia como **dato de herramienta**, solo cuando se validan en el servidor (§9); **no** hay
+> aritmética del modelo sobre las cifras. Se eliminan los estados gruesos (`hay` /
+> `pocas_unidades` / `no_hay`); se sustituyen por cantidades exactas en base-10, sin `float`, sin
+> redondeo y sin umbral activo.
 >
-> **Nota de alcance (pendiente):** la decisión de que las cifras son "dato de herramienta" **no**
-> define por sí sola una audiencia pública. La audiencia/scope de exposición está
-> **PENDIENTE POR FREDY** (§14.5); hasta resolverlo, `catalog.stock` no se registra ni se expone
-> públicamente (§13).
+> **Mapeo de bodega confirmado (22 oct 2026):** `FLO = Florencia`; `ALM`, `SUR`, `BD6`, `DIS` y
+> `BOD` = Neiva (§7). Este contrato coincide con el set `SITES` del contrato B2
+> (`neiva: (ALM, BD6, SUR, DIS, BOD)`, `florencia: (FLO,)`). `B.ROT` permanece como bodega virtual
+> aparte; `CON` permanece excluida.
+>
+> **Audiencia/scope:** alineado con B2: `ToolScope.SALES_PORTFOLIO`, usable por `SALES` y `ADMIN`,
+> `public_safe=False` (§14.5). No hay gate de audiencia pendiente.
 
 ---
 
 ## 1. Propósito
 
 Responder, por SKU y sede, con **cantidades exactas de existencia** (base-10, sin redondeo ni
-umbral), separando de forma determinista:
+umbral activo), separando de forma determinista:
 
-- la cantidad física de la sede **confirmada** (`FLO → florencia`, única con evidencia local);
-- la cantidad física **no mapeada** a sede (códigos físicos reconocidos sin confirmación de Fredy);
+- la cantidad física de la sede **`neiva`** (`ALM`, `BD6`, `SUR`, `DIS`, `BOD`, §7);
+- la cantidad física de la sede **`florencia`** (`FLO`, §7);
 - la bodega virtual `B.ROT`, en línea aparte y **nunca** sumada ni atribuida a una sede.
 
-Es una herramienta de disponibilidad orientada a cliente/vendedor. **No** expone precios ni costos.
-Toda cifra emitida debe haber sido **validada por el servidor** (ver §9) antes de poder presentarse.
-La herramienta responde **fail-closed**: ante cualquier ambigüedad, bloquea la cifra y **no afirma
-nada** sobre existencia.
+Es una consulta de disponibilidad por SKU/sede como **dato de herramienta para un flujo de venta
+autorizado** (§14.5). Un resultado de herramienta **no** es, por sí mismo, permiso para enviar un
+mensaje no validado a un cliente. **No** expone precios ni costos. Toda cifra emitida debe haber
+sido **validada por el servidor** (ver §9) antes de poder presentarse. La herramienta responde
+**fail-closed**: ante cualquier ambigüedad, bloquea la cifra y **no afirma nada** sobre existencia.
 
 ---
 
@@ -39,7 +43,7 @@ nada** sobre existencia.
 ```json
 {
   "skus": ["<sku1>", "<sku2>"],   // obligatorio, 1..5 elementos
-  "sede": "florencia"             // opcional: "neiva" | "florencia"
+  "sede": "neiva"                 // opcional: "neiva" | "florencia"
 }
 ```
 
@@ -60,10 +64,9 @@ validación ocurre **antes** de abrir cualquier conexión a base de datos (fail-
 
 **Violaciones de entrada** → error global `entrada_invalida` (fail-closed, ver §5).
 
-**Consecuencia de mapeo:** como solo `FLO → florencia` tiene evidencia local (§7), el único caso
-exitoso es `sede: "florencia"`. `sede: "neiva"` o `sede` ausente (ambas sedes) →
-`warehouse_mapping_unconfirmed` (error global, §5). No se devuelve ningún éxito parcial que
-implique a `neiva`.
+**Consecuencia de mapeo:** ambos mapeos (`neiva` y `florencia`) están **confirmados** (§7).
+`sede: "neiva"`, `sede: "florencia"` y `sede` ausente (ambas) son todos casos válidos; `sede`
+ausente/nulo solicita ambas sedes en un solo `results`.
 
 ---
 
@@ -71,26 +74,24 @@ implique a `neiva`.
 
 Hay **dos** envoltorios mutuamente excluyentes:
 
-### 3.1 Éxito global (`ok: true`) — solo con `sede: "florencia"`
+### 3.1 Éxito global (`ok: true`)
 
 ```json
 {
   "ok": true,
-  "sede": "florencia",
+  "sede": "ambas",
   "results": [
     {
       "sku": "ABC123",
       "status": "ok",
-      "sedes": { "florencia": "12.34" },
-      "no_mapeado": "5",
+      "sedes": { "neiva": "12.34", "florencia": "5.00" },
       "baja_rotacion": null,
       "baja_rotacion_confirmation": "not_required"
     },
     {
       "sku": "DEF456",
       "status": "ok",
-      "sedes": { "florencia": "0" },
-      "no_mapeado": "0",
+      "sedes": { "neiva": "0", "florencia": "0" },
       "baja_rotacion": "7.50",
       "baja_rotacion_confirmation": "required"
     },
@@ -101,15 +102,21 @@ Hay **dos** envoltorios mutuamente excluyentes:
 }
 ```
 
-`results` tiene **exactamente un elemento por SKU solicitado**, en el mismo orden de `skus`. Cada
-elemento lleva un `status` por SKU que **nunca mezcla** un SKU fallido con cifras ambiguas.
+> Las cifras de los ejemplos son **ilustrativas**; su escala exacta no está demostrada (§9.1) y no
+> fijan un formato de salida. La escala real depende del valor `Decimal` leído y canonicalizado
+> (§9.2), no de estos ejemplos.
+
+`sede` (resuelta) refleja la selección de entrada: `"neiva"`, `"florencia"` o `"ambas"` (cuando
+`sede` fue `null`/ausente). `results` tiene **exactamente un elemento por SKU solicitado**, en el
+mismo orden de `skus`. Cada elemento lleva un `status` por SKU que **nunca mezcla** un SKU fallido
+con cifras ambiguas.
 
 | `status` | Significado | Campos presentes |
 |----------|-------------|------------------|
-| `"ok"` | SKU en catálogo y con inventario consultable; cifras emitidas. | `sedes`, `no_mapeado`, `baja_rotacion`, `baja_rotacion_confirmation` |
+| `"ok"` | SKU en catálogo y con inventario consultable; cifras emitidas. | `sedes`, `baja_rotacion`, `baja_rotacion_confirmation` |
 | `"no_encontrado"` | El SKU no existe en `AdmArticulos`. | solo `sku`, `status` |
 | `"inventario_desconocido"` | El SKU existe pero **no hay dato de inventario consultable**. | solo `sku`, `status` |
-| `"bloqueado"` | Cifras bloqueadas (negativo, código no clasificado, o validación §9 no satisfecha). | `sku`, `status`, `reason` (string fija) |
+| `"bloqueado"` | Cifras bloqueadas (negativo, código no clasificado, NULL de saldo, o validación §9 no satisfecha). | `sku`, `status`, `reason` (string fija) |
 
 `reason` de `bloqueado` es una cadena **fija** de un catálogo cerrado (§5): `"saldo_negativo"`,
 `"codigo_no_clasificado"`, `"validacion_fallida"`. Nunca texto del driver/SQL/credencial.
@@ -118,10 +125,13 @@ elemento lleva un `status` por SKU que **nunca mezcla** un SKU fallido con cifra
 
 | Campo | Tipo | Regla |
 |-------|------|-------|
-| `sedes.<sede>` | `string (decimal) \| null` | Cantidad física de la sede **confirmada** (hoy solo `florencia`, §7). `null` = **sin fila** para ese bucket (desconocido); string decimal = valor con evidencia de fila. Ver tri-estado §4. |
-| `no_mapeado` | `string (decimal) \| null` | Cantidad física de bodegas físicas **reconocidas y no mapeadas** (`ALM`, `SUR`, `BD6`, `DIS`, `BOD`, §7). **Nunca** se atribuye a `neiva` ni a `florencia`. `null` = sin fila. |
+| `sedes.neiva` | `string (decimal) \| null` | Cantidad física de la sede `neiva` (`ALM`, `BD6`, `SUR`, `DIS`, `BOD`, §7). `null` = **sin fila** para ese bucket (desconocido); string decimal = valor con evidencia de fila. Ver tri-estado §4. |
+| `sedes.florencia` | `string (decimal) \| null` | Cantidad física de la sede `florencia` (`FLO`, §7). `null` = sin fila; string decimal = valor con evidencia de fila. |
 | `baja_rotacion` | `string (decimal) \| null` | Cantidad de la bodega virtual `B.ROT`, en línea **aparte**. `null` = sin fila. |
 | `baja_rotacion_confirmation` | `string (enum)` | `"required"` \| `"not_required"` \| `"unknown"` (§8). |
+
+Cuando `sede` resuelve a una sola sede, `sedes` contiene solo esa clave; cuando resuelve a
+`"ambas"`, contiene `neiva` y `florencia`.
 
 ### 3.2 Error global (`ok: false`)
 
@@ -136,55 +146,76 @@ No hay `results` ni **ninguna** cifra cuando la respuesta es `ok: false`.
 
 **Invariantes de salida (no negociables):**
 
-- Toda cantidad emitida es **string decimal canónico base-10** (`^-?\d+(\.\d+)?$`), nunca un número
-  JSON (evita `float`/IEEE-754). Ver §9.
+- Toda cantidad emitida es **string decimal canónico base-10 no negativo** (`^\d+(\.\d+)?$`),
+  nunca un número JSON (evita `float`/IEEE-754). Ver §9.
 - `null` significa **desconocido** (sin fila); **nunca** se traduce a `"0"`. Un `"0"` solo se emite
   cuando hay **evidencia de fila** para ese bucket (§4).
 - Nunca se devuelve precio ni costo (`ArticulosVenta`, `VentaMasIva`, etc.).
 - `baja_rotacion` **nunca** se suma a `neiva` ni a `florencia`; permanece en su línea aparte.
-- `no_mapeado` **nunca** se presenta como saldo de `neiva`.
 - Un fallo de ERP **no** produce una cifra ni un "cero"; produce `error_consulta` (§5).
 
 ---
 
-## 4. Semántica de cantidades (exactas, sin umbral, tri-estado por bucket)
+## 4. Semántica de cantidades (exactas, sin umbral activo, tri-estado por bucket)
 
-Cada cantidad es el **saldo exacto en base-10** de `InvDetalleExistencias.SaldoActual`, agregado
-(`SUM`) por bucket de bodega, **sin** redondeo, **sin** umbral y **sin** clamp a cero. No existe
-umbral de "pocas unidades" ni clasificación por cantidad.
+Cada cantidad es el **saldo exacto en base-10** de la fila más reciente de
+`InvDetalleExistencias.SaldoActual` por (artículo, almacén), agregado **solo en Python con
+`Decimal`** por bucket de bodega, **sin** redondeo, **sin** umbral activo y **sin** clamp a cero.
+
+**Último año por par (artículo × almacén):** el SQL selecciona **exactamente una fila** por par
+(`ArticulosID`, `AlmacenID`) usando `ROW_NUMBER() OVER (PARTITION BY ArticulosID, AlmacenID
+ORDER BY Ano DESC) = 1` (§11). **No** se usa `MAX(Ano)` global ni un año elegido para toda la
+tabla/SKU. `Ano` es numérico. No se afirma que el año elegido sea un año calendario salvo que se
+demuestre.
 
 **Tri-estado por bucket (determinista, sin colapsar ausencia a cero):**
 
 | Estado | Condición | Emisión |
 |--------|-----------|---------|
-| **positivo** | El bucket tiene ≥1 fila y `SUM(SaldoActual) > 0`. | String decimal exacto (p. ej. `"12.34"`). |
-| **cero con evidencia** | El bucket tiene ≥1 fila y `SUM(SaldoActual) = 0`. | `"0"` (hay evidencia de fila: el SKU sí tiene dato en ese bucket y no aporta saldo). |
-| **ausente** | El bucket **no tiene fila** (no aparece en el `GROUP BY`). | `null` (desconocido). **Nunca** `"0"`. |
+| **positivo** | El bucket tiene ≥1 fila incluida y su suma `Decimal > 0`. | String decimal exacto (p. ej. `"12.34"`). |
+| **cero con evidencia** | El bucket tiene ≥1 fila incluida y su suma `Decimal = 0`. | `"0"` (hay evidencia de fila: el SKU sí tiene dato en ese bucket y no aporta saldo). |
+| **ausente** | El bucket **no tiene fila incluida**. | `null` (desconocido). **Nunca** `"0"`. |
 
 Un bucket sin fila es **desconocido**, no cero. Cero solo se emite con evidencia directa de fila
 para ese bucket.
 
-**Negativos — PENDIENTE POR FREDY (no autorizados):**
+**Negativos (decidido): revisión por código, antes de agregar.**
 
-- La semántica comercial de un saldo/total negativo **no** está decidida. Marca: **PENDIENTE POR FREDY**.
-- Hasta decisión explícita de Fredy, **cualquier** saldo/total negativo detectado en un SKU
-  **bloquea** las cifras de ese SKU: `status: "bloqueado"`, `reason: "saldo_negativo"`, **sin
-  ningún número**. No se emite `"-2.00"` ni se le da significado comercial.
-- El SQL **no** debe filtrar los negativos (no `>= 0`, no `HAVING > 0`): los negativos deben ser
-  **visibles** para poder bloquearlos, no silenciados.
+- El SQL **no** agrega ni filtra por signo; devuelve el saldo **crudo** de la fila más reciente por
+  código de bodega. La clasificación y la revisión de negativos ocurren en el handler, **antes** de
+  cualquier suma.
+- Orden de evaluación por SKU: normalizar/`trim+uppercase` → excluir `CON`/denylist (§6) →
+  clasificar cada código en su bucket (o como no clasificado).
+- Para cada código **incluido** (`FLO`, `ALM`, `BD6`, `SUR`, `DIS`, `BOD`, `B.ROT`), se inspecciona
+  el saldo de su fila más reciente: si es **negativo**, el SKU se bloquea con
+  `reason: "saldo_negativo"`, **sin ningún número**. Un negativo en cualquier bucket incluido
+  (`neiva`, `florencia` o `B.ROT`) bloquea el SKU.
+- Un negativo en un código **excluido** (`CON` o denylist) se **ignora** para esta herramienta,
+  porque ese código está excluido de todo bucket de salida.
+- Un código **desconocido, nulo, blanco o nuevo** nunca se descarta en silencio: bloquea el SKU con
+  `reason: "codigo_no_clasificado"` (§5, §6.3).
+- Un saldo `NULL` en una fila más reciente **incluida** falla cerrado como
+  `reason: "validacion_fallida"`; **nunca** se coalesce a cero.
+- Solo después de esa revisión se **agregan** las filas incluidas restantes por bucket, en Python,
+  usando únicamente `Decimal`. No hay aritmética del modelo sobre las cifras.
 
-Los buckets se computan de forma determinista (§7, §8):
+Los buckets se computan de forma determinista (§6, §7, §8):
 
 | Bucket | Códigos de bodega (normalizados) |
 |--------|----------------------------------|
-| `sedes.florencia` | `FLO` (único confirmado). |
+| `sedes.neiva` | `ALM`, `BD6`, `SUR`, `DIS`, `BOD` (confirmado, §7). |
+| `sedes.florencia` | `FLO` (confirmado, §7). |
 | `baja_rotacion` | `B.ROT` (virtual). |
-| `no_mapeado` | Solo códigos físicos **reconocidos con evidencia**: `ALM`, `SUR`, `BD6`, `DIS`, `BOD`. |
 
 `CON` (§6.1) y la denylist (§6.2) quedan **excluidas** de los tres buckets. Cualquier código
-**desconocido, nulo, blanco o nuevo** (no presente en el set conocido) **no** se agrega
-silenciosamente a `no_mapeado`: bloquea el SKU con `reason: "codigo_no_clasificado"` (§5, §6.3).
-Distingue **código no mapeado** (reconocido, sin sede) de **código no clasificado** (desconocido).
+**desconocido, nulo, blanco o nuevo** (no presente en el set conocido) **no** se agrega a ningún
+bucket: bloquea el SKU con `reason: "codigo_no_clasificado"` (§5, §6.3). No existe un bucket
+"no mapeado": todo código reconocido pertenece a `neiva`, `florencia`, `B.ROT`, o a la exclusión.
+
+> **Propuesta informativa (NO aprobada / NO activa):** un umbral de "pocas unidades" de **5
+> unidades por sede física** queda registrado solo como propuesta pendiente. **No** está aprobado
+> por Fredy y **no** está activo en este contrato; la salida primaria sigue siendo la cantidad
+> exacta, sin clasificar ni filtrar por ese umbral. Ver §15.
 
 ---
 
@@ -197,7 +228,6 @@ Hay dos niveles: **errores globales** (`ok: false`) y **status por SKU** (dentro
 | `error.type` | Significado | Distinto de |
 |--------------|-------------|-------------|
 | `entrada_invalida` | Entrada mal formada: SKUs vacíos, >5, caracteres inválidos, sede inválida, clave extra, tipo inesperado. | — |
-| `warehouse_mapping_unconfirmed` | Se pidió `sede=neiva` (o ambas sedes) y el mapeo de códigos físicos a `neiva` no está confirmado (ver §7). | cifra cero / éxito parcial |
 | `error_consulta` | Fallo de infraestructura o integridad: timeout, conexión caída, error SQL, ERP no disponible, excepción, resultado no `list`, fila sin claves, SKU inesperado, resultado inválido, centinela alcanzado (§11). | `[]` / cero / cifra parcial |
 
 **Reglas duras:**
@@ -215,15 +245,16 @@ Hay dos niveles: **errores globales** (`ok: false`) y **status por SKU** (dentro
 
 | Caso | `status` | Efecto |
 |------|----------|--------|
-| SKU en catálogo y con ≥1 fila J3 consultable. | `"ok"` | Cifras exactas por bucket (tri-estado §4). |
+| SKU en catálogo y con ≥1 fila de inventario consultable (cualquier almacén del set). | `"ok"` | Cifras exactas por bucket (tri-estado §4). |
 | Falta el artículo (`AdmArticulos` no contiene el SKU). | `"no_encontrado"` | Sin cifras (no cero). |
-| El artículo existe pero no hay filas J3 consultables (ningún almacén comercial del set). | `"inventario_desconocido"` | Sin cifras (no cero). |
-| Algún bucket del SKU suma **negativo**. | `"bloqueado"` / `reason: "saldo_negativo"` | Sin cifras. PENDIENTE POR FREDY. |
+| El artículo existe pero **no hay filas de inventario** (el `LEFT JOIN` no produce filas para ese SKU). | `"inventario_desconocido"` | Sin cifras (no cero). |
+| Algún código incluido tiene saldo **negativo** en su fila más reciente. | `"bloqueado"` / `reason: "saldo_negativo"` | Sin cifras. |
 | Aparece un código de bodega **desconocido/nulo/blanco/nuevo**. | `"bloqueado"` / `reason: "codigo_no_clasificado"` | Sin cifras. |
-| Una cifra no pasa la validación exacta (§9) o su origen no está demostrado. | `"bloqueado"` / `reason: "validacion_fallida"` | Sin cifras. |
+| Una cifra no pasa la validación exacta (§9), o su origen no está demostrado, o un saldo incluido es `NULL`. | `"bloqueado"` / `reason: "validacion_fallida"` | Sin cifras. |
 
 - `"no_encontrado"` ≠ cero: "no existe el producto" vs "sé que el saldo es exactamente cero".
-- `"inventario_desconocido"` ≠ cero: "no puedo saber" vs "sé que es exactamente cero".
+- `"inventario_desconocido"` ≠ cero: "no puedo saber" vs "sé que es exactamente cero". Se
+  distingue "artículo no encontrado" de "artículo encontrado pero sin inventario".
 - Un fallo **global** de consulta produce `ok: false` sin **ninguna** cifra; un fallo **de un SKU**
   produce un elemento `bloqueado` sin cifras para ese SKU, sin contaminar a los demás.
 
@@ -245,39 +276,39 @@ Hay dos niveles: **errores globales** (`ok: false`) y **status por SKU** (dentro
 
 | Código (normalizado) | Clasificación |
 |----------------------|---------------|
+| `ALM`, `BD6`, `SUR`, `DIS`, `BOD` | `sedes.neiva` |
 | `FLO` | `sedes.florencia` |
 | `B.ROT` | `baja_rotacion` |
-| `ALM`, `SUR`, `BD6`, `DIS`, `BOD` | `no_mapeado` |
 | `CON`, `CEN`, `EXH`, `EXD`, `BDT`, `MDL`, `TRA` | **excluido** (no participa) |
 | cualquier otro / nulo / blanco | **no clasificado** → `bloqueado` |
 
 El orden de evaluación es: normalizar → excluir `CON`/denylist → clasificar en bucket; si el código
 no cae en ninguno de los sets anteriores, es **no clasificado** y bloquea el SKU (no se agrega a
-`no_mapeado`).
+ningún bucket).
 
 ---
 
 ## 7. Mapeo códigos físicos → sede
 
-Derivado **únicamente** de `website_warehouse_policy.py` y `j3system_sales_warehouse.py`
-(ver §16 por evidencia exacta).
+**Confirmado por Fredy el 22 oct 2026: `FLO = Florencia`; `ALM`, `SUR`, `BD6`, `DIS` y
+`BOD` = Neiva.** El set coincide con el `SITES` del contrato B2: `neiva: (ALM, BD6, SUR, DIS, BOD)`,
+`florencia: (FLO,)`.
 
 | Código | Sede | Estado de la evidencia |
 |--------|------|------------------------|
-| `FLO` | `florencia` | **Confirmado** — `WAREHOUSE_CODE_TO_NAME["FLO"] = "ALMACEN FLORENCIA (Sika Center)"`. |
-| `ALM` (`001`) | `POR CONFIRMAR POR FREDY` | Las fuentes no contienen "Neiva". |
-| `SUR` | `POR CONFIRMAR POR FREDY` | Las fuentes no contienen "Neiva". |
-| `BD6` | `POR CONFIRMAR POR FREDY` | Las fuentes no contienen "Neiva". |
-| `DIS` (`DISTRIBUCIONES`) | `POR CONFIRMAR POR FREDY` | Las fuentes no contienen "Neiva". |
-| `BOD` (`MANGUERAS`) | `POR CONFIRMAR POR FREDY` | Las fuentes no contienen "Neiva". |
+| `FLO` | `florencia` | **Confirmado** (Fredy, 22 oct 2026). |
+| `ALM` | `neiva` | **Confirmado** (Fredy, 22 oct 2026). |
+| `BD6` | `neiva` | **Confirmado** (Fredy, 22 oct 2026). |
+| `SUR` | `neiva` | **Confirmado** (Fredy, 22 oct 2026). |
+| `DIS` | `neiva` | **Confirmado** (Fredy, 22 oct 2026). |
+| `BOD` | `neiva` | **Confirmado** (Fredy, 22 oct 2026). |
 
 Los códigos de la denylist (§6.2) y `CON`/`B.ROT` (§6.1, §8) **no** participan en este mapeo.
 
-**Consecuencia operativa:** `FLO → Florencia` es la única derivación con evidencia local. Los demás
-códigos físicos reconocidos (`ALM`, `SUR`, `BD6`, `DIS`, `BOD`) van al bucket `no_mapeado`: **no**
-se listan como mapeo a `neiva` ni a ninguna sede, y **no** se presentan como saldo de Neiva. Por
-tanto, pedir `sede=neiva` (o ambas sedes) produce `warehouse_mapping_unconfirmed` (§5.1). Un código
-**no reconocido** va a `codigo_no_clasificado` (§6), no a `no_mapeado`.
+**Consecuencia operativa:** ambos mapeos están confirmados; no existe bucket "no mapeado" ni
+ambigüedad de "no mapeado como Neiva o Florencia". Pedir `sede=neiva`, `sede=florencia` o ambas es
+válido (§2). Un código **no reconocido** va a `codigo_no_clasificado` (§6), **no** se une a un
+bucket de sede.
 
 ---
 
@@ -294,32 +325,42 @@ tanto, pedir `sede=neiva` (o ambas sedes) produce `warehouse_mapping_unconfirmed
 **`baja_rotacion_confirmation` — señal tri-estado (cerrada por SKU):**
 
 La señal usa el tri-estado de §4 (positivo / cero con evidencia / ausente) y **no** colapsa
-ausencia a cero. Los negativos ya están bloqueados antes de llegar aquí (§4).
+ausencia a cero. Los negativos ya están bloqueados antes de llegar aquí (§4). La señal se calcula
+sobre los buckets físicos **solicitados** (los presentes en `sedes`).
 
-| `baja_rotacion` | `sedes.florencia` | `no_mapeado` | Señal |
-|-----------------|-------------------|--------------|-------|
+- Si `baja_rotacion` es **cero o ausente** → `"not_required"` (no aporta existencia).
+- Si `baja_rotacion` es **positivo**:
+  - algún bucket físico solicitado es **positivo** → `"not_required"` (existencia física demostrada
+    en al menos una sede, independiente de `B.ROT`);
+  - todos los buckets físicos solicitados están en **cero con evidencia** → `"required"` (la
+    existencia de las sedes solicitadas podría depender **solo** de `B.ROT`; se exige confirmación
+    humana del origen físico);
+  - en otro caso (algún bucket físico solicitado está **ausente**) → `"unknown"`.
+
+Con ambas sedes solicitadas (tabla de referencia):
+
+| `baja_rotacion` | `sedes.neiva` | `sedes.florencia` | Señal |
+|-----------------|---------------|-------------------|-------|
 | cero o ausente | (cualquiera) | (cualquiera) | `"not_required"` |
 | positivo | positivo | (cualquiera) | `"not_required"` |
+| positivo | (cualquiera) | positivo | `"not_required"` |
 | positivo | cero | cero | `"required"` |
 | positivo | ausente | (cualquiera) | `"unknown"` |
-| positivo | cero | positivo | `"unknown"` |
-| positivo | cero | ausente | `"unknown"` |
+| positivo | (cualquiera) | ausente | `"unknown"` |
 
-- `"required"`: la existencia de la sede confirmada podría depender **solo** de `B.ROT` (solo
-  `B.ROT` positivo, y los buckets físicos demostrados en cero); se exige confirmación humana del
-  origen físico.
-- `"not_required"`: demostrable que no hace falta confirmación (`B.ROT` no positivo, o `florencia`
-  positivo).
-- `"unknown"`: no se puede determinar (falta dato de fila en un bucket físico, o hay saldo físico
-  no mapeado cuya sede de despacho es `POR CONFIRMAR POR FREDY`).
+- `"required"`: solo `B.ROT` positivo y los buckets físicos solicitados demostrados en cero; se
+  exige confirmación humana del origen físico.
+- `"not_required"`: demostrable que no hace falta confirmación (`B.ROT` no positivo, o alguna sede
+  solicitada positiva).
+- `"unknown"`: no se puede determinar (falta dato de fila en un bucket físico solicitado).
 
 La señal **no** afirma disponibilidad física por `B.ROT`; solo indica si falta confirmación humana
 del origen físico. La incertidumbre **nunca** se colapsa a `"not_required"` ni a `"required"` cuando
 falta dato.
 
-**Pendientes (no decididos):**
-- Solapamiento exacto `B.ROT` ↔ bodegas físicas: **POR CONFIRMAR POR FREDY**.
-- Bodega de despacho (cuál sede/bodega efectivamente despacha): **POR CONFIRMAR POR FREDY**.
+**Pendiente (no decidido, informativo, no bloqueante):** solapamiento exacto `B.ROT` ↔ bodegas
+físicas y origen físico de `B.ROT`: **POR CONFIRMAR POR FREDY** (§15). No bloquea el cierre del
+contrato; las cantidades permanecen separadas y nunca se totalizan.
 
 ---
 
@@ -329,6 +370,8 @@ falta dato.
 
 **Hechos demostrados en el worktree (fuentes en §16):**
 
+- `SaldoActual` es una columna SQL `decimal` (evidencia de esquema). Su **precisión/escala exacta**
+  y el **tipo concreto que devuelve el driver Python** **no** están demostrados.
 - El SSOT web aplica `CAST(... AS DECIMAL(18, 4))` sobre `SaldoActual` y filtra
   `CAST(...) >= 0` (visible en `j3system_website_stock.py`). `catalog.stock` **no** hereda ese cast
   ni ese filtro.
@@ -349,28 +392,30 @@ herramienta **no** emite ninguna cifra: bloquea el SKU con `reason: "validacion_
 
 - El handler entrega, **antes** del registry/JSON layer, una **string decimal canónica**. **No** se
   confía en el encoder por defecto de FastAPI/Pydantic para `Decimal`.
-- Regla de canonicalización (solo si el valor es un `Decimal` exacto):
+- Tipos aceptados: **`Decimal` exacto** (el valor leído del bucket sin pasar por `float`/`round`/
+  cast/clamp), y **`int` solo si se justifica** (p. ej. evidencia demostrada de que el driver
+  entrega enteros para esa columna). Se **rechazan** `float` y `str` (evidencia de una conversión
+  intermedia): en ese caso se bloquea con `validacion_fallida` hasta demostrar el origen.
+- Regla de canonicalización (solo para un `Decimal` exacto, o un `int` justificado):
   - Se serializa con **`format(d, "f")`** (punto fijo, **sin** exponente). Se **rechaza** cualquier
     representación que contenga un marcador de exponente (`e`/`E`): bloquea, no se emite.
   - Se canonicaliza el **cero negativo** (`"-0"`, `"-0.00"`…) a `"0"` (sin signo).
-  - La cadena resultante debe cumplir `^-?\d+(\.\d+)?$`.
-- Si el valor llega como `float`, `int` o `str` (evidencia de una conversión intermedia) en el punto
-  de validación, **no** se asume exactitud: se bloquea con `validacion_fallida` hasta demostrar el
-  origen.
-- **No** se usa `Decimal(str(v)) == v` como prueba de exactitud (es tautológico para un `Decimal`
-  ya exacto). La exactitud se establece validando el **origen** (que el valor es el `Decimal` leído
-  del bucket, sin pasar por `float`/`round`/cast/clamp), no reparseando.
+  - La cadena resultante debe cumplir `^\d+(\.\d+)?$` (no negativa; §4 bloquea los negativos antes
+    de emitir).
+- **No** se usa `Decimal(str(float))` ni ningún `float`/cast/redondeo/clamp para producir la cifra.
 
 ### 9.3 Validación por el servidor (qué cifra se valida exactamente)
 
 Antes de presentar una cifra, el servidor **debe** verificar, para **cada** cifra emitida, que:
 
-1. **Corresponde al bucket probado:** la cifra de `sedes.florencia` proviene solo de filas `FLO`;
-   `no_mapeado` solo de `ALM`/`SUR`/`BD6`/`DIS`/`BOD`; `baja_rotacion` solo de `B.ROT`. Sin cruces.
-2. **Corresponde al valor `Decimal` exacto:** el string canónico reparsea a un `Decimal` numéricamente
-   igual al valor agregado para ese bucket. (Esto es **correspondencia**, no prueba de origen.)
-3. **No se alteró ni creó valor:** ninguna operación `float`, `round`, cast, clamp o `>= 0` intervino.
-   La validación **no** altera ni inventa la cifra; solo la verifica.
+1. **Corresponde al bucket probado:** la cifra de `sedes.neiva` proviene solo de
+   `ALM`/`BD6`/`SUR`/`DIS`/`BOD`; `sedes.florencia` solo de `FLO`; `baja_rotacion` solo de `B.ROT`.
+   Sin cruces.
+2. **Corresponde al valor `Decimal` exacto:** el string canónico reparsea a un `Decimal`
+   numéricamente igual al valor agregado para ese bucket. (Esto es **correspondencia**, no prueba de
+   origen.)
+3. **No se alteró ni creó valor:** ninguna operación `float`, `round`, cast, clamp o `>= 0`
+   intervino. La validación **no** altera ni inventa la cifra; solo la verifica.
 
 Esta capacidad **no** está demostrada que exista en el worktree (§9.1). Es un **gate**: si el
 runtime no puede validar el contenido numérico final de una cifra, **no** se autoriza esa cifra al
@@ -381,26 +426,34 @@ existe".
 
 ## 10. Fuente de stock (builder nuevo; no reutilizar el existente)
 
-Reutilizar la **topología** de la fuente J3 (mismas tablas y joins), pero **no** el builder
-existente:
+Reutilizar la **topología** de la fuente J3 (mismas tablas), pero **no** el builder existente:
 
-- Tablas/joins: `InvDetalleExistencias → InvExistencias → AdmArticulos → AdmAlmacen`
-  (misma topología que `build_website_stock_by_sku_sql`).
-- Saldo: `InvDetalleExistencias.SaldoActual` (año vigente = `MAX(Ano)`), leído **por
+- **Tabla base `AdmArticulos`** con `LEFT JOIN` hacia la cadena de inventario
+  (`InvExistencias`, `InvDetalleExistencias`) y almacén (`AdmAlmacen`), de modo que una fila de
+  inventario ausente **no** pueda desaparecer por un `INNER JOIN`. La ausencia de fila sobrevive
+  como `NULL` y se interpreta como ausente/`inventario_desconocido` (§4, §5.2), nunca como `"0"`.
+- Saldo: `InvDetalleExistencias.SaldoActual` **crudo**, sin cast ni filtro de signo, leído **por
   `AlmacenCodigo`** para clasificar en buckets (§4).
+- **Último año por par:** `ROW_NUMBER() OVER (PARTITION BY ArticulosID, AlmacenID ORDER BY Ano
+  DESC) = 1` (no `MAX(Ano)` global, §4, §11).
 
 **Por qué un builder nuevo (evidencia local, §16):** el builder existente
-`build_website_stock_by_sku_sql` **interpola** los SKUs (no usa bind params), aplica
-`CAST(... AS DECIMAL(18, 4))`, filtra `CAST(...) >= 0` y un `HAVING ... > 0`. Ninguno de esos
-comportamientos es admisible en `catalog.stock`:
+`build_website_stock_by_sku_sql` **interpola** los SKUs (no usa bind params), usa `INNER JOIN` y
+filtra `AlmacenCodigo IS NOT NULL AND <> ''` en el `WHERE`, aplica `CAST(... AS DECIMAL(18, 4))`,
+filtra `CAST(...) >= 0` y un `HAVING ... > 0`. Ninguno de esos comportamientos es admisible en
+`catalog.stock`:
 
-1. Obtener el saldo **por `AlmacenCodigo`** (no solo el total allowlist).
-2. **Leer `SaldoActual` sin cast** y **sin** filtro `>= 0` ni `HAVING` (los negativos deben ser
+1. `AdmArticulos` como base con `LEFT JOIN`; **no** filtrar códigos nulos/en blanco en el SQL
+   (clasificarlos en el handler).
+2. Obtener el saldo **por `AlmacenCodigo`** (no solo el total allowlist).
+3. **Leer `SaldoActual` sin cast** y **sin** filtro `>= 0` ni `HAVING` (los negativos deben ser
    visibles para bloquearse, §4).
-3. Excluir `CON` y la denylist tras normalizar trim+uppercase (§6).
-4. Mapear `FLO → florencia` (§7); `ALM`/`SUR`/`BD6`/`DIS`/`BOD` → `no_mapeado`; `B.ROT` → línea
-   `baja_rotacion` (§8); código desconocido → `codigo_no_clasificado` (§6).
-5. SKUs pasados como **parámetros bind** (nunca interpolación desde entrada de usuario).
+4. **No agregar en SQL**; devolver la fila más reciente por (artículo, almacén) y agregar en Python
+   con `Decimal` (§4).
+5. Excluir `CON` y la denylist tras normalizar trim+uppercase (§6).
+6. Mapear `ALM`/`BD6`/`SUR`/`DIS`/`BOD` → `neiva`; `FLO` → `florencia` (§7); `B.ROT` → línea
+   `baja_rotacion` (§8); código desconocido/nulo/blanco → `codigo_no_clasificado` (§6).
+7. SKUs pasados como **parámetros bind** (nunca interpolación desde entrada de usuario).
 
 Solo se reutiliza un helper (p. ej. `sql_in_list`) para valores **fijos de policy** (códigos de
 bodega, constantes no derivadas de entrada), y únicamente si la evidencia local demuestra que es
@@ -414,15 +467,22 @@ seguro para ese uso. Nunca para los SKUs de entrada.
 - **Parametrizado:** cada SKU de entrada se pasa como **parámetro bind** (nunca interpolación de
   strings desde entrada del usuario). Los códigos de bodega provienen de la policy fija, no de
   entrada de usuario.
+- **Base + LEFT JOIN:** `AdmArticulos` como tabla base; `LEFT JOIN` a la cadena de inventario y a
+  almacén (§10). **No** se filtran códigos nulos/en blanco en el SQL.
+- **Último año por par:** `ROW_NUMBER() OVER (PARTITION BY ArticulosID, AlmacenID ORDER BY Ano
+  DESC) = 1` para quedarse con una única fila por (artículo, almacén). **No** `MAX(Ano)` global.
+  `Ano` es numérico; no se afirma que sea año calendario salvo demostración.
 - **Timeout:** timeout de conexión/consulta acotado a un valor **explícito ≤ 10 s**. Si la
   configuración local de timeout no está definida, se define una explícita en el builder. Timeout →
-  `error_consulta`. (No se asume la existencia de una constante `DB_TIMEOUT`; es un requisito a
-  definir.)
-- **Límite verificable (sin truncado silencioso):** la consulta agrupa por (SKU, `AlmacenCodigo`)
-  con `WHERE` sobre los ≤5 SKUs. El máximo de filas esperado es `5 × |códigos conocidos|`. **No** se
-  usa `TOP`/`LIMIT` para truncar cantidades. Se usa un **centinela** (`TOP (max_esperado + 1)` en
-  T-SQL) para detectar desbordamiento: si se alcanza el centinela/tope, o no se puede demostrar la
-  integridad del resultado, → `error_consulta` sin cifras. **T-SQL no usa `LIMIT`**; solo `TOP`.
+  `error_consulta`. No se heredan reintentos ni logging de excepción que excedan el tope o copien
+  texto del driver; el camino propio debe evitar ambos.
+- **Límite verificable (sin truncado silencioso):** la consulta devuelve a lo sumo una fila por par
+  (SKU, `AlmacenCodigo`). El máximo esperado es `5 × |códigos conocidos|` (los 14 códigos de
+  `ALL_J3_WAREHOUSE_CODES`). **No** se usa `TOP`/`LIMIT` para truncar cantidades. Se usa un
+  **centinela** (`TOP (max_esperado + 1)` en T-SQL) para detectar desbordamiento: si se alcanza el
+  centinela/tope, o no se puede demostrar la integridad del resultado, → `error_consulta` sin
+  cifras. **T-SQL no usa `LIMIT`**; solo `TOP`. Un código desconocido se clasifica por SKU como
+  `codigo_no_clasificado` (§6), **no** como condición de centinela/desbordamiento global.
 - **Datos sintéticos/fake-only en tests:** nunca datos reales de producción.
 
 ---
@@ -447,7 +507,11 @@ seguro para ese uso. Nunca para los SKUs de entrada.
    a `error_consulta` con `message` fijo; **nunca** se propaga el texto del driver/exception/SQL.
 3. **Resultado no `list`, fila sin claves, SKU inesperado, resultado inválido** → `error_consulta`,
    nunca `[]`/cero (§5.1).
-4. **Convención de respuesta:** este contrato usa el envoltorio `{ok, error}` (fail-closed), que
+4. **Clasificar en handler, no en SQL:** códigos nulos/en blanco/desconocidos se clasifican en el
+   handler y bloquean con `codigo_no_clasificado`; nunca se descartan en silencio (§4, §6).
+5. **Revisión de negativos antes de agregar:** por código incluido, antes de sumar (§4); agregación
+   posterior solo con `Decimal` en Python.
+6. **Convención de respuesta:** este contrato usa el envoltorio `{ok, error}` (fail-closed), que
    **difiere** de la convención `{status, reason}` de algunos tools locales (`builtins.py`). Se
    **justifica** la diferencia: un fallo de consulta no debe poder confundirse con un resultado
    vacío (`status: "empty"`), y `{ok: false}` + `error.type` fijo es más seguro para fail-closed. La
@@ -460,19 +524,27 @@ Todos los tests usan **datos sintéticos/fake**, nunca DB real ni credenciales.
 | # | Caso | Resultado esperado |
 |---|------|--------------------|
 | 1 | `skus` vacío / >5 / caracteres inválidos / clave extra / tipo inesperado. | `entrada_invalida` (global). |
-| 2 | `sede: "neiva"` o `sede` ausente. | `warehouse_mapping_unconfirmed` (global, sin éxito parcial). |
-| 3 | `sede: "florencia"`, SKU en catálogo, fila `FLO` positiva. | `ok`, `status: "ok"`, `sedes.florencia` = string decimal. |
-| 4 | SKU en catálogo, sin fila para un bucket. | bucket ausente = `null` (**no** `"0"`). |
-| 5 | SKU en catálogo, fila con `SUM = 0` para un bucket. | bucket = `"0"` (cero con evidencia). |
-| 6 | SKU no en `AdmArticulos`. | `status: "no_encontrado"` (sin cifras, no cero). |
-| 7 | SKU en catálogo, sin filas J3 consultables. | `status: "inventario_desconocido"` (sin cifras). |
-| 8 | Algún bucket suma negativo. | `status: "bloqueado"`, `reason: "saldo_negativo"`, sin números. |
-| 9 | Código de bodega desconocido/nulo/blanco. | `status: "bloqueado"`, `reason: "codigo_no_clasificado"`. |
-| 10 | `CON` y denylist (`CEN`,`EXH`,`EXD`,`BDT`,`MDL`,`TRA`) presentes. | excluidas de los buckets (no suman). |
-| 11 | Driver lanza excepción / `rows` no es `list` / fila sin claves / SKU inesperado / centinela alcanzado. | `error_consulta` (global), mensaje fijo, sin cifras. |
-| 12 | Valor llega como `float`/`int`/`str` (origen no `Decimal` demostrado) o no pasa §9. | `status: "bloqueado"`, `reason: "validacion_fallida"`. |
-| 13 | Mezcla de SKUs: uno `ok`, uno `no_encontrado`, uno `bloqueado`. | `results` con un elemento por SKU, sin mezclar cifras ambiguas. |
-| 14 | Canonicalización: `format(d, "f")` sin exponente; cero negativo → `"0"`. | string `^-?\d+(\.\d+)?$`. |
+| 2 | `sede: "neiva"`, `sede: "florencia"` y `sede` ausente. | `ok` (todos válidos); `sede` resuelta `"neiva"`/`"florencia"`/`"ambas"`. |
+| 3 | `sede: "neiva"`, SKU en catálogo, fila `ALM` positiva. | `ok`, `status: "ok"`, `sedes.neiva` = string decimal. |
+| 4 | `sede: "florencia"`, SKU en catálogo, fila `FLO` positiva. | `ok`, `status: "ok"`, `sedes.florencia` = string decimal. |
+| 5 | `sede` ausente, filas `ALM` y `FLO` positivas. | `ok`, `sedes` = `{ "neiva": …, "florencia": … }`, `sede` = `"ambas"`. |
+| 6 | SKU en catálogo, sin fila para un bucket. | bucket ausente = `null` (**no** `"0"`). |
+| 7 | SKU en catálogo, fila con suma `Decimal = 0` para un bucket. | bucket = `"0"` (cero con evidencia). |
+| 8 | SKU en catálogo, sin filas de inventario (LEFT JOIN sin filas). | `status: "inventario_desconocido"` (no `"0"`). |
+| 9 | SKU no en `AdmArticulos`. | `status: "no_encontrado"` (sin cifras, no cero). |
+| 10 | Fila más reciente con saldo negativo en `neiva` (`ALM`), `florencia` (`FLO`) o `B.ROT`. | `status: "bloqueado"`, `reason: "saldo_negativo"`, sin números. |
+| 11 | Cancelación: `ALM = +3` y `BD6 = -3` en el mismo bucket `neiva`. | `status: "bloqueado"`, `reason: "saldo_negativo"` (se inspecciona antes de agregar). |
+| 12 | Negativo solo en un código excluido (`CON` o denylist). | excluido/ignorado; el SKU **no** se bloquea por ese negativo. |
+| 13 | Código de bodega desconocido/nulo/blanco. | `status: "bloqueado"`, `reason: "codigo_no_clasificado"` (no se descarta en silencio). |
+| 14 | Saldo `NULL` en una fila más reciente incluida. | `status: "bloqueado"`, `reason: "validacion_fallida"` (no coalesce a cero). |
+| 15 | Varios `Ano` por (artículo, almacén): se selecciona la fila más reciente por par. | `ROW_NUMBER() … ORDER BY Ano DESC = 1`; no `MAX(Ano)` global. |
+| 16 | Año más nuevo con datos parciales (solo algunos almacenes). | buckets con fila = valor; buckets sin fila = `null` (ausente), no `"0"`. |
+| 17 | `CON` y denylist (`CEN`,`EXH`,`EXD`,`BDT`,`MDL`,`TRA`) presentes. | excluidas de los buckets (no suman). |
+| 18 | `B.ROT` presente y positivo; buckets físicos solicitados en cero/ausente/positivo. | `baja_rotacion` en línea aparte; señal §8 (`required`/`not_required`/`unknown`). |
+| 19 | Driver lanza excepción / `rows` no es `list` / fila sin claves / SKU inesperado / centinela alcanzado. | `error_consulta` (global), mensaje fijo, sin cifras. |
+| 20 | Valor llega como `float`/`str` (origen no `Decimal` demostrado) o no pasa §9. | `status: "bloqueado"`, `reason: "validacion_fallida"`. |
+| 21 | Mezcla de SKUs: uno `ok`, uno `no_encontrado`, uno `bloqueado`. | `results` con un elemento por SKU, sin mezclar cifras ambiguas. |
+| 22 | Canonicalización: `format(d, "f")` sin exponente; cero negativo → `"0"`; regex `^\d+(\.\d+)?$`. | string decimal canónico no negativo. |
 
 ---
 
@@ -484,30 +556,33 @@ Todos los tests usan **datos sintéticos/fake**, nunca DB real ni credenciales.
 - La lógica vive en un módulo dedicado (p. ej. bajo `modules/catalog`), no en `builtins.py`.
 - Tests futuros **fake-only** (nunca DB real ni credenciales).
 
-### 14.5 Audiencia / scope — PENDIENTE POR FREDY
+### 14.5 Audiencia / scope (alineado con B2)
 
-- **No** se declara ni registra `PUBLIC_STOCK` / `public_safe=True` como autorización para publicar
-  cantidades o estructura interna. El enum `ToolScope.PUBLIC_STOCK` **existe** en
-  `depotru_kernel/auth.py` (hecho), pero **no** es por sí solo una autorización de audiencia
-  pública para estas cifras.
-- La decisión vigente ("cifras exactas como dato de herramienta") **no** define por sí sola la
-  audiencia pública.
-- Marca: audiencia/scope **PENDIENTE POR FREDY**. Hasta resolverlo, `catalog.stock` **no** se
-  registra ni se expone públicamente (sin registro/exposición pública).
+- `catalog.stock` se registra bajo **`ToolScope.SALES_PORTFOLIO`** (como el
+  `catalog.quote_for_customer` de B2), usable por **`SALES`** y **`ADMIN`**, con
+  **`public_safe=False`**. No es descubrible ni usable por `PUBLIC`/`CUSTOMER`/etc.
+- No se declara ni registra `PUBLIC_STOCK` / `public_safe=True` para estas cifras. El enum
+  `ToolScope.PUBLIC_STOCK` **existe** en `depotru_kernel/auth.py` (hecho), pero **no** se usa para
+  `catalog.stock`.
+- Redacción neutra: es **dato de herramienta de disponibilidad exacta para un flujo de venta
+  autorizado**; un resultado de herramienta **no** es por sí mismo permiso para enviar un mensaje
+  no validado a un cliente. No hay gate de audiencia pendiente.
 
 ---
 
-## 15. Por confirmar por Fredy (resumen)
+## 15. Por confirmar por Fredy (resumen — solo pendientes no bloqueantes)
 
-1. Mapeo de `ALM`/`SUR`/`BD6`/`DIS`/`BOD` a una sede (hipótesis `neiva` **no probada** por las dos
-   fuentes; pendiente de Fredy).
-2. Solapamiento `B.ROT` ↔ bodegas físicas.
-3. Bodega de despacho.
-4. Semántica comercial de saldos/totales **negativos** (hasta decisión, bloquean la cifra, §4).
-5. Audiencia/scope de exposición pública de las cantidades (§14.5).
+1. **Propuesta informativa de umbral "pocas unidades"** (sugerencia: **5 unidades por sede
+   física**). **NO aprobada / NO activa**; no se aplica en este contrato. La salida primaria sigue
+   siendo la cantidad exacta (§4).
+2. **Solapamiento y origen físico de `B.ROT`** (§8). Informativo y no bloqueante; las cantidades
+   permanecen separadas.
 
-> Eliminado respecto al borrador anterior: el umbral numérico de "pocas unidades" (propuesta `5`),
-> que **no** está aprobado.
+> Resuelto respecto al borrador anterior: mapeo de bodegas a sede (confirmado por Fredy 22 oct
+> 2026, §7); semántica de saldos negativos (revisión por código antes de agregar, §4); audiencia /
+> scope (alineado con B2, §14.5); elección del año de inventario (última fila por par, §4/§11);
+> bodega de despacho (fuera de alcance de este contrato de disponibilidad). El umbral numérico de
+> "pocas unidades" **no** está aprobado.
 
 ---
 
@@ -515,11 +590,12 @@ Todos los tests usan **datos sintéticos/fake**, nunca DB real ni credenciales.
 
 | Evidencia | Archivo | Confirma |
 |-----------|---------|----------|
-| `WAREHOUSE_CODE_TO_NAME` incluye `FLO = "ALMACEN FLORENCIA (Sika Center)"`, `CON = "CONTABILIDAD"`, `B.ROT = "PRODUCTOS DE BAJA ROTACION"`. | `src/business_analyzer/core/j3system_sales_warehouse.py` | `FLO → Florencia` (única ciudad nombrada). Resto sin ciudad. |
+| Mapeo de bodegas confirmado por Fredy (22 oct 2026): `FLO = Florencia`; `ALM`, `SUR`, `BD6`, `DIS`, `BOD` = Neiva. | Instrucción de Fredy (22 oct 2026) | §7; coincide con el `SITES` del contrato B2 (`neiva: (ALM, BD6, SUR, DIS, BOD)`, `florencia: (FLO,)`). |
+| `WAREHOUSE_CODE_TO_NAME` incluye `FLO = "ALMACEN FLORENCIA (Sika Center)"`, `CON = "CONTABILIDAD"`, `B.ROT = "PRODUCTOS DE BAJA ROTACION"`, y nombres de bodega para `ALM`/`SUR`/`BD6`/`DIS`/`BOD`. | `src/business_analyzer/core/j3system_sales_warehouse.py` | Nombres de códigos; el mapeo a sede proviene de la instrucción de Fredy (no solo del archivo). |
 | Denylist web (`CEN`, `EXH`, `EXD`, `BDT`, `MDL`, `TRA`) y allowlist web (incluye `CON` y `B.ROT`). | `src/business_analyzer/core/website_warehouse_policy.py` | Política web ≠ política comercial. |
-| `build_website_stock_by_sku_sql` interpola SKUs (no bind), aplica `CAST(... AS DECIMAL(18, 4))`, filtro `CAST(...) >= 0` y `HAVING ... > 0`. | `src/business_analyzer/core/j3system_website_stock.py` | Requiere builder nuevo (§10); cast/filtro **no** se heredan. |
+| `build_website_stock_by_sku_sql` interpola SKUs (no bind), usa `INNER JOIN` y filtra `AlmacenCodigo IS NOT NULL AND <> ''`, aplica `CAST(... AS DECIMAL(18, 4))`, filtro `CAST(...) >= 0` y `HAVING ... > 0`. | `src/business_analyzer/core/j3system_website_stock.py` | Requiere builder nuevo (§10); cast/filtro/joins **no** se heredan. |
 | Conversión explícita `float(raw_qty)` en `_quote_search_j3`. | `src/depotru_tools/builtins.py` | El protocolo local actual usa `float`; justifica el gate §9. |
-| Enum `ToolScope.PUBLIC_STOCK` y `public_safe` existen en el `ToolSpec`. | `src/depotru_kernel/auth.py`, `src/depotru_tools/registry.py` | El scope **existe**, pero **no** autoriza audiencia pública (§14.5). |
+| Enum `ToolScope.PUBLIC_STOCK` y `public_safe` existen en el `ToolSpec`; `ToolScope.SALES_PORTFOLIO` (B2) para `catalog.stock`. | `src/depotru_kernel/auth.py`, `src/depotru_tools/registry.py` | El scope correcto para `catalog.stock` es `SALES_PORTFOLIO`, no `PUBLIC_STOCK` (§14.5). |
 | La API monta `ToolCallResponse` con `result: Any` vía Pydantic/`response_model`. | `src/apps/api/v1.py`, `src/api.py` | No hay un encoder `Decimal`→string custom demostrado; el default no se asume (§9.1). |
 
 **No afirmado / no encontrado en el worktree:**
@@ -528,8 +604,7 @@ Todos los tests usan **datos sintéticos/fake**, nunca DB real ni credenciales.
   serialización local no está demostrado como exacto).
 - No se halló `jsonable_encoder` en `src/apps/api/v1.py` ni `src/api.py` (afirmación retirada del
   borrador anterior).
-- El tipo concreto del driver para columnas `DECIMAL` y la escala nativa de `SaldoActual` **no**
-  están demostrados (pendientes de esquema, §9.1).
-- `docs/CRM` (orden de Fredy) no existe como archivo en esta rama; la política comercial de este
-  contrato se deriva del encargo y de las dos políticas locales citadas. Si la orden de Fredy vive
-  en otro worktree/repo, debe adjuntarse para validar §6–§8.
+- La precisión/escala exacta de `SaldoActual` y el tipo concreto del driver Python para columnas
+  `DECIMAL` **no** están demostrados (pendientes de esquema, §9.1).
+- El mapeo a sede proviene de la **instrucción de Fredy (22 oct 2026)** y coincide con el `SITES`
+  del contrato B2; no se depende de un archivo `docs/CRM` local para validar §6–§8.
