@@ -52,11 +52,24 @@ sido **validada por el servidor** (ver §9) antes de poder presentarse. La herra
 | `skus` | `string[]` | Obligatorio. 1 a 5 códigos. Cada SKU: no vacío, ≤ 40 caracteres, solo `[A-Za-z0-9._-]`. |
 | `sede` | `string \| null` | Opcional. Valores válidos: `"neiva"`, `"florencia"`. `null`/ausente → ambas sedes. |
 
-**Normalización (aplicada antes de cualquier filtro o consulta):**
+**Normalización (orden explícito, antes de cualquier filtro o consulta):**
 
-- Códigos de SKU y de bodega se normalizan con **trim + uppercase** antes de comparar con el
-  catálogo, la denylist y el mapeo de sede. `sede` se normaliza con trim + lowercase.
-- La normalización **solo** es para clasificar/filtrar; **no** crea ni altera un valor de cantidad.
+Por cada elemento de `skus`, el orden es fijo y secuencial: **1) chequeo de tipo** (debe ser
+`str`; cualquier otro tipo → `entrada_invalida`) → **2) trim** (espacios al inicio/final) →
+**3) uppercase** → **4) validación del alfabeto canónico ASCII** (`[A-Z0-9._-]`, no vacío, ≤ 40
+caracteres, aplicado sobre la forma normalizada) → **5) detección de duplicados normalizados**.
+Cualquier paso que falle → `entrada_invalida` (global, §5).
+
+- El input crudo puede llevar espacios en blanco al inicio/final o letras en cualquier caja; se
+  normalizan (trim + uppercase) **antes** de validar. Un carácter no ASCII o no permitido que
+  sobreviva al trim → inválido.
+- **Duplicados normalizados:** si dos elementos de `skus` producen el mismo SKU normalizado
+  (p. ej. `"abc"` y `"ABC"`, o `" abc "` y `"ABC"`), se rechaza con `entrada_invalida` (global).
+  No se deduplican en silencio.
+- Códigos de bodega se normalizan con **trim + uppercase** antes de comparar con el catálogo, la
+  denylist y el mapeo de sede. `sede` se normaliza con trim + lowercase.
+- La normalización **solo** es para clasificar/filtrar/validar; **no** crea ni altera un valor de
+  cantidad.
 
 **Esquema cerrado:** solo se admiten las claves `skus` y `sede`. Cualquier clave extra, tipo
 inesperado, o `skus`/`sede` con forma distinta a la declarada → `entrada_invalida` (§5). Esta
@@ -162,11 +175,20 @@ Cada cantidad es el **saldo exacto en base-10** de la fila más reciente de
 `InvDetalleExistencias.SaldoActual` por (artículo, almacén), agregado **solo en Python con
 `Decimal`** por bucket de bodega, **sin** redondeo, **sin** umbral activo y **sin** clamp a cero.
 
-**Último año por par (artículo × almacén):** el SQL selecciona **exactamente una fila** por par
+**Último período por par (artículo × almacén):** el SQL selecciona una fila por par
 (`ArticulosID`, `AlmacenID`) usando `ROW_NUMBER() OVER (PARTITION BY ArticulosID, AlmacenID
-ORDER BY Ano DESC) = 1` (§11). **No** se usa `MAX(Ano)` global ni un año elegido para toda la
-tabla/SKU. `Ano` es numérico. No se afirma que el año elegido sea un año calendario salvo que se
-demuestre.
+ORDER BY Ano DESC) = 1` (§11). **No** se usa `MAX(Ano)` global ni un período elegido para toda la
+tabla/SKU. `Ano` es numérico. No se afirma que el período elegido sea un año calendario ni que
+represente una instantánea en tiempo real: es el **período registrado más reciente** presente en la
+tabla para ese par (una cifra histórica registrada, no una garantía de stock actual). No se afirma
+que haya **exactamente una** fila por par: la unicidad no está demostrada.
+
+**Empate en el período máximo (fail-closed):** el SQL devuelve además un marcador de multiplicidad
+`num_filas_ano` (número de filas que comparten el `(ArticulosID, AlmacenID, Ano)` seleccionado, por
+ejemplo `COUNT(*) OVER (PARTITION BY ArticulosID, AlmacenID, Ano)`). Si para la fila seleccionada
+(`rn = 1`) ese marcador es `> 1`, hay un **empate** en el período máximo y el origen de la cifra no
+es determinista: ese SKU se bloquea con `reason: "validacion_fallida"`, **sin cifras**. No se
+inventa un desempate; se falla cerrado. El bloqueo afecta solo al SKU en cuestión.
 
 **Tri-estado por bucket (determinista, sin colapsar ausencia a cero):**
 
@@ -198,6 +220,19 @@ para ese bucket.
   `reason: "validacion_fallida"`; **nunca** se coalesce a cero.
 - Solo después de esa revisión se **agregan** las filas incluidas restantes por bucket, en Python,
   usando únicamente `Decimal`. No hay aritmética del modelo sobre las cifras.
+
+**Marcador de fila real, integridad SKU→artículo y empate de período (fail-closed):**
+
+- El SELECT devuelve `d.AlmacenID` como **marcador de existencia de fila** (no nulo = fila real) y
+  `ArticulosID` (para detectar que un SKU normalizado no corresponda a más de un artículo). No se
+  asume que `AdmArticulos.ArticulosCodigo` sea único, ni que `ArticulosID` sea único a través del
+  catálogo (la evidencia disponible no lo demuestra). Las filas de catálogo duplicadas para el
+  mismo SKU normalizado y el mismo `ArticulosID` se deduplican **antes** de unir inventario (§10,
+  §11), de modo que no multiplican el saldo de detalle.
+- El SELECT devuelve `num_filas_ano` (multiplicidad de filas en el `(ArticulosID, AlmacenID, Ano)`
+  seleccionado). Si la fila seleccionada tiene `num_filas_ano > 1` (empate en el período máximo),
+  el SKU se bloquea con `validacion_fallida`, sin cifras. No se inventa un desempate.
+- La precedencia de bloqueos por SKU es determinista (§5.2).
 
 Los buckets se computan de forma determinista (§6, §7, §8):
 
@@ -235,28 +270,56 @@ Hay dos niveles: **errores globales** (`ok: false`) y **status por SKU** (dentro
 - `error_consulta` **nunca** se traduce a `[]`, cero ni cifra. Ante fallo la herramienta responde
   `error_consulta` y **no afirma nada** sobre existencia.
 - **Mensajes fijos:** `message` es una cadena **fija** del catálogo. **Nunca** se copia texto del
-  driver, del SQL, de la excepción ni de credenciales. (p. ej. `"error consultando inventario J3"`,
-  no el mensaje de pymssql/pyodbc.)
+  driver, del SQL, de la excepción ni de credenciales. Catálogo cerrado:
+  - `entrada_invalida` → `"entrada inválida para catalog.stock"`.
+  - `error_consulta` → `"error consultando inventario J3"`.
 - Excepción no capturada, `rows` que no sea `list`, fila a la que le falte una clave esperada,
   un SKU en el resultado que no esté entre los solicitados, o un resultado que no se pueda
   interpretar → `error_consulta`, **nunca** `[]`/cero.
 
 ### 5.2 Status por SKU (dentro de `results`, solo con `ok: true`)
 
+Cada fila de detalle es **real** solo si el marcador `d.AlmacenID` (clave del lado detalle, §10) es
+**no nulo**. `inventario_desconocido` se define **únicamente** como: el SKU normalizado corresponde
+a **un solo** `ArticulosID` y ese artículo **no tiene ninguna fila de detalle real** (marcador
+`NULL` para ese SKU). Una fila real con código de bodega desconocido/`NULL`/blanco/no coincidente
+es **inventario real pero no clasificable** y **siempre** bloquea (§6.3), nunca se reporta como
+"sin dato". La integridad SKU→artículo (uno o varios `ArticulosID` distintos) se evalúa **antes**
+que la presencia de filas de detalle reales (precedencia §5.2).
+
 | Caso | `status` | Efecto |
 |------|----------|--------|
-| SKU en catálogo y con ≥1 fila de inventario consultable (cualquier almacén del set). | `"ok"` | Cifras exactas por bucket (tri-estado §4). |
-| Falta el artículo (`AdmArticulos` no contiene el SKU). | `"no_encontrado"` | Sin cifras (no cero). |
-| El artículo existe pero **no hay filas de inventario** (el `LEFT JOIN` no produce filas para ese SKU). | `"inventario_desconocido"` | Sin cifras (no cero). |
-| Algún código incluido tiene saldo **negativo** en su fila más reciente. | `"bloqueado"` / `reason: "saldo_negativo"` | Sin cifras. |
-| Aparece un código de bodega **desconocido/nulo/blanco/nuevo**. | `"bloqueado"` / `reason: "codigo_no_clasificado"` | Sin cifras. |
-| Una cifra no pasa la validación exacta (§9), o su origen no está demostrado, o un saldo incluido es `NULL`. | `"bloqueado"` / `reason: "validacion_fallida"` | Sin cifras. |
+| SKU en catálogo, con ≥1 fila de detalle real y clasificada en un bucket (tri-estado §4). | `"ok"` | Cifras exactas por bucket (tri-estado §4). |
+| Ningún `ArticulosID` corresponde al SKU normalizado (`AdmArticulos` no contiene el SKU). | `"no_encontrado"` | Sin cifras (no cero). |
+| El SKU corresponde a **un solo** `ArticulosID` y ese artículo no tiene **ninguna fila de detalle real** (marcador `d.AlmacenID` `NULL`). | `"inventario_desconocido"` | Sin cifras (no cero). |
+| El artículo existe y **todas** sus filas de detalle reales caen en códigos **excluidos** (`CON`/denylist), sin ningún bloqueo. | `"ok"` | `sedes.neiva` y `sedes.florencia` = `null`, `baja_rotacion` = `null`, `baja_rotacion_confirmation` = `"not_required"`. |
+| Un SKU normalizado corresponde a **más de un** `ArticulosID` distinto (aunque ninguno de esos `ArticulosID` tenga fila de detalle real). | `"bloqueado"` / `reason: "validacion_fallida"` | Sin cifras; nunca se mezclan saldos de artículos distintos. |
+| Fila de detalle real con código de bodega **desconocido/`NULL`/blanco/no coincidente**. | `"bloqueado"` / `reason: "codigo_no_clasificado"` | Sin cifras. |
+| Algún código **incluido** tiene saldo **negativo** en su fila seleccionada. | `"bloqueado"` / `reason: "saldo_negativo"` | Sin cifras. |
+| Empate en el período máximo (`num_filas_ano > 1` en la fila seleccionada). | `"bloqueado"` / `reason: "validacion_fallida"` | Sin cifras. |
+| Un saldo incluido es `NULL`, o una cifra no pasa la validación exacta (§9), o su origen no está demostrado. | `"bloqueado"` / `reason: "validacion_fallida"` | Sin cifras. |
 
 - `"no_encontrado"` ≠ cero: "no existe el producto" vs "sé que el saldo es exactamente cero".
 - `"inventario_desconocido"` ≠ cero: "no puedo saber" vs "sé que es exactamente cero". Se
-  distingue "artículo no encontrado" de "artículo encontrado pero sin inventario".
+  distingue "artículo no encontrado" de "artículo encontrado pero sin dato de inventario real".
+- El caso **solo-excluido** (solo `CON`/denylist, sin bloqueos) es `"ok"` con todos los buckets
+  `null`: hay inventario, pero ninguno consultable para los buckets de salida. No es
+  `inventario_desconocido` (hay filas reales) ni `bloqueado` (no hay condición de bloqueo).
 - Un fallo **global** de consulta produce `ok: false` sin **ninguna** cifra; un fallo **de un SKU**
   produce un elemento `bloqueado` sin cifras para ese SKU, sin contaminar a los demás.
+
+**Precedencia de bloqueo por SKU (determinista; primero que aplique gana):** cuando un SKU
+satisface varias condiciones, se reporta una sola `reason`, en este orden fijo:
+
+1. `no_encontrado` — ningún `ArticulosID` corresponde al SKU normalizado.
+2. `validacion_fallida` — más de un `ArticulosID` distinto para el SKU normalizado (se evalúa antes
+   de la presencia de filas de detalle reales).
+3. `inventario_desconocido` — un solo `ArticulosID` y sin fila de detalle real.
+4. `validacion_fallida` — empate en el período máximo (`num_filas_ano > 1`).
+5. `codigo_no_clasificado` — alguna fila real con código desconocido/`NULL`/blanco/no coincidente.
+6. `saldo_negativo` — algún código incluido con saldo negativo.
+7. `validacion_fallida` — algún saldo incluido `NULL` o cifra que no pasa §9.
+8. `ok` — en su defecto.
 
 ---
 
@@ -368,10 +431,14 @@ contrato; las cantidades permanecen separadas y nunca se totalizan.
 
 ### 9.1 Hechos demostrados vs. pendientes de esquema
 
-**Hechos demostrados en el worktree (fuentes en §16):**
+**Hechos demostrados (evidencia de esquema portable, §16):**
 
-- `SaldoActual` es una columna SQL `decimal` (evidencia de esquema). Su **precisión/escala exacta**
-  y el **tipo concreto que devuelve el driver Python** **no** están demostrados.
+- `InvDetalleExistencias.AlmacenID` es `int NOT NULL` (evidencia de esquema).
+- `InvDetalleExistencias.SaldoActual` es `decimal NULL` (evidencia de esquema).
+- `InvDetalleExistencias.Ano` es `numeric NOT NULL` (evidencia de esquema).
+- La **precisión/escala exacta** de `SaldoActual` (y de las demás columnas `decimal`/`numeric`) y el
+  **tipo concreto que devuelve el driver Python** **no** están demostrados (la evidencia de esquema
+  no reporta precisión/escala ni prueba el tipo del driver).
 - El SSOT web aplica `CAST(... AS DECIMAL(18, 4))` sobre `SaldoActual` y filtra
   `CAST(...) >= 0` (visible en `j3system_website_stock.py`). `catalog.stock` **no** hereda ese cast
   ni ese filtro.
@@ -392,11 +459,12 @@ herramienta **no** emite ninguna cifra: bloquea el SKU con `reason: "validacion_
 
 - El handler entrega, **antes** del registry/JSON layer, una **string decimal canónica**. **No** se
   confía en el encoder por defecto de FastAPI/Pydantic para `Decimal`.
-- Tipos aceptados: **`Decimal` exacto** (el valor leído del bucket sin pasar por `float`/`round`/
-  cast/clamp), y **`int` solo si se justifica** (p. ej. evidencia demostrada de que el driver
-  entrega enteros para esa columna). Se **rechazan** `float` y `str` (evidencia de una conversión
-  intermedia): en ese caso se bloquea con `validacion_fallida` hasta demostrar el origen.
-- Regla de canonicalización (solo para un `Decimal` exacto, o un `int` justificado):
+- Tipos aceptados: **`Decimal` finito** (el valor leído del bucket sin pasar por `float`/`round`/
+  cast/clamp) y **`int` no booleano** (valor entero exacto de base-10). Se **rechazan** `float`,
+  `str`, `bool` (subclase de `int` en Python), `NaN` y los infinitos: en ese caso se bloquea con
+  `validacion_fallida` hasta demostrar el origen. No se afirma qué tipo devuelve el driver para
+  `decimal`/`money`; esta regla define qué acepta el handler, no qué produce el driver.
+- Regla de canonicalización (solo para un `Decimal` finito, o un `int` no booleano):
   - Se serializa con **`format(d, "f")`** (punto fijo, **sin** exponente). Se **rechaza** cualquier
     representación que contenga un marcador de exponente (`e`/`E`): bloquea, no se emite.
   - Se canonicaliza el **cero negativo** (`"-0"`, `"-0.00"`…) a `"0"` (sin signo).
@@ -430,12 +498,24 @@ Reutilizar la **topología** de la fuente J3 (mismas tablas), pero **no** el bui
 
 - **Tabla base `AdmArticulos`** con `LEFT JOIN` hacia la cadena de inventario
   (`InvExistencias`, `InvDetalleExistencias`) y almacén (`AdmAlmacen`), de modo que una fila de
-  inventario ausente **no** pueda desaparecer por un `INNER JOIN`. La ausencia de fila sobrevive
-  como `NULL` y se interpreta como ausente/`inventario_desconocido` (§4, §5.2), nunca como `"0"`.
+  inventario ausente **no** pueda desaparecer por un `INNER JOIN`. El SELECT devuelve la clave del
+  lado detalle `d.AlmacenID` como **marcador de existencia de fila** (no nulo = fila real;
+  `InvDetalleExistencias.AlmacenID` es `int NOT NULL`, §16). `d.AlmacenID` `NULL` = ausencia de
+  fila → `inventario_desconocido` **solo** cuando el SKU normalizado corresponde a un **solo**
+  `ArticulosID` (§4, §5.2), nunca `"0"`; `d.AlmacenID` no nulo = fila real que se clasifica (§4,
+  §6).
 - Saldo: `InvDetalleExistencias.SaldoActual` **crudo**, sin cast ni filtro de signo, leído **por
   `AlmacenCodigo`** para clasificar en buckets (§4).
-- **Último año por par:** `ROW_NUMBER() OVER (PARTITION BY ArticulosID, AlmacenID ORDER BY Ano
-  DESC) = 1` (no `MAX(Ano)` global, §4, §11).
+- **Último período por par:** `ROW_NUMBER() OVER (PARTITION BY ArticulosID, AlmacenID ORDER BY Ano
+  DESC) = 1` (no `MAX(Ano)` global, §4, §11), más el marcador de multiplicidad `num_filas_ano` para
+  detectar empates en el período máximo (§4).
+- El SELECT devuelve **`ArticulosID`**; no se asume que `AdmArticulos.ArticulosCodigo` sea único.
+  Si un SKU normalizado corresponde a más de un `ArticulosID`, ese SKU se bloquea (§5.2). Antes de
+  unir la cadena de inventario, la consulta **deduplica** los pares `(SKU normalizado, ArticulosID)`
+  distintos (mismo SKU normalizado y mismo `ArticulosID` colapsados a una fila), de modo que filas
+  de catálogo duplicadas para el mismo artículo **no** multiplican el saldo de detalle. La
+  integridad cuenta `ArticulosID` **distintos** por SKU normalizado; `ArticulosID` distintos siguen
+  bloqueando.
 
 **Por qué un builder nuevo (evidencia local, §16):** el builder existente
 `build_website_stock_by_sku_sql` **interpola** los SKUs (no usa bind params), usa `INNER JOIN` y
@@ -467,22 +547,39 @@ seguro para ese uso. Nunca para los SKUs de entrada.
 - **Parametrizado:** cada SKU de entrada se pasa como **parámetro bind** (nunca interpolación de
   strings desde entrada del usuario). Los códigos de bodega provienen de la policy fija, no de
   entrada de usuario.
+- **Comparación case/collation-safe:** para el alfabeto ASCII permitido (`[A-Z0-9._-]`), el SQL
+  normaliza la columna con `UPPER(LTRIM(RTRIM(AdmArticulos.ArticulosCodigo)))` y la compara contra
+  el valor bind ya normalizado (trim+uppercase, §2), de modo que la coincidencia no dependa de la
+  collation de la columna. Si el resultado devuelve una fila cuyo SKU normalizado no está entre los
+  solicitados (SKU inesperado), → `error_consulta` (§5.1).
 - **Base + LEFT JOIN:** `AdmArticulos` como tabla base; `LEFT JOIN` a la cadena de inventario y a
   almacén (§10). **No** se filtran códigos nulos/en blanco en el SQL.
-- **Último año por par:** `ROW_NUMBER() OVER (PARTITION BY ArticulosID, AlmacenID ORDER BY Ano
-  DESC) = 1` para quedarse con una única fila por (artículo, almacén). **No** `MAX(Ano)` global.
-  `Ano` es numérico; no se afirma que sea año calendario salvo demostración.
-- **Timeout:** timeout de conexión/consulta acotado a un valor **explícito ≤ 10 s**. Si la
-  configuración local de timeout no está definida, se define una explícita en el builder. Timeout →
-  `error_consulta`. No se heredan reintentos ni logging de excepción que excedan el tope o copien
-  texto del driver; el camino propio debe evitar ambos.
-- **Límite verificable (sin truncado silencioso):** la consulta devuelve a lo sumo una fila por par
-  (SKU, `AlmacenCodigo`). El máximo esperado es `5 × |códigos conocidos|` (los 14 códigos de
-  `ALL_J3_WAREHOUSE_CODES`). **No** se usa `TOP`/`LIMIT` para truncar cantidades. Se usa un
-  **centinela** (`TOP (max_esperado + 1)` en T-SQL) para detectar desbordamiento: si se alcanza el
-  centinela/tope, o no se puede demostrar la integridad del resultado, → `error_consulta` sin
-  cifras. **T-SQL no usa `LIMIT`**; solo `TOP`. Un código desconocido se clasifica por SKU como
-  `codigo_no_clasificado` (§6), **no** como condición de centinela/desbordamiento global.
+- **Deduplicación del mapeo SKU→artículo antes del JOIN de inventario:** la consulta construye
+  primero el conjunto **distinto** de pares `(SKU normalizado, ArticulosID)` — usando
+  `DISTINCT`/`GROUP BY` sobre `(UPPER(LTRIM(RTRIM(AdmArticulos.ArticulosCodigo))), ArticulosID)` —
+  y **luego** hace el `LEFT JOIN` a la cadena de inventario sobre ese conjunto. Así, filas de
+  catálogo duplicadas para el mismo SKU normalizado y el mismo `ArticulosID` no multiplican el
+  saldo de detalle. La integridad cuenta `ArticulosID` **distintos** por SKU normalizado (§5.2).
+- **Último período por par:** `ROW_NUMBER() OVER (PARTITION BY ArticulosID, AlmacenID ORDER BY Ano
+  DESC) = 1` para quedarse con una fila por (artículo, almacén). **No** `MAX(Ano)` global. `Ano` es
+  numérico; no se afirma que sea año calendario ni stock en tiempo real (es el período registrado
+  más reciente). Se devuelve `num_filas_ano` para detectar empates (§4). El filtro `rn = 1` se
+  aplica en un CTE/tabla derivada (no en `WHERE` directo) y **no** debe descartar las filas `NULL`
+  del `LEFT JOIN`.
+- **Timeout y reintentos (camino propio obligatorio):** la implementación usa un **camino dedicado
+  acotado** (o anula explícitamente vía opt-in) con timeout de conexión/consulta **explícito ≤ 10
+  s**, **cero reintentos** y **sin logging del texto crudo del error** (mensaje fijo §5). El
+  `Database.execute_query` compartido reintenta por defecto (`DB_QUERY_RETRIES`, default 2); la
+  implementación **no** puede heredar esos reintentos en silencio. Timeout → `error_consulta`.
+- **Límite verificable (sin truncado silencioso):** **no** se afirma un tope de una fila por
+  (SKU, `AlmacenCodigo`) — un SKU puede corresponder a varios `ArticulosID` y `AlmacenCodigo` no es
+  único. Se fija un **techo global de recursos** explícito e independiente `MAX_RESULT_ROWS = 1000`
+  y un **centinela** (`TOP (1001)` en T-SQL) para detectar desbordamiento **patológico**: solo
+  superar `MAX_RESULT_ROWS` filas causa `error_consulta` global sin cifras. **No** se usa
+  `TOP`/`LIMIT` para truncar cantidades ni para imponer el tope de integridad por SKU. **T-SQL no
+  usa `LIMIT`**; solo `TOP`. Dentro del techo, un código desconocido/nulo/blanco se clasifica por
+  SKU como `codigo_no_clasificado` (§6), **no** como condición de centinela/desbordamiento global;
+  nunca se filtra en el SQL.
 - **Datos sintéticos/fake-only en tests:** nunca datos reales de producción.
 
 ---
@@ -511,7 +608,11 @@ seguro para ese uso. Nunca para los SKUs de entrada.
    handler y bloquean con `codigo_no_clasificado`; nunca se descartan en silencio (§4, §6).
 5. **Revisión de negativos antes de agregar:** por código incluido, antes de sumar (§4); agregación
    posterior solo con `Decimal` en Python.
-6. **Convención de respuesta:** este contrato usa el envoltorio `{ok, error}` (fail-closed), que
+6. **Integridad SKU→artículo (conteo de `ArticulosID` distintos):** el handler cuenta los
+   `ArticulosID` **distintos** por SKU normalizado sobre el conjunto deduplicado (§10, §11). Más de
+   uno → `bloqueado`/`validacion_fallida`, evaluado **antes** de `inventario_desconocido` (§5.2
+   precedencia).
+7. **Convención de respuesta:** este contrato usa el envoltorio `{ok, error}` (fail-closed), que
    **difiere** de la convención `{status, reason}` de algunos tools locales (`builtins.py`). Se
    **justifica** la diferencia: un fallo de consulta no debe poder confundirse con un resultado
    vacío (`status: "empty"`), y `{ok: false}` + `error.type` fijo es más seguro para fail-closed. La
@@ -545,6 +646,21 @@ Todos los tests usan **datos sintéticos/fake**, nunca DB real ni credenciales.
 | 20 | Valor llega como `float`/`str` (origen no `Decimal` demostrado) o no pasa §9. | `status: "bloqueado"`, `reason: "validacion_fallida"`. |
 | 21 | Mezcla de SKUs: uno `ok`, uno `no_encontrado`, uno `bloqueado`. | `results` con un elemento por SKU, sin mezclar cifras ambiguas. |
 | 22 | Canonicalización: `format(d, "f")` sin exponente; cero negativo → `"0"`; regex `^\d+(\.\d+)?$`. | string decimal canónico no negativo. |
+| 23 | Dos filas con el mismo `Ano` máximo (empate) y una fila de `Ano` menor, mismo par. | `ROW_NUMBER()` elige el período máximo; `num_filas_ano > 1` bloquea ese SKU con `validacion_fallida`, sin cifras. |
+| 24 | SKU en catálogo, **sin fila de detalle** (marcador `d.AlmacenID` `NULL`). | `status: "inventario_desconocido"`. |
+| 25 | SKU en catálogo, **fila real** (`d.AlmacenID` no nulo) con `AlmacenCodigo` `NULL`/blanco/sin coincidencia. | `status: "bloqueado"`, `reason: "codigo_no_clasificado"` (no se colapsa a `inventario_desconocido`). |
+| 26 | Solo filas en códigos excluidos (`CON`/denylist), sin bloqueos. | `status: "ok"`; `sedes.neiva`/`sedes.florencia`/`baja_rotacion` = `null`; `baja_rotacion_confirmation` = `"not_required"`. |
+| 27 | Un SKU normalizado corresponde a dos `ArticulosID` distintos. | `status: "bloqueado"`, `reason: "validacion_fallida"` (no se mezclan saldos). |
+| 28 | 71 filas de detalle incluyendo un código desconocido (dentro de `MAX_RESULT_ROWS`). | el código desconocido bloquea **solo ese SKU** (`codigo_no_clasificado`); no hay `error_consulta` global. |
+| 29 | Consulta que supera `MAX_RESULT_ROWS` (1001 filas). | `error_consulta` global, sin salida parcial. |
+| 30 | Varias condiciones de bloqueo a la vez en un SKU (negativo + código desconocido + `NULL`). | una sola `reason`, según la precedencia determinista de §5.2. |
+| 31 | SKUs con espacios en blanco alrededor y variantes de caja (`" abc "`, `"ABC"`, `"abc"`). | se normalizan (trim+uppercase) y resuelven igual; sin `entrada_invalida`. |
+| 32 | Duplicados normalizados (`"abc"` y `"ABC"`). | `entrada_invalida` (global). |
+| 33 | Collation de columna case-sensitive simulada. | comparación `UPPER(LTRIM(RTRIM(...)))` vs bind normalizado es case/collation-safe; SKU inesperado → `error_consulta`. |
+| 34 | Mensaje fijo de `entrada_invalida`. | `message` = `"entrada inválida para catalog.stock"` (catálogo fijo §5.1). |
+| 35 | Valor de saldo `Decimal` finito / `int` no booleano vs `float`/`str`/`bool`/`NaN`/infinito. | finito/`int` se aceptan (canonicalizan); el resto → `validacion_fallida`. |
+| 36 | Un SKU normalizado corresponde a dos `ArticulosID` distintos y **ninguno** tiene fila de detalle real. | `status: "bloqueado"`, `reason: "validacion_fallida"` (sin cifras), **no** `inventario_desconocido` (la integridad SKU→artículo precede a la ausencia de fila, §5.2). |
+| 37 | Filas de catálogo duplicadas para el mismo SKU normalizado y el **mismo** `ArticulosID`, con una fila de inventario de saldo positivo. | El par `(SKU normalizado, ArticulosID)` se deduplica antes del JOIN (§10, §11); el saldo **no** se duplica y el bucket emite el valor único. `ArticulosID` **distintos** no se deduplican: siguen bloqueando (§5.2). |
 
 ---
 
@@ -591,6 +707,7 @@ Todos los tests usan **datos sintéticos/fake**, nunca DB real ni credenciales.
 | Evidencia | Archivo | Confirma |
 |-----------|---------|----------|
 | Mapeo de bodegas confirmado por Fredy (22 oct 2026): `FLO = Florencia`; `ALM`, `SUR`, `BD6`, `DIS`, `BOD` = Neiva. | Instrucción de Fredy (22 oct 2026) | §7; coincide con el `SITES` del contrato B2 (`neiva: (ALM, BD6, SUR, DIS, BOD)`, `florencia: (FLO,)`). |
+| Evidencia de esquema J3 (solo metadatos): `InvDetalleExistencias.AlmacenID` = `int NOT NULL`, `SaldoActual` = `decimal NULL`, `Ano` = `numeric NOT NULL`; sin precisión/escala ni tipo del driver. | `docs/reference/j3-inventory-schema-evidence.md` | §4, §9.1, §10, §11; marcador de fila, tipos de columna y límite de evidencia. |
 | `WAREHOUSE_CODE_TO_NAME` incluye `FLO = "ALMACEN FLORENCIA (Sika Center)"`, `CON = "CONTABILIDAD"`, `B.ROT = "PRODUCTOS DE BAJA ROTACION"`, y nombres de bodega para `ALM`/`SUR`/`BD6`/`DIS`/`BOD`. | `src/business_analyzer/core/j3system_sales_warehouse.py` | Nombres de códigos; el mapeo a sede proviene de la instrucción de Fredy (no solo del archivo). |
 | Denylist web (`CEN`, `EXH`, `EXD`, `BDT`, `MDL`, `TRA`) y allowlist web (incluye `CON` y `B.ROT`). | `src/business_analyzer/core/website_warehouse_policy.py` | Política web ≠ política comercial. |
 | `build_website_stock_by_sku_sql` interpola SKUs (no bind), usa `INNER JOIN` y filtra `AlmacenCodigo IS NOT NULL AND <> ''`, aplica `CAST(... AS DECIMAL(18, 4))`, filtro `CAST(...) >= 0` y `HAVING ... > 0`. | `src/business_analyzer/core/j3system_website_stock.py` | Requiere builder nuevo (§10); cast/filtro/joins **no** se heredan. |
