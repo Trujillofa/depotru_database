@@ -5,7 +5,7 @@
 > its tests (`tests/platform/test_catalog_quote_for_customer.py`).
 >
 > Status: updated for Decisión 2. B.ROT overlap and dispatch origin remain
-> POR CONFIRMAR POR FREDY (§4.1). Next slice (`catalog.resolve_customer_phone`)
+> POR CONFIRMAR (§4.1). Next slice (`catalog.resolve_customer_phone`)
 > is **out of scope** and only sets the server-side identity key used here.
 
 ## 1. Purpose and audience
@@ -52,8 +52,10 @@ bucketed, rounded, or replaced by words such as `hay`, `pocas_unidades` or
 
 Every price and quantity is carried as Python `Decimal` from the read to the
 payload. No figure is ever converted to a binary `float`; a database value
-that arrives as a `float` (including `nan`/`inf`) is rejected as unknown, not
-trusted, because a float cannot prove it did not already lose precision.
+that arrives as a `float` or `str` (including `nan`/`inf`) is rejected as
+unknown, not trusted: a float cannot prove it did not already lose precision,
+and a string cannot prove it preserved the source scale exactly. Only an
+exact `Decimal` or a finite `int` is accepted by `_as_decimal`.
 
 - The payload serialises each figure as a **JSON string**, not a JSON number.
 - The string is the canonical fixed-point form `format(value, "f")` of the
@@ -61,7 +63,11 @@ trusted, because a float cannot prove it did not already lose precision.
   the source scale, and fractional digits preserved exactly as the source
   `Decimal` carries them (e.g. `"12.50"`, `"0.0001"`, `"1000000000000000000"`).
 - No SQL `CAST(... AS DECIMAL(p,s))` is applied: the source column's own
-  scale is preserved, so no scale is imposed without schema evidence.
+  scale is preserved, so no scale is imposed without schema evidence. The
+  requirement that these columns arrive as `Decimal`/`int` (never `str`/
+  `float`) is a **pending confirmation**: no repository schema evidence
+  asserts the column types, so `_as_decimal` fails closed on any unexpected
+  type rather than claiming compatibility with an unknown schema.
 - Raw prices are compared as `Decimal` **before** any serialisation; two
   distinct values that a float would collapse to the same binary number
   therefore still produce `price_ambiguous`, never a false equal quote.
@@ -119,8 +125,8 @@ excluded everywhere: it is neither a site warehouse nor a `B.ROT` source.
 
 ### 4.1 `B.ROT` — virtual warehouse without a site
 
-`B.ROT` (PRODUCTOS DE BAJA ROTACION) is **commercial** (confirmed by Fredy)
-and is a **virtual warehouse**: it is composed of items that live in several
+`B.ROT` (PRODUCTOS DE BAJA ROTACION) is **commercial** (per operations) and
+is a **virtual warehouse**: it is composed of items that live in several
 physical warehouses. It has **no physical site** of its own and belongs to
 neither Neiva nor Florencia.
 
@@ -141,14 +147,14 @@ Therefore:
 
   (`stock_coverage.reason = "unmapped_warehouse_stock"` no longer exists).
 
-**Open points that this slice must not guess.** Fredy has **not** confirmed
+**Open points that this slice must not guess.** Operations has **not** confirmed
 
 1. whether `B.ROT` quantities may **overlap** the quantities of the physical
    warehouses, and
 2. which physical warehouse fulfils a sale that depends on `B.ROT`.
 
 Consequently the output warns that an overlap is possible and that the
-physical origin is pending confirmation by Fredy. Because this request does
+physical origin is pending confirmation. Because this request does
 not include the requested sale quantity and the physical overlap/origin are
 unresolved, `requires_physical_origin_confirmation` is conservatively `true`
 whenever `baja_rotacion` is positive, even if physical site quantity is also
@@ -211,11 +217,13 @@ warehouse. It is a separate figure: it is never added to `qty` and never
 replaces it.
 
 Missing stock rows, missing quantities, nonnumeric, nonfinite, boolean, float,
-or negative quantities yield `qty: null` and `stock_status: unknown` for the
+string, or negative quantities yield `qty: null` and `stock_status: unknown` for the
 physical figure, and `baja_rotacion: null` and
 `baja_rotacion_status: unknown` for the virtual figure; they never imply
-zero stock. Invalid database casts may instead fail the whole read with
-`erp_unavailable`. Explicit numeric zero means zero only in the warehouses it
+zero stock. Unexpected source types fail closed per figure, never as a
+whole-read cast failure: `_as_decimal` accepts only an exact `Decimal` or a
+finite `int` (strings and floats are rejected). Explicit numeric zero means
+zero only in the warehouses it
 was measured in (`zero_in_mapped_warehouses` for the site,
 `baja_rotacion_status: zero` for `B.ROT`). The warehouse breakdown is not
 returned; the site's physical codes are listed in
@@ -255,7 +263,7 @@ reason; for a fatal error it is the fatal reason.
   ],
   "virtual_warehouses_reported_separately": true,
   "overlap_possible": true,
-  "note": "<short Spanish note: B.ROT es una bodega virtual sin sede; su stock se reporta aparte y nunca se suma al de la sede. El posible solapamiento con las bodegas físicas y el origen físico de cualquier venta que use o dependa de B.ROT están pendientes de confirmación por Fredy>"
+  "note": "<short Spanish note: B.ROT es una bodega virtual sin sede; su stock se reporta aparte y nunca se suma al de la sede. El posible solapamiento con las bodegas físicas y el origen físico de cualquier venta que use o dependa de B.ROT están pendientes de confirmación>"
 }
 ```
 
@@ -269,7 +277,7 @@ describes price availability independently.
 
 | Rule | Detail |
 |---|---|
-| Price source | `AdmPrecios.PreciosValor` for the customer's verified tariff (`AdmTerceros.TarifasID`), unit price rows only (`Cantidad = 0`) |
+| Price source | `AdmPrecios.PreciosValor` for the customer's verified tariff (`AdmTerceros.TarifasID`), unit price rows only (`Cantidad = 0`). The ambiguity count (`price_rows`) and the `MIN`/`MAX` all operate on the **same** set of strictly-positive rows (`PreciosValor > 0`): a zero, negative, or `NULL` price is an **absent** price, not a valid price row, and never inflates the count nor erases a valid positive price. No valid positive row → `price_missing`; one valid positive row plus any absent rows → quote that price; multiple distinct positive rows → `price_ambiguous`; equal duplicate positive rows may quote |
 | IVA | **Never computed, never asserted.** Whether `PreciosValor` includes IVA is **unknown** until the B0 branch is evidenced; `iva_status` is `unknown` and no `price_includes_iva`, net/gross wording, or `1.19` factor is emitted |
 | Increment / mostrador price | Never applied (`PreciosIncremento`, `ArticulosVenta` are not selected) |
 | Cost / margin | Never selected (`ArticulosCosto`, `ArticulosUltmoCosto`, `ArticulosMargen`, `ValorCosto`, `CostoSinIva`, `CostoMasIva`, `UltimoCostoCompra`, `ListadoPreciosCosto`, …) |
@@ -298,7 +306,8 @@ here.
   limited to 20 requested SKUs and at most 5 mapped warehouses.
 - The customer lookup uses `TOP 2` to detect duplicate customer/tariff joins.
   The target article CTE and final result use `TOP 21` as overflow guards,
-  ordered by `ArticulosCodigo` for determinism. Price and stock aggregates
+  ordered by `ArticulosCodigo, ArticulosID` for deterministic tie-breaking.
+  Price and stock aggregates
   filter to that target article set internally, before aggregation.
 - **Per-pair latest-year selection.** Both `stock_rows` and
   `baja_rotacion_rows` are wrapped in a ranking CTE that keeps the latest row
@@ -311,6 +320,10 @@ here.
   AlmacenID, Ano)` tie counter is carried through the ranking; the aggregate
   requires `MAX(ties) = 1`. If a pair has more than one row in its latest
   year, the quantity becomes unknown (`NULL`) instead of being double-counted.
+- **Latest year is a local-read assumption.** "Latest `Ano`" means the maximum
+  `Ano` present in the read for that pair; it is **not** a verified carry-over
+  semantics between exercises. The read neither joins nor verifies how one
+  exercise's closing stock becomes the next exercise's opening stock.
 - **Two independent stock aggregates.** `stock_rows` holds the site's
   physical warehouses only and `baja_rotacion_rows` holds `B.ROT` only. The
   site's quantity aggregates `FROM stock_latest`; the `B.ROT` quantity
@@ -321,6 +334,10 @@ here.
 - Duplicate article results, unexpected SKUs, result overflow, and malformed
   query result shapes fail closed with `erp_unavailable`. Conflicting prices
   for one article yield `price_ambiguous`; equal duplicate prices may quote.
+  The price ambiguity count (`price_rows`) and the `MIN`/`MAX` fold over the
+  same strictly-positive unit-price rows, so a zero, negative, or `NULL`
+  price is absent and never inflates the count or erases a valid positive
+  price.
 - Failures never surface the driver message: the payload carries
   `erp_unavailable` and nothing else.
 - No logging of inputs, SQL parameters, query rows, or customer data.
@@ -352,3 +369,21 @@ here.
 | 21 | No `unmapped_warehouse_stock` / always-partial coverage behaviour; the contract documents `B.ROT` as a virtual warehouse with no site |
 | 22 | Exact decimal representation: large values, adjacent distinct prices, and fractional-scale stock are preserved as fixed-point strings and never collapse through float |
 | 23 | First-occurrence SKU casing is preserved on case-insensitive deduplication |
+
+## 9. Module size exception (one-time, B2 only)
+
+The implementation module
+`src/business_analyzer/core/j3system_customer_quote.py` is **exactly 486
+physical lines** (`wc -l`) and **376 code lines** (nonblank physical lines
+excluding comments/docstrings, including the embedded SQL templates).
+
+This one-time exception was explicitly authorized by **Fredy on
+2026-10-22**. The reason: this single tool combines server-verified identity
+and tariff checks, bounded parameterized J3 reads, exact `Decimal`-only
+price/stock handling, per-pair latest-year and tie guards, physical-vs-virtual
+`B.ROT` separation, fail-closed response validation, and sanitized errors.
+
+This exception applies **only to B2** and is **not precedent** for B0/B1/B3.
+The B2 module hard ceiling is **486 physical lines**. Any future code
+correction must be extracted to an auxiliary module and must not increase the
+B2 module past 486 physical lines.

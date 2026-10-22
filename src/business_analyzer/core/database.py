@@ -88,6 +88,64 @@ def is_transient_db_error(error: BaseException) -> bool:
     return False
 
 
+def _safe_error_category(error: BaseException) -> str:
+    """Coarse, non-sensitive category for transient errors (never raw text)."""
+    message = str(error).lower()
+    if "timeout" in message or "timed out" in message:
+        return "timeout"
+    if "broken pipe" in message or "connection reset" in message:
+        return "connection_reset"
+    if "connection" in message or "tcp" in message:
+        return "connection"
+    return "transient"
+
+
+def _convert_placeholders_for_pyodbc(sql: str) -> str:
+    """Rewrite pymssql ``%s`` placeholders to pyodbc ``?`` outside literals/comments.
+
+    Only ``%s`` outside single-quoted literals (honouring ``''`` escapes),
+    ``--`` line comments, and ``/* */`` block comments is converted; bound
+    values stay parameters and are never interpolated.
+    """
+    out: List[str] = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "'":
+            start = i
+            i += 1
+            while i < n:
+                if sql[i] == "'":
+                    if i + 1 < n and sql[i + 1] == "'":
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            out.append(sql[start:i])
+            continue
+        if ch == "-" and i + 1 < n and sql[i + 1] == "-":
+            end = sql.find("\n", i)
+            end = n if end == -1 else end
+            out.append(sql[i:end])
+            i = end
+            continue
+        if ch == "/" and i + 1 < n and sql[i + 1] == "*":
+            end = sql.find("*/", i + 2)
+            end = (end + 2) if end != -1 else n
+            out.append(sql[i:end])
+            i = end
+            continue
+        if ch == "%" and i + 1 < n and sql[i + 1] == "s":
+            out.append("?")
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _default_pool_enabled() -> bool:
     """Pooling on in production; off during pytest unless explicitly set."""
     explicit = os.getenv("DB_POOL_ENABLED")
@@ -244,7 +302,7 @@ class Database:
                 try:
                     password = Database._decrypt_navicat_password(encrypted)
                 except Exception as e:
-                    logger.error(f"Decrypt failed: {e}")
+                    logger.error("Decrypt failed: %s", type(e).__name__)
                     continue
                 connections.append(
                     {
@@ -257,7 +315,7 @@ class Database:
                 )
             return connections
         except Exception as e:
-            logger.error(f"Error loading NCX: {e}")
+            logger.error("Error loading NCX: %s", type(e).__name__)
             return []
 
     @staticmethod
@@ -266,7 +324,7 @@ class Database:
             try:
                 return Navicat12Crypto().DecryptStringForNCX(encrypted)
             except Exception as e:
-                logger.warning(f"NavicatCipher failed: {e}")
+                logger.warning("NavicatCipher failed: %s", type(e).__name__)
         if CRYPTO_AVAILABLE:
             try:
                 key, iv = b"libcckeylibcckey", b"libcciv libcciv "
@@ -275,7 +333,7 @@ class Database:
                     AES.block_size,
                 ).decode("utf-8")
             except Exception as e:
-                logger.warning(f"AES failed: {e}")
+                logger.warning("AES failed: %s", type(e).__name__)
         raise ImportError("No decryption method available.")
 
     def connect(self) -> "Database":
@@ -345,7 +403,7 @@ class Database:
                     self._connection.close()
                 logger.info("✓ Connection closed")
             except Exception as e:
-                logger.warning(f"Error closing: {e}")
+                logger.warning("Error closing: %s", type(e).__name__)
             finally:
                 self._connection = None
 
@@ -446,12 +504,13 @@ class Database:
 
             try:
                 cursor_method = getattr(self._connection, "cursor")
-                cursor = (
-                    cursor_method(as_dict=True)
-                    if PYMSSQL_AVAILABLE
-                    else cursor_method()
-                )
-                cursor.execute(query, params)
+                if PYMSSQL_AVAILABLE:
+                    cursor = cursor_method(as_dict=True)
+                    executable_query = query
+                else:
+                    cursor = cursor_method()
+                    executable_query = _convert_placeholders_for_pyodbc(query)
+                cursor.execute(executable_query, params)
                 if fetch:
                     results = (
                         list(cursor)
@@ -471,10 +530,11 @@ class Database:
                 last_error = e
                 if is_transient_db_error(e) and attempt < max_attempts - 1:
                     logger.warning(
-                        "Transient DB error (attempt %s/%s): %s",
+                        "Transient DB error (attempt %s/%s): category=%s error=%s",
                         attempt + 1,
                         max_attempts,
-                        e,
+                        _safe_error_category(e),
+                        type(e).__name__,
                     )
                     self._invalidate_connection()
                     time.sleep(1.5 * (attempt + 1))

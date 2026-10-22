@@ -60,6 +60,8 @@ from business_analyzer.core.database import (
     ConnectionType,
     Database,
     QueryError,
+    _convert_placeholders_for_pyodbc,
+    _safe_error_category,
     decrypt_navicat_password,
     env_database_name,
     get_db_connection,
@@ -722,6 +724,56 @@ class TestQueryExecution:
         assert results == [{"id": 1}]
         assert mock_pymssql.connect.call_count >= 2
 
+    def test_retry_log_hides_driver_text_and_params(
+        self, mock_config, mock_pymssql, caplog
+    ):
+        """The transient-retry warning logs only a category and class, never the
+        driver exception text (which may embed SQL or parameters)."""
+        marker = "SYNTHETIC-PRIVATE-DO-NOT-RETURN"
+        mock_cursor = Mock()
+        mock_cursor.__iter__ = Mock(return_value=iter([{"id": 1}]))
+        # health check, ping, then the query raises a transient error carrying
+        # the marker, then reconnect health check, then the retried query.
+        mock_cursor.execute.side_effect = [
+            None,
+            None,
+            Exception(f"08S01 TCP Provider: {marker}"),
+            None,
+            None,
+        ]
+        mock_pymssql.connect.return_value.cursor.return_value = mock_cursor
+
+        db = Database(connection_type=ConnectionType.DIRECT)
+        db.connect()
+
+        with patch.dict(os.environ, {"DB_QUERY_RETRIES": "2"}):
+            with patch("business_analyzer.core.database.time.sleep"):
+                with caplog.at_level("WARNING"):
+                    results = db.execute_query("SELECT id FROM table")
+
+        assert results == [{"id": 1}]
+        logged = "".join(record.getMessage() for record in caplog.records)
+        assert marker not in logged
+        assert "category=" in logged and "error=" in logged
+
+    def test_execute_query_pyodbc_converts_placeholders(self, mock_config, mock_pyodbc):
+        """pyodbc needs `?` placeholders; `%s` is rewritten, values stay bound."""
+        with patch("business_analyzer.core.database.PYMSSQL_AVAILABLE", False):
+            with patch("business_analyzer.core.database.PYODBC_AVAILABLE", True):
+                mock_cursor = Mock()
+                mock_cursor.description = [("id",), ("name",)]
+                mock_cursor.fetchall.return_value = [(1, "Test")]
+                mock_pyodbc.connect.return_value.cursor.return_value = mock_cursor
+
+                db = Database(connection_type=ConnectionType.DIRECT)
+                db.connect()
+
+                db.execute_query("SELECT * FROM t WHERE a = %s AND b = %s", (1, 2))
+
+                mock_cursor.execute.assert_called_with(
+                    "SELECT * FROM t WHERE a = ? AND b = ?", (1, 2)
+                )
+
     def test_execute_query_pyodbc(self, mock_config, mock_pyodbc):
         """Test query execution with pyodbc"""
         with patch("business_analyzer.core.database.PYMSSQL_AVAILABLE", False):
@@ -1179,6 +1231,29 @@ class TestJ3SystemConnection:
             db = Database()
             with pytest.raises(ConnectionError, match="requires pymssql"):
                 db.get_j3system_connection()
+
+
+def test_placeholder_conversion_skips_literals_and_comments():
+    """%s inside literals/comments is preserved; only real placeholders change."""
+    sql = (
+        "SELECT '%s' AS a, 'it''s %s' AS b, x FROM t WHERE y = %s "
+        "-- a %s in a comment\n"
+        "/* block %s comment */ AND z = %s"
+    )
+    assert _convert_placeholders_for_pyodbc(sql) == (
+        "SELECT '%s' AS a, 'it''s %s' AS b, x FROM t WHERE y = ? "
+        "-- a %s in a comment\n"
+        "/* block %s comment */ AND z = ?"
+    )
+
+
+def test_safe_error_category_is_coarse():
+    assert _safe_error_category(Exception("connection timed out")) == "timeout"
+    assert _safe_error_category(Exception("broken pipe")) == "connection_reset"
+    assert (
+        _safe_error_category(Exception("08S01 TCP Provider: SYNTHETIC")) == "connection"
+    )
+    assert _safe_error_category(Exception("other")) == "transient"
 
 
 if __name__ == "__main__":

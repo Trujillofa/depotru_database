@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib
 import re
 import socket
+import sqlite3
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -355,14 +356,14 @@ def test_bound_parameters_bounded_aggregates_and_net_quote(harness, site, wareho
     assert customer_sql.count("%s") == quote_sql.count("%s") == 1
     assert "TOP 2 " in customer_sql and "t.TercerosID = %s" in customer_sql
     assert "TOP 21 " in quote_sql
-    assert quote_sql.endswith("ORDER BY a.ArticulosCodigo")
-    assert "ORDER BY ArticulosCodigo" in quote_sql
+    assert quote_sql.endswith("ORDER BY a.ArticulosCodigo, a.ArticulosID")
+    assert "ORDER BY ArticulosCodigo, ArticulosID" in quote_sql
     assert f"ArticulosCodigo IN ('{SKU}')" in quote_sql
     assert "p.ArticulosID IN (SELECT ArticulosID FROM targets)" in quote_sql
     assert "e.ArticulosID IN (SELECT ArticulosID FROM targets)" in quote_sql
     assert "p.TarifasID = %s AND p.Cantidad = 0" in quote_sql
     assert "COUNT(*) = COUNT(SaldoActual)" in quote_sql
-    assert "COUNT(*) = COUNT(p.PreciosValor)" in quote_sql
+    assert "COUNT(CASE WHEN p.PreciosValor > 0 THEN 1 END) AS price_rows" in quote_sql
     assert "CAST(" not in quote_sql
     wh_filter = re.search(r"al\.AlmacenCodigo IN \(([^)]+)\)", quote_sql).group(1)
     assert set(re.findall(r"'([^']+)'", wh_filter)) == warehouses
@@ -566,6 +567,35 @@ def test_as_count_edge_cases(harness, value, expected):
     assert harness.module._as_count(value) == expected
 
 
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (Decimal("12.50"), Decimal("12.50")),
+        (Decimal("0"), Decimal("0")),
+        (1, Decimal("1")),
+        (0, Decimal("0")),
+        ("12.50", None),
+        ("", None),
+        ("  12.50  ", None),
+        (12.5, None),
+        (0.0, None),
+        (float("nan"), None),
+        (float("inf"), None),
+        (-1, None),
+        (True, None),
+        (Decimal("NaN"), None),
+        (Decimal("sNaN"), None),
+        (Decimal("Infinity"), None),
+        (Decimal("-1"), None),
+        (None, None),
+        ({}, None),
+        ([], None),
+    ],
+)
+def test_as_decimal_accepts_only_decimal_and_finite_int(harness, value, expected):
+    assert harness.module._as_decimal(value) == expected
+
+
 def test_large_price_is_exact_fixed_point_string(harness):
     value = Decimal("1234567890123456.78")
     harness.db.results[1] = [article_row(price_min=value, price_max=value)]
@@ -581,6 +611,71 @@ def test_adjacent_large_prices_are_not_collapsed(harness):
     result = harness.invoke()
     assert result["reason"] == "price_ambiguous"
     assert result["lines"][0]["price"] is None
+
+
+def test_zero_price_is_absent_and_never_erases_a_valid_price(harness):
+    """Execute the shared price aggregate in sqlite: the ambiguity count and
+    the min/max operate on the same strictly-positive rows, so a zero,
+    negative, or NULL price never inflates the count nor erases a valid
+    positive price."""
+    fragment = harness.module._price_aggregate_sql("AdmPrecios").replace("%s", "?")
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute("CREATE TABLE targets (ArticulosID INTEGER PRIMARY KEY)")
+        conn.execute(
+            "CREATE TABLE AdmPrecios ("
+            "ArticulosID INTEGER, TarifasID INTEGER, Cantidad INTEGER, "
+            "PreciosValor INTEGER)"
+        )
+        conn.executemany(
+            "INSERT INTO targets VALUES (?)",
+            [(aid,) for aid in range(1, 7)],
+        )
+        conn.executemany(
+            "INSERT INTO AdmPrecios VALUES (?, ?, ?, ?)",
+            [
+                # A zero beside one valid positive price: the count stays 1.
+                (1, 42, 0, 0),
+                (1, 42, 0, 12),
+                # Negative and NULL rows beside one valid positive price.
+                (2, 42, 0, -1),
+                (2, 42, 0, None),
+                (2, 42, 0, 12),
+                # Only absent rows: no valid positive price at all.
+                (3, 42, 0, 0),
+                (3, 42, 0, -5),
+                (3, 42, 0, None),
+                # Two distinct positive prices: ambiguous.
+                (4, 42, 0, 10),
+                (4, 42, 0, 20),
+                # Two equal positive prices: quotable duplicate, not ambiguous.
+                (5, 42, 0, 12),
+                (5, 42, 0, 12),
+                # Non-unit row and wrong tariff are both excluded.
+                (6, 42, 0, 12),
+                (6, 42, 1, 99),
+                (6, 99, 0, 88),
+                # Article 7 is not a target: excluded by the target filter.
+                (7, 42, 0, 12),
+            ],
+        )
+        result = {
+            aid: (rows, mn, mx)
+            for aid, rows, mn, mx in conn.execute(fragment, (42,)).fetchall()
+        }
+    finally:
+        conn.close()
+    expected = {
+        1: (1, 12, 12),
+        2: (1, 12, 12),
+        3: (0, None, None),
+        4: (2, 10, 20),
+        5: (2, 12, 12),
+        6: (1, 12, 12),
+    }
+    assert set(result) == set(expected)
+    for aid, triple in expected.items():
+        assert result[aid] == triple
 
 
 def test_fractional_stock_preserves_exact_scale(harness):
@@ -661,10 +756,11 @@ def test_baja_rotacion_is_reported_as_virtual_warehouse_without_site(harness):
     assert "unmapped_warehouse_stock" not in str(result)
 
 
-def test_brot_note_names_fredy_pending_confirmation(harness):
+def test_brot_note_is_neutral_and_names_no_internal_person(harness):
     note = harness.invoke()["stock_coverage"]["note"]
-    assert "Fredy" in note
+    assert "Fredy" not in note
     assert "confirmación" in note
+    assert "B.ROT" in note
 
 
 def test_exact_physical_qty_is_unchanged_and_excludes_baja_rotacion(harness):
@@ -778,15 +874,74 @@ def test_missing_baja_rotacion_stays_unknown(harness):
     assert line["requires_physical_origin_confirmation"] is None
 
 
-def test_same_year_duplicate_guard_surfaces_as_unknown(harness):
-    # When the SQL duplicate guard (MAX(ties) = 1) fails, the aggregate yields
-    # NULL, which surfaces as unknown — never a doubled quantity.
-    row = article_row()
-    row["qty"] = None
-    harness.db.results[1] = [row]
-    line = harness.invoke()["lines"][0]
-    assert line["qty"] is None
-    assert line["stock_status"] == "unknown"
+def test_latest_year_window_selects_per_pair_and_guards_ties(harness):
+    """Execute the shared window fragment and stock aggregate helper in
+    sqlite: latest year per (article, warehouse) — never a global year, never
+    summed history — and a same-year tie failing closed to NULL."""
+    window = harness.module._latest_year_window
+    aggregate = harness.module._stock_aggregate_sql
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute(
+            "CREATE TABLE stock_rows ("
+            "ArticulosID INTEGER, AlmacenID INTEGER, Ano INTEGER, SaldoActual INTEGER)"
+        )
+        rows = [
+            # Article 1: two warehouses; only each pair's latest year counts.
+            (1, 10, 2023, 10),
+            (1, 10, 2024, 20),
+            (1, 11, 2023, 4),
+            (1, 11, 2024, 5),
+            # Article 2: duplicated latest-year row (tie) must fail closed.
+            (2, 10, 2024, 7),
+            (2, 10, 2024, 8),
+            # Article 3: only an older year; per-pair selection keeps it.
+            (3, 10, 2023, 100),
+            # Article 4: positive older-year balance, zero latest-year balance;
+            # the aggregate must return zero, never the older positive figure.
+            (4, 10, 2023, 50),
+            (4, 10, 2024, 0),
+        ]
+        conn.executemany("INSERT INTO stock_rows VALUES (?, ?, ?, ?)", rows)
+
+        ranked = conn.execute(window("stock_rows")).fetchall()
+        # rn = 1 keeps exactly one row per (article, warehouse) pair.
+        assert {(r[0], r[1]) for r in ranked} == {
+            (1, 10),
+            (1, 11),
+            (2, 10),
+            (3, 10),
+            (4, 10),
+        }
+        # Latest year per pair only: article 1's 2023 rows must not survive.
+        assert {(r[1], r[2], r[3]) for r in ranked if r[0] == 1} == {
+            (10, 2024, 20),
+            (11, 2024, 5),
+        }
+        # Article 2's duplicated latest-year row still flags ties == 2.
+        art2 = [r for r in ranked if r[0] == 2]
+        assert len(art2) == 1 and art2[0][2] == 2024 and art2[0][4] == 2
+
+        # Article 4's latest-year zero supersedes its older positive balance.
+        art4 = [r for r in ranked if r[0] == 4]
+        assert art4 == [(4, 10, 2024, 0, 1)]
+
+        # The exact shared stock aggregate helper over a local CTE named
+        # stock_latest (one of the two accepted internal source names).
+        totals_sql = f"""
+            WITH stock_latest AS (
+                {window("stock_rows")}
+            )
+            {aggregate("stock_latest")}
+            ORDER BY ArticulosID
+        """
+        totals = dict(conn.execute(totals_sql).fetchall())
+        # Article 1 = 20 + 5 (latest year only, no 2023 history); article 2
+        # ties -> NULL; article 3 keeps its only (older) year; article 4's
+        # latest-year zero supersedes its older positive balance.
+        assert totals == {1: 25, 2: None, 3: 100, 4: 0}
+    finally:
+        conn.close()
 
 
 def test_erp_failure_returns_no_price_and_no_stock(harness):
@@ -884,7 +1039,7 @@ def test_contract_documents_baja_rotacion_as_virtual_warehouse():
         "virtual_warehouses",
         "requires_physical_origin_confirmation",
         "baja_rotacion",
-        "POR CONFIRMAR POR FREDY",
+        "POR CONFIRMAR",
         "tri-state",
         "iva_status",
         "ROW_NUMBER()",
@@ -896,3 +1051,6 @@ def test_contract_documents_baja_rotacion_as_virtual_warehouse():
     assert "no `unit` field" in text
     assert "MAX(ties)" in collapsed
     assert "complete_for_site" not in text
+    assert "Fredy" in collapsed
+    assert "2026-10-22" in collapsed
+    assert "486" in collapsed

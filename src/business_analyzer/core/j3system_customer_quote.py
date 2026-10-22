@@ -12,7 +12,7 @@ the B0 branch is verified.
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any, Mapping, NamedTuple, Optional, Sequence
 
 from business_analyzer.core.j3system_sales_warehouse import qualified_j3_table
@@ -57,7 +57,7 @@ _BROT_NOTE = (
     "B.ROT es una bodega virtual sin sede: su stock se reporta aparte, "
     "nunca se suma al stock de la sede. El posible solapamiento con las "
     "bodegas físicas y el origen físico de cualquier venta que use o "
-    "dependa de B.ROT están pendientes de confirmación por Fredy."
+    "dependa de B.ROT están pendientes de confirmación."
 )
 
 
@@ -209,6 +209,53 @@ def _latest_year_window(alias: str) -> str:
 """
 
 
+_STOCK_AGGREGATE_SOURCES = {
+    "stock_latest": "qty",
+    "baja_rotacion_latest": "baja_rotacion",
+}
+
+
+def _stock_aggregate_sql(source_cte: str) -> str:
+    """Exact stock total from a latest-year CTE, failing closed on bad rows.
+
+    ``COUNT(*) = COUNT(SaldoActual)`` and ``MIN(SaldoActual) >= 0`` reject
+    NULL/negative quantities; ``MAX(ties) = 1`` rejects a duplicated
+    latest-year row, so the total is either an exact ``SUM`` or ``NULL`` —
+    never a silently summed or double-counted figure. Only the two known
+    internal CTE names are accepted, so no caller input is ever interpolated.
+    """
+    if source_cte not in _STOCK_AGGREGATE_SOURCES:
+        raise ValueError(f"Unknown stock aggregate source: {source_cte}")
+    return f"""
+        SELECT ArticulosID,
+            CASE WHEN COUNT(*) = COUNT(SaldoActual) AND MIN(SaldoActual) >= 0
+                    AND MAX(ties) = 1
+                THEN SUM(SaldoActual) END AS {_STOCK_AGGREGATE_SOURCES[source_cte]}
+        FROM {source_cte}
+        GROUP BY ArticulosID
+"""
+
+
+def _price_aggregate_sql(table: str) -> str:
+    """Strictly-positive price rows; the count and min/max agree on them.
+
+    ``COUNT(CASE WHEN PreciosValor > 0 THEN 1 END)`` counts exactly the rows
+    that ``MIN``/``MAX`` fold over, so a zero, negative, or NULL price never
+    inflates the count nor erases a valid positive price: it is an absent
+    price, not a tariff.
+    """
+    return f"""
+        SELECT p.ArticulosID,
+            COUNT(CASE WHEN p.PreciosValor > 0 THEN 1 END) AS price_rows,
+            MIN(CASE WHEN p.PreciosValor > 0 THEN p.PreciosValor END) AS price_min,
+            MAX(CASE WHEN p.PreciosValor > 0 THEN p.PreciosValor END) AS price_max
+        FROM {table} p
+        WHERE p.TarifasID = %s AND p.Cantidad = 0
+          AND p.ArticulosID IN (SELECT ArticulosID FROM targets)
+        GROUP BY p.ArticulosID
+"""
+
+
 def build_customer_quote_lines_sql(*, site: str, skus: Sequence[str]) -> str:
     """Bound verified tariff; validated literal SKU and warehouse sets."""
     sku_list = list(skus)
@@ -217,12 +264,13 @@ def build_customer_quote_lines_sql(*, site: str, skus: Sequence[str]) -> str:
     sku_set = sql_in_list(sku_list, max_len=SKU_MAX_LEN)
     warehouse_set = _warehouse_set(SITES[site])
     baja_rotacion_set = _warehouse_set((BAJA_ROTACION_WAREHOUSE,), virtual=True)
+    price_aggregate = _price_aggregate_sql(qualified_j3_table("AdmPrecios"))
     return f"""
 WITH targets AS (
     SELECT TOP {MAX_SKUS + 1} ArticulosID, ArticulosCodigo, ArticulosNombre
     FROM {qualified_j3_table("AdmArticulos")}
     WHERE ArticulosCodigo IN ({sku_set})
-    ORDER BY ArticulosCodigo
+    ORDER BY ArticulosCodigo, ArticulosID
 ), stock_rows AS (
     SELECT e.ArticulosID, d.AlmacenID, d.Ano, d.SaldoActual
     FROM {qualified_j3_table("InvDetalleExistencias")} d
@@ -246,32 +294,15 @@ SELECT TOP {MAX_SKUS + 1} a.ArticulosCodigo AS sku, a.ArticulosNombre AS name,
     pr.price_rows, pr.price_min, pr.price_max, st.qty, br.baja_rotacion
 FROM targets a
 LEFT JOIN (
-    SELECT p.ArticulosID, COUNT(*) AS price_rows,
-      CASE WHEN COUNT(*) = COUNT(p.PreciosValor)
-        THEN MIN(p.PreciosValor) END AS price_min,
-      MAX(p.PreciosValor) AS price_max
-    FROM {qualified_j3_table("AdmPrecios")} p
-    WHERE p.TarifasID = %s AND p.Cantidad = 0
-      AND p.ArticulosID IN (SELECT ArticulosID FROM targets)
-    GROUP BY p.ArticulosID
+{price_aggregate}
 ) pr ON pr.ArticulosID = a.ArticulosID
 LEFT JOIN (
-    SELECT ArticulosID,
-      CASE WHEN COUNT(*) = COUNT(SaldoActual) AND MIN(SaldoActual) >= 0
-            AND MAX(ties) = 1
-        THEN SUM(SaldoActual) END AS qty
-    FROM stock_latest
-    GROUP BY ArticulosID
+{_stock_aggregate_sql("stock_latest")}
 ) st ON st.ArticulosID = a.ArticulosID
 LEFT JOIN (
-    SELECT ArticulosID,
-      CASE WHEN COUNT(*) = COUNT(SaldoActual) AND MIN(SaldoActual) >= 0
-            AND MAX(ties) = 1
-        THEN SUM(SaldoActual) END AS baja_rotacion
-    FROM baja_rotacion_latest
-    GROUP BY ArticulosID
+{_stock_aggregate_sql("baja_rotacion_latest")}
 ) br ON br.ArticulosID = a.ArticulosID
-ORDER BY a.ArticulosCodigo
+ORDER BY a.ArticulosCodigo, a.ArticulosID
 """.strip()
 
 
@@ -287,10 +318,11 @@ def tariff_decision(row: Mapping[str, Any]) -> Optional[str]:
 
 
 def _as_decimal(value: Any) -> Optional[Decimal]:
-    """Exact non-negative finite ``Decimal``; floats are rejected.
+    """Exact non-negative finite ``Decimal``; only ``Decimal``/finite ``int``.
 
-    A float cannot prove it did not already lose precision, so any float
-    (including ``nan``/``inf``) yields ``None`` (unknown) rather than a value.
+    ``float`` and ``str`` are rejected: neither can prove it preserved the
+    source scale exactly, so either yields ``None`` (unknown) rather than a
+    value.
     """
     if isinstance(value, bool):
         return None
@@ -298,14 +330,6 @@ def _as_decimal(value: Any) -> Optional[Decimal]:
         number = value
     elif isinstance(value, int):
         number = Decimal(value)
-    elif isinstance(value, str):
-        raw = value.strip()
-        if not raw:
-            return None
-        try:
-            number = Decimal(raw)
-        except (InvalidOperation, ValueError):
-            return None
     else:
         return None
     if not number.is_finite() or number < 0:
