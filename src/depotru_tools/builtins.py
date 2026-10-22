@@ -315,11 +315,23 @@ def _tool_search_products(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     }
 
 
+_QUOTE_SEARCH_REQUIRED_ALIASES = (
+    "sku",
+    "name",
+    "price",
+    "iva_rate",
+    "line_id",
+    "website_qty",
+)
+
+
 def _quote_search_j3(query: str, limit: int = 6) -> list[dict]:
     """Raw J3 rows: list price + IVA rate + website-allowlist stock. No cost.
 
-    Raises on any J3 connection/query failure (unreadable result set included);
-    the caller maps that to the fixed ``catalog_unavailable`` tool error.
+    Raises a fixed internal failure on any J3 connection/query failure or an
+    unreadable/malformed result set (missing required alias or a missing/blank
+    SKU); the caller maps that to the fixed ``catalog_unavailable`` tool error.
+    Driver details are suppressed.
     """
     q = (query or "").strip()
     if not q or len(q) < 2:
@@ -329,17 +341,35 @@ def _quote_search_j3(query: str, limit: int = 6) -> list[dict]:
 
     sql = build_quote_search_sql(limit=limit)
     pattern = f"%{q}%"
-    with Database() as db:
+    with Database(suppress_error_details=True) as db:
         rows = db.execute_query(sql, (pattern, pattern))
     if not isinstance(rows, list):
-        raise RuntimeError("unreadable J3 result set")
-    return [dict(r) for r in rows if isinstance(r, Mapping)]
+        raise RuntimeError("unreadable result set")
+    out: list[dict] = []
+    for r in rows:
+        if not isinstance(r, Mapping):
+            raise RuntimeError("unreadable result set")
+        row = dict(r)
+        if any(alias not in row for alias in _QUOTE_SEARCH_REQUIRED_ALIASES):
+            raise RuntimeError("unreadable result set")
+        sku = row.get("sku")
+        if sku is None or not str(sku).strip():
+            raise RuntimeError("unreadable result set")
+        out.append(row)
+    return out
 
 
 def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     """Agent quote: J3 price (before IVA) + IVA + stock, Magento display-only."""
-    query = str(params.get("query") or params.get("q") or "").strip()
-    limit = max(1, min(int(params.get("limit") or 6), 10))
+    raw_query = params.get("query")
+    query = raw_query.strip() if isinstance(raw_query, str) else ""
+    raw_limit = params.get("limit")
+    if isinstance(raw_limit, bool):
+        limit = 6
+    elif isinstance(raw_limit, int):
+        limit = max(1, min(raw_limit, 10))
+    else:
+        limit = 6
     search_url = _storefront_search_url(query)
     if len(query) < 2:
         return {
@@ -353,22 +383,21 @@ def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
         }
 
     magento_by_sku: dict[str, dict] = {}
-    magento_search: dict = {"products": [], "source": "none"}
     try:
-        from depotru_integrations.magento.client import MagentoConfig
+        from depotru_integrations.magento.client import MagentoConfig, MagentoRestClient
 
-        if MagentoConfig.from_env() is not None:
-            magento_search = _tool_search_products(
-                ctx, {"query": query, "limit": limit}
-            )
-    except Exception:  # noqa: BLE001
-        magento_search = {"products": [], "source": "none"}
-    for item in magento_search.get("products") or []:
-        if not isinstance(item, dict):
-            continue
-        sku = str(item.get("sku") or "")
-        if sku:
-            magento_by_sku[sku] = item
+        config = MagentoConfig.from_env()
+        if config is not None:
+            items = MagentoRestClient(config).search_products(query, page_size=limit)
+            if isinstance(items, list):
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    sku = str(item.get("sku") or "")
+                    if sku:
+                        magento_by_sku[sku] = item
+    except Exception:  # noqa: BLE001 — fail closed, never fall back to sales history
+        magento_by_sku = {}
 
     try:
         j3_rows = _quote_search_j3(query, limit=limit)
@@ -386,15 +415,24 @@ def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     from business_analyzer.core.quote_search_iva import build_product
 
     products: list[dict] = []
-    for row in j3_rows:
-        sku = str(row.get("sku") or "")
-        if not sku:
-            continue
-        products.append(build_product(j3_row=row, magento=magento_by_sku.get(sku)))
+    try:
+        for row in j3_rows:
+            sku = str(row.get("sku") or "")
+            products.append(build_product(j3_row=row, magento=magento_by_sku.get(sku)))
 
-    if not products:
-        for sku, mag in magento_by_sku.items():
-            products.append(build_product(magento=mag))
+        if not products:
+            for sku, mag in magento_by_sku.items():
+                products.append(build_product(magento=mag))
+    except Exception:  # noqa: BLE001 — unexpected validation/Decimal failure
+        return {
+            "query": query,
+            "products": [],
+            "count": 0,
+            "source": "none",
+            "search_url": search_url,
+            "status": "error",
+            "reason": "catalog_unavailable",
+        }
 
     return {
         "query": query,

@@ -10,37 +10,28 @@ integer COP JSON number.
 
 from __future__ import annotations
 
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, localcontext
 from typing import Any, Mapping, Optional
 
 _ONE = Decimal("1")
 _HUNDRED = Decimal("100")
 _INTEGER = Decimal("1")
+_CALC_PRECISION = 60
 
 
 def to_decimal(value: Any) -> Optional[Decimal]:
     """Strictly parse ``value`` to a finite ``Decimal``; fail-closed otherwise.
 
-    Accepts ``Decimal``, ``int``, and canonical base-10 strings. ``float`` is
-    rejected (a binary float cannot be an exact base-10 source), as are bools,
-    empty strings, and non-finite values.
+    Accepts only finite ``Decimal`` and non-bool ``int``. Strings, floats,
+    bools, and non-finite values are rejected (a ``str``/``float`` is not an
+    exact base-10 source at this boundary).
     """
-    if value is None:
-        return None
     if isinstance(value, bool):
         return None
     if isinstance(value, Decimal):
         d = value
     elif isinstance(value, int):
         d = Decimal(value)
-    elif isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
-        try:
-            d = Decimal(text)
-        except InvalidOperation:
-            return None
     else:
         return None
     if not d.is_finite():
@@ -56,12 +47,10 @@ def decimal_string(value: Decimal) -> str:
 def magento_price_string(value: Any) -> Optional[str]:
     """Canonical decimal string for the display-only Magento price.
 
-    Magento's adapter yields ``float``; convert it to an exact base-10 string
-    (``Decimal(str(value))``) without ever emitting a JSON number. Display-only:
-    never a basis for price, IVA, or ``price_with_iva``.
+    Accepts exact ``Decimal`` and non-bool ``int`` only; floats, strings, and
+    malformed values fail closed to ``None``. Display-only: never a basis for
+    price, IVA, or ``price_with_iva``.
     """
-    if value is None or value == "":
-        return None
     if isinstance(value, bool):
         return None
     if isinstance(value, Decimal):
@@ -69,10 +58,7 @@ def magento_price_string(value: Any) -> Optional[str]:
     elif isinstance(value, int):
         d = Decimal(value)
     else:
-        try:
-            d = Decimal(str(value))
-        except (InvalidOperation, ValueError):
-            return None
+        return None
     if not d.is_finite():
         return None
     return format(d, "f")
@@ -81,11 +67,18 @@ def magento_price_string(value: Any) -> Optional[str]:
 def compute_price_with_iva(
     j3_price: Optional[Decimal], iva_rate: Optional[Decimal]
 ) -> Optional[int]:
-    """Integer-COP IVA-inclusive price from exact ``Decimal`` HALF_UP arithmetic."""
+    """Integer-COP IVA-inclusive price from exact ``Decimal`` HALF_UP arithmetic.
+
+    Runs in a high-precision context so SQL Server ``money`` plus a
+    max-precision SQL ``decimal`` rate never trigger implicit context rounding
+    before the final integer-COP quantize.
+    """
     if j3_price is None or iva_rate is None:
         return None
-    total = j3_price * (_ONE + iva_rate / _HUNDRED)
-    return int(total.quantize(_INTEGER, rounding=ROUND_HALF_UP))
+    with localcontext() as ctx:
+        ctx.prec = _CALC_PRECISION
+        total = j3_price * (_ONE + iva_rate / _HUNDRED)
+        return int(total.quantize(_INTEGER, rounding=ROUND_HALF_UP))
 
 
 def price_with_iva_reason(

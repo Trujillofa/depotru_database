@@ -151,21 +151,21 @@ def build_quote_search_sql(*, limit: int = 6, dialect: str = "tsql") -> str:
             f"decimal_sum(CASE WHEN al.AlmacenCodigo IN ({allow_sql}) "
             f"THEN d.SaldoActual END)"
         )
-        stock_filter = "d.SaldoActual >= 0"
-        sort_coalesce = "COALESCE(s.website_qty, '0.0000')"
+        stock_filter = "decimal_ge(d.SaldoActual, '0') = 1"
+        sort_cond = "decimal_gt(COALESCE(s.website_qty, '0.0000'), '0') = 1"
     else:
         table = qualified_j3_table
         placeholder = "%s"
         top = f"TOP {limit_n} "
         tail = ""
-        price_expr = "CAST(a.ArticulosVenta AS DECIMAL(18, 4))"
-        website_qty_expr = "CAST(ISNULL(s.website_qty, 0) AS DECIMAL(18, 4))"
+        price_expr = "a.ArticulosVenta"
+        website_qty_expr = "ISNULL(s.website_qty, 0)"
         stock_sum_expr = (
             f"SUM(CASE WHEN al.AlmacenCodigo IN ({allow_sql}) "
-            f"THEN CAST(d.SaldoActual AS DECIMAL(18, 4)) ELSE 0 END)"
+            f"THEN d.SaldoActual ELSE 0 END)"
         )
-        stock_filter = "CAST(d.SaldoActual AS DECIMAL(18, 4)) >= 0"
-        sort_coalesce = "ISNULL(s.website_qty, 0)"
+        stock_filter = "d.SaldoActual >= 0"
+        sort_cond = "ISNULL(s.website_qty, 0) > 0"
 
     articulos = table("AdmArticulos")
     lineas = table("AdmLineas")
@@ -194,7 +194,7 @@ LEFT JOIN (
     GROUP BY e.ArticulosID
 ) s ON s.ArticulosID = a.ArticulosID
 WHERE (a.ArticulosNombre LIKE {placeholder} OR a.ArticulosCodigo LIKE {placeholder})
-ORDER BY CASE WHEN {sort_coalesce} > 0 THEN 0 ELSE 1 END,
+ORDER BY CASE WHEN {sort_cond} THEN 0 ELSE 1 END,
          a.ArticulosNombre
 {tail}
 """.strip()
