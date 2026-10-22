@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, cast
 
 from depotru_kernel.attribution import resolve_seller
 from depotru_kernel.auth import ToolScope
@@ -440,6 +440,44 @@ def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     }
 
 
+def _tool_quote_for_customer(
+    ctx: ToolContext, params: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Sales-only quote for the server-verified customer of this request.
+
+    The customer identity comes only from the server-side context extras, so
+    the model can neither pass nor override a customer id. A missing identity,
+    an unknown parameter, a missing tariff or a refused tariff (006 AL COSTO)
+    fails closed without touching the item prices. Never writes.
+    """
+    from business_analyzer.core.j3system_customer_quote import (
+        ALLOWED_AUDIENCES,
+        error_payload,
+        fetch_customer_quote,
+        parse_quote_request,
+    )
+
+    if ctx.audience not in ALLOWED_AUDIENCES:
+        failure = error_payload("audience_not_allowed")
+        return cast("dict[str, Any]", failure)
+    request, error = parse_quote_request(params, ctx.extras)
+    if error is not None:
+        failure = error
+        return cast("dict[str, Any]", failure)
+    if request is None:
+        failure = error_payload("erp_unavailable")
+        return cast("dict[str, Any]", failure)
+    try:
+        from business_analyzer.core.database import Database
+
+        with Database() as db:
+            quote = fetch_customer_quote(db, request)
+            return cast("dict[str, Any]", quote)
+    except Exception:  # noqa: BLE001 — fail closed; never leak the driver message
+        failure = error_payload("erp_unavailable", site=request.site)
+        return cast("dict[str, Any]", failure)
+
+
 def _tool_sellable_qty_stub(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     """Customer-facing sellable qty via Magento MSI when configured.
 
@@ -572,6 +610,25 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             parameters_schema={
                 "query": "product name or SKU fragment",
                 "limit": "max results (default 6)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.quote_for_customer",
+            description=(
+                "Customer quote for the already-verified customer of this "
+                "request: net list price (before IVA) of the customer's "
+                "tariff and stock at the site warehouses (neiva: ALM, BD6, "
+                "SUR, DIS, BOD; florencia: FLO). Never accepts a customer id. "
+                "Fails closed; never writes."
+            ),
+            scope=ToolScope.SALES_PORTFOLIO,
+            handler=_tool_quote_for_customer,
+            public_safe=False,
+            parameters_schema={
+                "site": "neiva or florencia",
+                "skus": "list of ArticulosCodigo, max 20",
             },
         )
     )
