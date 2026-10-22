@@ -7,7 +7,6 @@ All data below are synthetic sentinels, unrelated to any customer or catalog.
 from __future__ import annotations
 
 import importlib
-import json
 import re
 import socket
 import sys
@@ -30,6 +29,10 @@ PRIVATE_SENTINEL = "SYNTHETIC-PRIVATE-DO-NOT-RETURN"
 BAJA_ROTACION = "B.ROT"
 CONTRACT_DIR = Path(__file__).resolve().parents[2] / "docs" / "contracts"
 CONTRACT = CONTRACT_DIR / "catalog-quote-for-customer.md"
+
+# Canonical fixed-point strings produced by the Decimal JSON serialiser.
+DEFAULT_PRICE = "12.50"
+DEFAULT_QTY = "4.25"
 
 
 def tariff_row(**changes):
@@ -59,10 +62,7 @@ def article_row(**changes):
 
 
 def assert_sanitized(payload):
-    serialized = json.dumps(payload, allow_nan=False)
-    assert PRIVATE_SENTINEL not in serialized
-    assert str(SERVER_ID) not in serialized
-    assert payload["price_includes_iva"] is False
+    """Structural leak checks; no substring scanning of identity values."""
     forbidden = {
         IDENTITY_KEY,
         "customer_id",
@@ -75,6 +75,8 @@ def assert_sanitized(payload):
         "telefono",
         "cost",
         "margin",
+        "price_includes_iva",
+        "unit",
     }
 
     def check(value):
@@ -85,8 +87,12 @@ def assert_sanitized(payload):
         elif isinstance(value, list):
             for nested in value:
                 check(nested)
+        else:
+            assert value != SERVER_ID
+            assert value != PRIVATE_SENTINEL
 
     check(payload)
+    assert payload["iva_status"] == "unknown"
     if payload.get("site"):
         coverage = payload["stock_coverage"]
         assert coverage["status"] == "physical_warehouses_only"
@@ -150,6 +156,18 @@ def harness(monkeypatch):
     database.ConnectionType = object
     database.env_database_name = lambda key, default: default
     monkeypatch.setitem(sys.modules, database.__name__, database)
+
+    # Snapshot the modules imported under the fake database so a later test in
+    # the same session never reuses a module bound to a stale fake.
+    tracked = (
+        "business_analyzer.core.j3system_customer_quote",
+        "business_analyzer.core.j3system_sales_warehouse",
+        "business_analyzer.core.website_warehouse_policy",
+    )
+    saved = {name: sys.modules.get(name) for name in tracked}
+    for name in tracked:
+        sys.modules.pop(name, None)
+
     quote = importlib.import_module("business_analyzer.core.j3system_customer_quote")
     registry = ToolRegistry()
     register_builtin_tools(registry)
@@ -171,7 +189,14 @@ def harness(monkeypatch):
             assert_sanitized(result)
             return result
 
-    return Harness()
+    try:
+        yield Harness()
+    finally:
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
 
 
 def test_registration_and_closed_schema(harness):
@@ -284,7 +309,18 @@ def test_request_normalization_and_deduplication(harness):
     )
     assert result["status"] == "ok"
     assert len(result["lines"]) == 1
+    assert result["lines"][0]["sku"] == SKU
     assert harness.db.calls[0][1] == (SERVER_ID,)
+
+
+def test_sku_casing_preserves_first_occurrence(harness):
+    first = "synthetic-a"
+    later = "SYNTHETIC-A"
+    harness.db.results[1] = [article_row(sku=later)]
+    result = harness.invoke({"site": "neiva", "skus": [first, later]})
+    assert len(result["lines"]) == 1
+    assert result["lines"][0]["sku"] == first
+    assert result["lines"][0]["status"] == "ok"
 
 
 def test_maximum_sku_count_and_length_are_accepted(harness):
@@ -307,8 +343,8 @@ def test_bound_parameters_bounded_aggregates_and_net_quote(harness, site, wareho
     assert result["status"] == "ok"
     line = result["lines"][0]
     assert (line["price"], line["qty"], line["stock_status"]) == (
-        12.5,
-        4.25,
+        DEFAULT_PRICE,
+        DEFAULT_QTY,
         "available",
     )
     assert set(result["stock_coverage"]["mapped_warehouses"]) == warehouses
@@ -319,12 +355,15 @@ def test_bound_parameters_bounded_aggregates_and_net_quote(harness, site, wareho
     assert customer_sql.count("%s") == quote_sql.count("%s") == 1
     assert "TOP 2 " in customer_sql and "t.TercerosID = %s" in customer_sql
     assert "TOP 21 " in quote_sql
+    assert quote_sql.endswith("ORDER BY a.ArticulosCodigo")
+    assert "ORDER BY ArticulosCodigo" in quote_sql
     assert f"ArticulosCodigo IN ('{SKU}')" in quote_sql
     assert "p.ArticulosID IN (SELECT ArticulosID FROM targets)" in quote_sql
     assert "e.ArticulosID IN (SELECT ArticulosID FROM targets)" in quote_sql
     assert "p.TarifasID = %s AND p.Cantidad = 0" in quote_sql
     assert "COUNT(*) = COUNT(SaldoActual)" in quote_sql
     assert "COUNT(*) = COUNT(p.PreciosValor)" in quote_sql
+    assert "CAST(" not in quote_sql
     wh_filter = re.search(r"al\.AlmacenCodigo IN \(([^)]+)\)", quote_sql).group(1)
     assert set(re.findall(r"'([^']+)'", wh_filter)) == warehouses
     assert "TercerosID" not in quote_sql and str(SERVER_ID) not in customer_sql
@@ -358,13 +397,17 @@ def test_bound_parameters_bounded_aggregates_and_net_quote(harness, site, wareho
         ({"tarifas_id": 6}, "tariff_refused"),
         ({"tarifa_codigo": "006"}, "tariff_refused"),
         ({"tarifa_nombre": " al costo "}, "tariff_refused"),
+        ({"tarifa_nombre": "AL  COSTO"}, "tariff_refused"),
     ],
 )
 def test_missing_and_cost_tariffs_never_query_item_prices(harness, changes, reason):
     harness.db.results[0] = [tariff_row(**changes)]
-    assert harness.invoke()["reason"] == reason
+    result = harness.invoke()
+    assert result["reason"] == reason
     assert len(harness.db.calls) == 1
     assert "AdmPrecios" not in harness.db.calls[0][0]
+    # A refusal/missing tariff never echoes tariff metadata.
+    assert "tariff" not in result
 
 
 @pytest.mark.parametrize(
@@ -401,7 +444,14 @@ def test_customer_lookup_cardinality_and_shape(harness, rows, reason):
 def test_invalid_quantity_stays_unknown(harness, qty):
     harness.db.results[1] = [article_row(qty=qty)]
     line = harness.invoke()["lines"][0]
-    assert line["price"] == 12.5
+    assert line["price"] == DEFAULT_PRICE
+    assert line["qty"] is None and line["stock_status"] == "unknown"
+
+
+def test_float_quantity_is_rejected_as_unknown(harness):
+    # A float cannot prove it kept precision, so it is rejected even if finite.
+    harness.db.results[1] = [article_row(qty=4.25)]
+    line = harness.invoke()["lines"][0]
     assert line["qty"] is None and line["stock_status"] == "unknown"
 
 
@@ -414,9 +464,9 @@ def test_missing_quantity_stays_unknown(harness):
 
 
 def test_explicit_zero_is_only_zero_in_site_warehouses(harness):
-    harness.db.results[1] = [article_row(qty=0)]
+    harness.db.results[1] = [article_row(qty=Decimal("0"))]
     result = harness.invoke()
-    assert result["lines"][0]["qty"] == 0
+    assert result["lines"][0]["qty"] == "0"
     assert result["lines"][0]["stock_status"] == "zero_in_mapped_warehouses"
     assert result["stock_coverage"]["status"] == "physical_warehouses_only"
 
@@ -435,12 +485,15 @@ def test_missing_article_has_neither_price_nor_stock(harness):
     [
         ({"price_rows": 0}, "price_missing"),
         ({"price_min": None}, "price_missing"),
-        ({"price_min": float("nan")}, "price_missing"),
+        ({"price_min": Decimal("0")}, "price_missing"),
+        ({"price_min": 0}, "price_missing"),
+        ({"price_min": Decimal("-0.01")}, "price_missing"),
         ({"price_min": -1}, "price_missing"),
+        ({"price_min": float("nan")}, "price_missing"),
         ({"price_rows": "SYNTHETIC-INVALID"}, "price_missing"),
+        ({"price_rows": Decimal("1.5")}, "price_missing"),
         ({"price_rows": 2, "price_max": Decimal("12.51")}, "price_ambiguous"),
         ({"price_rows": 2, "price_max": None}, "price_ambiguous"),
-        ({"price_rows": 1.5}, "price_ambiguous"),
     ],
 )
 def test_missing_and_ambiguous_prices(harness, changes, reason):
@@ -450,9 +503,91 @@ def test_missing_and_ambiguous_prices(harness, changes, reason):
     assert result["lines"][0]["price"] is None
 
 
+@pytest.mark.parametrize(
+    "price_rows",
+    [
+        -1,
+        Decimal("NaN"),
+        Decimal("sNaN"),
+        Decimal("Infinity"),
+        Decimal("-Infinity"),
+        "²",
+        "١٢٣",
+        "\u0661\u0662",
+    ],
+)
+def test_malformed_count_yields_price_missing(harness, price_rows):
+    harness.db.results[1] = [article_row(price_rows=price_rows)]
+    result = harness.invoke()
+    assert result["status"] == "error" and result["reason"] == "price_missing"
+    assert result["lines"][0]["price"] is None
+
+
+@pytest.mark.parametrize("price_rows", [Decimal("2.0"), " 2 "])
+def test_valid_count_forms_are_quotable(harness, price_rows):
+    harness.db.results[1] = [article_row(price_rows=price_rows)]
+    assert harness.invoke()["lines"][0]["price"] == DEFAULT_PRICE
+
+
 def test_equal_duplicate_prices_are_quotable(harness):
     harness.db.results[1] = [article_row(price_rows=2)]
-    assert harness.invoke()["lines"][0]["price"] == 12.5
+    assert harness.invoke()["lines"][0]["price"] == DEFAULT_PRICE
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (0, 0),
+        (1, 1),
+        (5, 5),
+        (Decimal("2.0"), 2),
+        (Decimal("0"), 0),
+        ("2", 2),
+        (" 5 ", 5),
+        (-1, None),
+        (True, None),
+        (False, None),
+        (Decimal("NaN"), None),
+        (Decimal("sNaN"), None),
+        (Decimal("Infinity"), None),
+        (Decimal("-Infinity"), None),
+        (Decimal("-1"), None),
+        (Decimal("1.5"), None),
+        ("²", None),
+        ("١٢٣", None),
+        ("", None),
+        ("  ", None),
+        ("-1", None),
+        (1.0, None),
+        (None, None),
+    ],
+)
+def test_as_count_edge_cases(harness, value, expected):
+    assert harness.module._as_count(value) == expected
+
+
+def test_large_price_is_exact_fixed_point_string(harness):
+    value = Decimal("1234567890123456.78")
+    harness.db.results[1] = [article_row(price_min=value, price_max=value)]
+    line = harness.invoke()["lines"][0]
+    assert line["status"] == "ok"
+    assert line["price"] == "1234567890123456.78"
+
+
+def test_adjacent_large_prices_are_not_collapsed(harness):
+    low = Decimal("1234567890123456.78")
+    high = Decimal("1234567890123456.79")
+    harness.db.results[1] = [article_row(price_rows=2, price_min=low, price_max=high)]
+    result = harness.invoke()
+    assert result["reason"] == "price_ambiguous"
+    assert result["lines"][0]["price"] is None
+
+
+def test_fractional_stock_preserves_exact_scale(harness):
+    harness.db.results[1] = [article_row(qty=Decimal("0.0001"))]
+    line = harness.invoke()["lines"][0]
+    assert line["qty"] == "0.0001"
+    assert line["stock_status"] == "available"
 
 
 def test_mixed_quote_has_partial_status_and_explicit_missing_article(harness):
@@ -523,23 +658,29 @@ def test_baja_rotacion_is_reported_as_virtual_warehouse_without_site(harness):
     assert virtual["kind"] == "virtual"
     assert BAJA_ROTACION not in coverage["mapped_warehouses"]
     assert "unmapped_warehouses" not in coverage
-    assert "unmapped_warehouse_stock" not in json.dumps(result)
+    assert "unmapped_warehouse_stock" not in str(result)
+
+
+def test_brot_note_names_fredy_pending_confirmation(harness):
+    note = harness.invoke()["stock_coverage"]["note"]
+    assert "Fredy" in note
+    assert "confirmación" in note
 
 
 def test_exact_physical_qty_is_unchanged_and_excludes_baja_rotacion(harness):
     row = article_row(qty=Decimal("4.25"), baja_rotacion=Decimal("9.5"))
     harness.db.results[1] = [row]
     line = harness.invoke()["lines"][0]
-    assert line["qty"] == 4.25
+    assert line["qty"] == "4.25"
     assert line["stock_status"] == "available"
-    assert line["baja_rotacion"] == 9.5
+    assert line["baja_rotacion"] == "9.5"
 
 
 def test_exact_baja_rotacion_quantity_is_surfaced_separately(harness):
     row = article_row(qty=Decimal("4.25"), baja_rotacion=Decimal("9.5"))
     harness.db.results[1] = [row]
     line = harness.invoke()["lines"][0]
-    assert line["baja_rotacion"] == 9.5
+    assert line["baja_rotacion"] == "9.5"
     assert line["baja_rotacion_status"] == "present"
 
 
@@ -547,18 +688,34 @@ def test_baja_rotacion_is_never_added_to_the_physical_total(harness):
     row = article_row(qty=Decimal("4.25"), baja_rotacion=Decimal("100.5"))
     harness.db.results[1] = [row]
     line = harness.invoke()["lines"][0]
-    assert line["qty"] == 4.25
-    assert line["baja_rotacion"] == 100.5
-    assert line["qty"] + line["baja_rotacion"] == 104.75
+    # Structural: two independent fields, no combined figure; the physical
+    # quantity is unchanged by the B.ROT quantity.
+    assert line["qty"] == "4.25"
+    assert line["baja_rotacion"] == "100.5"
+    assert "combined_qty" not in line
+    assert "total_qty" not in line
+
+
+def test_independent_latest_years_are_not_collapsed(harness):
+    # Physical stock and B.ROT each come from their own latest-year row,
+    # possibly different years; they are surfaced independently, never summed.
+    row = article_row(qty=Decimal("10.0000"), baja_rotacion=Decimal("20.0000"))
+    harness.db.results[1] = [row]
+    line = harness.invoke()["lines"][0]
+    assert line["qty"] == "10.0000"
+    assert line["baja_rotacion"] == "20.0000"
+    assert line["stock_status"] == "available"
+    assert line["baja_rotacion_status"] == "present"
+    assert line["requires_physical_origin_confirmation"] is True
 
 
 def test_baja_rotacion_only_stock_requires_human_origin_confirmation(harness):
     row = article_row(qty=Decimal("0"), baja_rotacion=Decimal("3"))
     harness.db.results[1] = [row]
     line = harness.invoke()["lines"][0]
-    assert line["qty"] == 0
+    assert line["qty"] == "0"
     assert line["stock_status"] == "zero_in_mapped_warehouses"
-    assert line["baja_rotacion"] == 3
+    assert line["baja_rotacion"] == "3"
     assert line["baja_rotacion_status"] == "present"
     assert line["requires_physical_origin_confirmation"] is True
 
@@ -568,7 +725,7 @@ def test_baja_rotacion_only_stock_does_not_assert_site_availability(harness):
     harness.db.results[1] = [row]
     line = harness.invoke()["lines"][0]
     assert line["stock_status"] != "available"
-    assert line["qty"] == 0
+    assert line["qty"] == "0"
 
 
 def test_baja_rotacion_flags_confirmation_even_when_site_has_stock(harness):
@@ -582,7 +739,7 @@ def test_zero_baja_rotacion_is_reported_as_zero_not_available(harness):
     row = article_row(qty=Decimal("4.25"), baja_rotacion=Decimal("0"))
     harness.db.results[1] = [row]
     line = harness.invoke()["lines"][0]
-    assert line["baja_rotacion"] == 0
+    assert line["baja_rotacion"] == "0"
     assert line["baja_rotacion_status"] == "zero"
     assert line["requires_physical_origin_confirmation"] is False
 
@@ -607,7 +764,8 @@ def test_invalid_baja_rotacion_stays_unknown(harness, baja_rotacion):
     line = harness.invoke()["lines"][0]
     assert line["baja_rotacion"] is None
     assert line["baja_rotacion_status"] == "unknown"
-    assert line["requires_physical_origin_confirmation"] is False
+    # Unknown status => the confirmation flag is null, never false.
+    assert line["requires_physical_origin_confirmation"] is None
 
 
 def test_missing_baja_rotacion_stays_unknown(harness):
@@ -617,6 +775,18 @@ def test_missing_baja_rotacion_stays_unknown(harness):
     line = harness.invoke()["lines"][0]
     assert line["baja_rotacion"] is None
     assert line["baja_rotacion_status"] == "unknown"
+    assert line["requires_physical_origin_confirmation"] is None
+
+
+def test_same_year_duplicate_guard_surfaces_as_unknown(harness):
+    # When the SQL duplicate guard (MAX(ties) = 1) fails, the aggregate yields
+    # NULL, which surfaces as unknown — never a doubled quantity.
+    row = article_row()
+    row["qty"] = None
+    harness.db.results[1] = [row]
+    line = harness.invoke()["lines"][0]
+    assert line["qty"] is None
+    assert line["stock_status"] == "unknown"
 
 
 def test_erp_failure_returns_no_price_and_no_stock(harness):
@@ -639,24 +809,39 @@ def test_baja_rotacion_appears_only_in_its_own_aggregate(harness):
     assert BAJA_ROTACION not in site_codes
     assert brot_codes == {BAJA_ROTACION}
     assert "baja_rotacion_rows" in quote_sql
+    assert "stock_latest" in quote_sql
+    assert "baja_rotacion_latest" in quote_sql
 
 
-def test_site_aggregate_does_not_read_baja_rotacion_rows(harness):
+def test_site_aggregate_reads_only_stock_latest(harness):
     harness.invoke()
     quote_sql = harness.db.calls[1][0]
-    site_aggregate = quote_sql.split(") pr ON pr.ArticulosID = a.ArticulosID")[1]
-    site_aggregate = site_aggregate.split(") st ON st.ArticulosID = a.ArticulosID")[0]
-    assert "FROM stock_rows WHERE Ano" in site_aggregate
-    assert "baja_rotacion_rows" not in site_aggregate
+    st_aggregate = quote_sql.split(") st ON st.ArticulosID = a.ArticulosID")[0].rsplit(
+        "LEFT JOIN (", 1
+    )[1]
+    assert "FROM stock_latest" in st_aggregate
+    assert "baja_rotacion_latest" not in st_aggregate
+    assert "baja_rotacion_rows" not in st_aggregate
 
 
 def test_baja_rotacion_aggregate_selects_its_own_latest_year(harness):
     harness.invoke()
     quote_sql = harness.db.calls[1][0]
-    brot_aggregate = quote_sql.split(") st ON st.ArticulosID = a.ArticulosID")[1]
-    brot_aggregate = brot_aggregate.split(") br ON br.ArticulosID = a.ArticulosID")[0]
-    assert "FROM baja_rotacion_rows WHERE Ano" in brot_aggregate
-    assert "FROM stock_rows" not in brot_aggregate
+    br_aggregate = quote_sql.split(") br ON br.ArticulosID = a.ArticulosID")[0].rsplit(
+        "LEFT JOIN (", 1
+    )[1]
+    assert "FROM baja_rotacion_latest" in br_aggregate
+    assert "FROM stock_latest" not in br_aggregate
+
+
+def test_latest_year_selection_is_per_pair_not_global(harness):
+    harness.invoke()
+    quote_sql = harness.db.calls[1][0]
+    assert quote_sql.count("ROW_NUMBER() OVER (") == 2
+    assert "PARTITION BY ArticulosID, AlmacenID ORDER BY Ano DESC" in quote_sql
+    assert "MAX(Ano)" not in quote_sql
+    assert "MAX(ties) = 1" in quote_sql
+    assert "COUNT(*) OVER (PARTITION BY ArticulosID, AlmacenID, Ano)" in quote_sql
 
 
 def test_con_is_excluded_from_every_warehouse_set(harness):
@@ -693,12 +878,21 @@ def test_baja_rotacion_cannot_be_added_to_a_site_warehouse_set(harness):
 
 def test_contract_documents_baja_rotacion_as_virtual_warehouse():
     text = CONTRACT.read_text(encoding="utf-8")
-    assert "physical_warehouses_only" in text
-    assert "virtual_warehouses" in text
-    assert "requires_physical_origin_confirmation" in text
-    assert "baja_rotacion" in text
-    assert "CON" in text
-    assert "server-side message validator" in " ".join(text.split())
-    assert "overlap is possible" in text or "overlap_possible" in text
-    assert "physical origin" in text
+    collapsed = " ".join(text.split())
+    for phrase in (
+        "physical_warehouses_only",
+        "virtual_warehouses",
+        "requires_physical_origin_confirmation",
+        "baja_rotacion",
+        "POR CONFIRMAR POR FREDY",
+        "tri-state",
+        "iva_status",
+        "ROW_NUMBER()",
+        "PARTITION BY ArticulosID, AlmacenID",
+        "server-side message validator",
+    ):
+        assert phrase in collapsed
+    assert "no `price_includes_iva`" in text
+    assert "no `unit` field" in text
+    assert "MAX(ties)" in collapsed
     assert "complete_for_site" not in text

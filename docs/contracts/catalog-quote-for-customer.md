@@ -11,7 +11,7 @@
 ## 1. Purpose and audience
 
 A sales agent asks for the price of a few SKUs **for a customer that the
-platform already verified**. The tool returns the customer's own net list
+platform already verified**. The tool returns the customer's own tariff list
 price and the inventory available at the requested site's mapped warehouses.
 Stock belongs to the inventory view, not to the customer.
 
@@ -44,9 +44,27 @@ bucketed, rounded, or replaced by words such as `hay`, `pocas_unidades` or
 - The tool returns factual tool data only. A successful tool response does
   not by itself prove that an arbitrary customer sentence has passed the
   downstream message validator; every customer-bound price, IVA, quantity
-  and total must match the tool evidence and must pass the server-side message validator before it is sent.
+  and total must match the tool evidence and must pass the server-side message validator before it is sent. That validator lives in a separate slice and is **not** proven or exercised by this slice.
 - If the ERP read fails, the response carries **no price and no stock
   quantity at all** (see §5.1, `erp_unavailable`).
+
+### 1.2 Exact base-10 representation
+
+Every price and quantity is carried as Python `Decimal` from the read to the
+payload. No figure is ever converted to a binary `float`; a database value
+that arrives as a `float` (including `nan`/`inf`) is rejected as unknown, not
+trusted, because a float cannot prove it did not already lose precision.
+
+- The payload serialises each figure as a **JSON string**, not a JSON number.
+- The string is the canonical fixed-point form `format(value, "f")` of the
+  exact `Decimal`: no scientific/exponent notation, no trailing `.0` beyond
+  the source scale, and fractional digits preserved exactly as the source
+  `Decimal` carries them (e.g. `"12.50"`, `"0.0001"`, `"1000000000000000000"`).
+- No SQL `CAST(... AS DECIMAL(p,s))` is applied: the source column's own
+  scale is preserved, so no scale is imposed without schema evidence.
+- Raw prices are compared as `Decimal` **before** any serialisation; two
+  distinct values that a float would collapse to the same binary number
+  therefore still produce `price_ambiguous`, never a false equal quote.
 
 ## 2. Closed model input schema
 
@@ -57,7 +75,7 @@ before any ERP access.
 | Key | Type | Bound | Notes |
 |---|---|---|---|
 | `site` | string | one of `neiva`, `florencia` | case-insensitive, trimmed |
-| `skus` | string or list of strings | 1..20 raw items before deduplication, each 1..40 chars after trimming, chars `[A-Za-z0-9._-]` | exact `ArticulosCodigo`; duplicates collapse (case-insensitive) |
+| `skus` | string or list of strings | 1..20 raw items before deduplication, each 1..40 chars after trimming, chars `[A-Za-z0-9._-]` | exact `ArticulosCodigo`; duplicates collapse case-insensitively, keeping the first occurrence's spelling |
 
 Server-side only (never a model parameter):
 
@@ -69,6 +87,15 @@ The identity is written by the server (the phone resolver of the next slice).
 The model can neither pass nor override it. When the key is absent or
 invalid, the tool **fails closed** — a direct API call with an empty context
 returns `verified_customer_required` and never touches the ERP.
+
+### 2.1 SKU casing
+
+When duplicate SKUs differ only by case, the spelling of the **first**
+occurrence is preserved in both the SQL request and the emitted line `sku`.
+The tool never silently uppercases or lowercases a requested SKU. Each result
+row is matched to its request SKU case-insensitively, and a returned
+`ArticulosCodigo` that does not match (case-insensitively) a requested SKU —
+or that repeats an already-seen SKU — fails closed with `erp_unavailable`.
 
 ## 3. Identity rules
 
@@ -118,18 +145,29 @@ Therefore:
 
 1. whether `B.ROT` quantities may **overlap** the quantities of the physical
    warehouses, and
-2. which physical warehouse fulfils a sale that can only be served from
-   `B.ROT`.
+2. which physical warehouse fulfils a sale that depends on `B.ROT`.
 
-Consequently the output warns that an overlap is possible. Because this request does
+Consequently the output warns that an overlap is possible and that the
+physical origin is pending confirmation by Fredy. Because this request does
 not include the requested sale quantity and the physical overlap/origin are
 unresolved, `requires_physical_origin_confirmation` is conservatively `true`
 whenever `baja_rotacion` is positive, even if physical site quantity is also
-positive. Treat the flag as a required human check before a proposed sale uses
-or relies on B.ROT. A physical-only sale may proceed only after the server
-validates the requested quantity against the site's physical quantity. B.ROT
-never establishes site availability and the tool never claims a physical origin
-for its stock.
+positive.
+
+`requires_physical_origin_confirmation` is a **tri-state** flag meaningful
+**only together with `baja_rotacion_status`**:
+
+| `baja_rotacion_status` | `requires_physical_origin_confirmation` | Meaning |
+|---|---|---|
+| `present` | `true` | human confirmation required before any sale that uses or depends on B.ROT |
+| `zero` | `false` | no B.ROT stock, no confirmation needed |
+| `unknown` | `null` | B.ROT status unknown; the flag is meaningless and a consumer must not read it as "no confirmation needed" |
+
+A consumer must never interpret `requires_physical_origin_confirmation` in
+isolation from `baja_rotacion_status`. A physical-only sale may proceed only
+after the server validates the requested quantity against the site's physical
+quantity. B.ROT never establishes site availability and the tool never claims
+a physical origin for its stock.
 
 ## 5. Closed output schema
 
@@ -138,25 +176,32 @@ for its stock.
   "status": "ok" | "partial" | "error",
   "reason": "<reason enum>",      // present only when status != "ok"
   "site": "neiva" | "florencia",  // present when the site is known
-  "unit": "UND",                 // present for line-level quote results
-  "price_includes_iva": false,
-  "tariff": {"codigo": "...", "nombre": "..."},   // metadata after a unique customer lookup
+  "iva_status": "unknown",       // IVA is never derived here; see §6
+  "tariff": {"codigo": "...", "nombre": "..."},   // only on a successful unique lookup; never echoed on refusal/missing
   "stock_coverage": { ... },                       // only when the site is known
   "lines": [
     {
-      "sku": "SYN-SKU-0001",
+      "sku": "SYN-SKU-0001",      // first-occurrence spelling (§2.1)
       "name": "PRODUCTO SINTETICO",
       "status": "ok" | "article_not_found" | "price_missing" | "price_ambiguous",
-      "price": 12345.67,                          // net, before IVA; null when not quotable
-      "qty": 12.0,                               // physical site stock; null when unknown
+      "price": "12345.67",        // exact fixed-point decimal string; null when not quotable
+      "qty": "12.00",             // physical site stock; null when unknown
       "stock_status": "available" | "zero_in_mapped_warehouses" | "unknown",
-      "baja_rotacion": 3.0,                      // exact B.ROT stock; null when unknown
+      "baja_rotacion": "3.00",    // exact B.ROT stock; null when unknown
       "baja_rotacion_status": "present" | "zero" | "unknown",
-      "requires_physical_origin_confirmation": false
+      "requires_physical_origin_confirmation": true | false | null
     }
   ]
 }
 ```
+
+- `price`, `qty` and `baja_rotacion` are **strings** in the exact fixed-point
+  representation of §1.2. They are never JSON numbers and never floats.
+- There is **no `unit` field**: the read does not select a unit column, and no
+  `UND` (or any other unit) is asserted anywhere.
+- There is **no `price_includes_iva` field**. IVA status is reported once as
+  `iva_status: "unknown"` (§6); this slice neither asserts net nor gross nor
+  derives a `price_with_iva` or a `1.19` factor.
 
 `qty` is the stock of the article across the **physical mapped warehouses of
 the site** only (see §4). It never includes `B.ROT`.
@@ -165,8 +210,8 @@ the site** only (see §4). It never includes `B.ROT`.
 warehouse. It is a separate figure: it is never added to `qty` and never
 replaces it.
 
-Missing stock rows, missing quantities, nonnumeric, nonfinite, boolean, or
-negative quantities yield `qty: null` and `stock_status: unknown` for the
+Missing stock rows, missing quantities, nonnumeric, nonfinite, boolean, float,
+or negative quantities yield `qty: null` and `stock_status: unknown` for the
 physical figure, and `baja_rotacion: null` and
 `baja_rotacion_status: unknown` for the virtual figure; they never imply
 zero stock. Invalid database casts may instead fail the whole read with
@@ -210,7 +255,7 @@ reason; for a fatal error it is the fatal reason.
   ],
   "virtual_warehouses_reported_separately": true,
   "overlap_possible": true,
-  "note": "<short Spanish note: B.ROT es una bodega virtual sin sede; su stock se reporta aparte y nunca se suma al de la sede. Sus cantidades pueden solaparse con las físicas y una venta servida sólo desde B.ROT exige confirmar el origen físico con una persona>"
+  "note": "<short Spanish note: B.ROT es una bodega virtual sin sede; su stock se reporta aparte y nunca se suma al de la sede. El posible solapamiento con las bodegas físicas y el origen físico de cualquier venta que use o dependa de B.ROT están pendientes de confirmación por Fredy>"
 }
 ```
 
@@ -225,14 +270,21 @@ describes price availability independently.
 | Rule | Detail |
 |---|---|
 | Price source | `AdmPrecios.PreciosValor` for the customer's verified tariff (`AdmTerceros.TarifasID`), unit price rows only (`Cantidad = 0`) |
-| IVA | Never computed here. `price_includes_iva` is always `false` |
+| IVA | **Never computed, never asserted.** Whether `PreciosValor` includes IVA is **unknown** until the B0 branch is evidenced; `iva_status` is `unknown` and no `price_includes_iva`, net/gross wording, or `1.19` factor is emitted |
 | Increment / mostrador price | Never applied (`PreciosIncremento`, `ArticulosVenta` are not selected) |
 | Cost / margin | Never selected (`ArticulosCosto`, `ArticulosUltmoCosto`, `ArticulosMargen`, `ValorCosto`, `CostoSinIva`, `CostoMasIva`, `UltimoCostoCompra`, `ListadoPreciosCosto`, …) |
 | Magento | Not consulted; no Magento price may appear |
 | Customer PII | `TercerosNombres`, `TercerosCelular`, `TercerosIdentificacion` are never selected |
-| Tariff | Missing tariff → `tariff_missing`. Tariff `006` / id `6` / `AL COSTO` → `tariff_refused`. Both are decided **before** any item-price query |
-| Site stock | `InvDetalleExistencias` × `InvExistencias` × `AdmAlmacen`, latest `Ano` within the requested articles and the site's physical warehouses; null/negative source quantities make that article's stock unknown rather than silently discarding them |
+| Tariff | Missing tariff → `tariff_missing`. Tariff id `6` / code `006` / name `AL COSTO` → `tariff_refused`. Both are decided **before** any item-price query, and the refusal payload does **not** echo tariff metadata |
+| Site stock | `InvDetalleExistencias` × `InvExistencias` × `AdmAlmacen`, latest `Ano` **per (ArticulosID, AlmacenID)**; null/negative source quantities make that article's stock unknown rather than silently discarding them |
 | `B.ROT` stock | Same three tables, filtered to `AlmacenCodigo = 'B.ROT'` only, aggregated **separately** with its **own** latest-`Ano` selection; never merged into the site's physical quantity. `CON` is never part of any warehouse set used by this tool |
+
+**Limits not proven by this slice.** No vigency / status column is read or
+filtered on `AdmPrecios` or the inventory tables: no such column is evidenced
+in the repository, and assuming one would be inventing schema. The price read
+is `Cantidad = 0` plus the verified tariff only. The downstream outbound
+message validator (§1.1) lives in a separate slice and is **not** exercised
+here.
 
 ## 7. SQL and safety rules
 
@@ -245,17 +297,25 @@ describes price availability independently.
 - SKU and warehouse sets are safely rendered with repository `sql_in_list()`,
   limited to 20 requested SKUs and at most 5 mapped warehouses.
 - The customer lookup uses `TOP 2` to detect duplicate customer/tariff joins.
-  The target article CTE and final result use `TOP 21` as overflow guards.
-  Price and stock aggregates filter to that target article set internally,
-  before aggregation; even the latest-year aggregate reads only bounded
-  stock rows for those articles and mapped warehouses.
+  The target article CTE and final result use `TOP 21` as overflow guards,
+  ordered by `ArticulosCodigo` for determinism. Price and stock aggregates
+  filter to that target article set internally, before aggregation.
+- **Per-pair latest-year selection.** Both `stock_rows` and
+  `baja_rotacion_rows` are wrapped in a ranking CTE that keeps the latest row
+  of each `(ArticulosID, AlmacenID)` pair with
+  `ROW_NUMBER() OVER (PARTITION BY ArticulosID, AlmacenID ORDER BY Ano DESC) = 1`.
+  There is **no** global `MAX(Ano)` filter: each pair selects its own latest
+  year independently, and adding another SKU or `B.ROT` cannot change the year
+  another pair selects.
+- **Same-year duplicate guard.** A `COUNT(*) OVER (PARTITION BY ArticulosID,
+  AlmacenID, Ano)` tie counter is carried through the ranking; the aggregate
+  requires `MAX(ties) = 1`. If a pair has more than one row in its latest
+  year, the quantity becomes unknown (`NULL`) instead of being double-counted.
 - **Two independent stock aggregates.** `stock_rows` holds the site's
   physical warehouses only and `baja_rotacion_rows` holds `B.ROT` only. The
-  site's quantity aggregates `FROM stock_rows` with
-  `Ano = (SELECT MAX(Ano) FROM stock_rows)`; the `B.ROT` quantity aggregates
-  `FROM baja_rotacion_rows` with
-  `Ano = (SELECT MAX(Ano) FROM baja_rotacion_rows)`. Adding `B.ROT` therefore
-  cannot change the site's physical quantity nor the year it selects.
+  site's quantity aggregates `FROM stock_latest`; the `B.ROT` quantity
+  aggregates `FROM baja_rotacion_latest`. Adding `B.ROT` cannot change the
+  site's physical quantity nor the year it selects.
 - `B.ROT` appears in exactly one warehouse IN-list, the one of its own
   aggregate. `CON` appears in none.
 - Duplicate article results, unexpected SKUs, result overflow, and malformed
@@ -274,19 +334,21 @@ describes price availability independently.
 | 3 | `terceros_id` / unknown key → rejected before ERP access |
 | 4 | Invalid site, empty SKUs, > 20 SKUs, invalid SKU chars → rejected before ERP access |
 | 5 | Missing tariff → `tariff_missing`, no item-price query |
-| 6 | Tariff `006` → `tariff_refused`, no item-price query |
-| 7 | Correct tariff price, no cost/margin/IVA in the payload |
+| 6 | Tariff `006` → `tariff_refused`, no item-price query, no tariff metadata echoed |
+| 7 | Correct tariff price, no cost/margin in the payload; `iva_status: unknown`, no `price_includes_iva`, no `unit` |
 | 8 | Site warehouses only; `B.ROT` and `CON` in no site list; coverage reported for the returned physical warehouses only |
 | 9 | Unknown SKU → `article_not_found` |
-| 10 | Missing price → `price_missing`; ambiguous price → `price_ambiguous` |
+| 10 | Missing price → `price_missing`; ambiguous price → `price_ambiguous`; zero/nonpositive price → `price_missing` |
 | 11 | ERP error → `erp_unavailable`, no exception text, no identity data, no price and no stock |
-| 12 | The payload never contains the customer id or any identity field |
+| 12 | The payload never contains the customer id or any identity field (structural, not substring) |
 | 13 | Invalid or missing stock stays unknown, never coerced to zero |
 | 14 | Bound server IDs, aggregate filters, row caps, and duplicate guards |
 | 15 | Exact physical `qty` is unchanged and excludes `B.ROT` |
 | 16 | Exact `baja_rotacion` quantity is surfaced separately with its own status |
-| 17 | `B.ROT` may overlap and is never added to the physical total |
-| 18 | Any positive `baja_rotacion` sets `requires_physical_origin_confirmation` conservatively (even when site stock is positive); only a sale using/relying on `B.ROT` needs the human origin check, and B.ROT never proves site availability |
-| 19 | Missing/invalid `B.ROT` quantity stays unknown and raises no confirmation flag |
-| 20 | The generated query puts `B.ROT` only in its own aggregate, excludes `CON`, and keeps the two year selections independent |
+| 17 | `B.ROT` may overlap and is never added to the physical total (structural, not arithmetic tautology) |
+| 18 | Tri-state `requires_physical_origin_confirmation` for `present`/`zero`/`unknown`, never read without `baja_rotacion_status` |
+| 19 | Missing/invalid `B.ROT` quantity stays unknown and the flag is `null` |
+| 20 | Generated SQL selects the latest year per `(ArticulosID, AlmacenID)` via `ROW_NUMBER`, carries the same-year duplicate guard, and keeps the two year selections independent; no global `MAX(Ano)` |
 | 21 | No `unmapped_warehouse_stock` / always-partial coverage behaviour; the contract documents `B.ROT` as a virtual warehouse with no site |
+| 22 | Exact decimal representation: large values, adjacent distinct prices, and fractional-scale stock are preserved as fixed-point strings and never collapse through float |
+| 23 | First-occurrence SKU casing is preserved on case-insensitive deduplication |

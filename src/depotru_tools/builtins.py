@@ -618,10 +618,10 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             name="catalog.quote_for_customer",
             description=(
                 "Customer quote for the already-verified customer of this "
-                "request: net list price (before IVA) of the customer's "
-                "tariff and stock at the site warehouses (neiva: ALM, BD6, "
-                "SUR, DIS, BOD; florencia: FLO). Never accepts a customer id. "
-                "Fails closed; never writes."
+                "request: the customer's tariff list price and stock at the "
+                "site warehouses (neiva: ALM, BD6, SUR, DIS, BOD; florencia: "
+                "FLO). IVA status is reported as unknown, never net/gross. "
+                "Never accepts a customer id. Fails closed; never writes."
             ),
             scope=ToolScope.SALES_PORTFOLIO,
             handler=_tool_quote_for_customer,

@@ -3,18 +3,23 @@
 ``B.ROT`` (PRODUCTOS DE BAJA ROTACION) is a virtual warehouse without a
 physical site. Its stock is aggregated separately and never summed into a
 site's physical quantity.
+
+All price and stock figures are carried as ``Decimal`` end-to-end and emitted
+as canonical base-10 JSON strings (fixed point, never a JSON float). IVA is
+not derived here: its status is reported as ``unknown`` (POR CONFIRMAR) until
+the B0 branch is verified.
 """
 
 from __future__ import annotations
 
-import math
+from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping, NamedTuple, Optional, Sequence
 
 from business_analyzer.core.j3system_sales_warehouse import qualified_j3_table
 from business_analyzer.core.website_warehouse_policy import sql_in_list
 from depotru_kernel.auth import Audience
 
-UNIT, MAX_SKUS, SKU_MAX_LEN = "UND", 20, 40
+MAX_SKUS, SKU_MAX_LEN = 20, 40
 VERIFIED_CUSTOMER_KEY = "verified_customer_terceros_id"
 # ADMIN explicitly inherits all scopes in depotru_kernel.auth.
 ALLOWED_AUDIENCES = frozenset({Audience.SALES, Audience.ADMIN})
@@ -35,6 +40,9 @@ BROT_PRESENT = "present"
 BROT_ZERO = "zero"
 BROT_UNKNOWN = "unknown"
 COVERAGE_STATUS = "physical_warehouses_only"
+# IVA is not derived by this slice. Until the B0 branch verifies whether the
+# customer tariff price is net or gross, the status stays unknown.
+IVA_STATUS_UNKNOWN = "unknown"
 
 VIRTUAL_WAREHOUSES: list[dict[str, Any]] = [
     {
@@ -47,9 +55,9 @@ VIRTUAL_WAREHOUSES: list[dict[str, Any]] = [
 
 _BROT_NOTE = (
     "B.ROT es una bodega virtual sin sede: su stock se reporta aparte, "
-    "nunca se suma al stock de la sede y puede solaparse con el de las "
-    "bodegas físicas; una venta sólo desde B.ROT exige confirmar con una "
-    "persona el origen físico."
+    "nunca se suma al stock de la sede. El posible solapamiento con las "
+    "bodegas físicas y el origen físico de cualquier venta que use o "
+    "dependa de B.ROT están pendientes de confirmación por Fredy."
 )
 
 
@@ -84,7 +92,7 @@ def error_payload(
     body: dict[str, Any] = {
         "status": STATUS_ERROR,
         "reason": reason,
-        "price_includes_iva": False,
+        "iva_status": IVA_STATUS_UNKNOWN,
         "lines": [],
     }
     if site is not None:
@@ -118,12 +126,20 @@ def _parse_skus(value: Any) -> tuple[str, ...] | str:
         return "too_many_skus"
     if any(not isinstance(s, str) or not s.strip().isascii() for s in raw):
         return "invalid_sku"
-    skus = tuple({s.strip().upper(): s.strip() for s in raw}.values())
+    seen: set[str] = set()
+    skus: list[str] = []
+    for s in raw:
+        stripped = s.strip()
+        key = stripped.upper()
+        if key in seen:
+            continue
+        seen.add(key)
+        skus.append(stripped)
     try:
         sql_in_list(skus, max_len=SKU_MAX_LEN)
     except ValueError:
         return "invalid_sku"
-    return skus
+    return tuple(skus)
 
 
 def parse_quote_request(
@@ -170,6 +186,29 @@ def _warehouse_set(codes: Sequence[str], *, virtual: bool = False) -> str:
     return rendered
 
 
+def _latest_year_window(alias: str) -> str:
+    """Latest-year row per (ArticulosID, AlmacenID) plus a duplicate guard.
+
+    ``ROW_NUMBER() OVER (PARTITION BY ArticulosID, AlmacenID ORDER BY Ano
+    DESC) = 1`` selects the latest year for each article×warehouse pair; there
+    is no global ``MAX(Ano)``. ``ties`` counts rows sharing the same
+    (ArticulosID, AlmacenID, Ano), so a duplicated latest-year balance is
+    detected (``MAX(ties) = 1`` required) instead of being silently summed.
+    """
+    return f"""
+        SELECT ArticulosID, AlmacenID, Ano, SaldoActual, ties
+        FROM (
+            SELECT ArticulosID, AlmacenID, Ano, SaldoActual,
+                ROW_NUMBER() OVER (
+                    PARTITION BY ArticulosID, AlmacenID ORDER BY Ano DESC
+                ) AS rn,
+                COUNT(*) OVER (PARTITION BY ArticulosID, AlmacenID, Ano) AS ties
+            FROM {alias}
+        ) ranked
+        WHERE rn = 1
+"""
+
+
 def build_customer_quote_lines_sql(*, site: str, skus: Sequence[str]) -> str:
     """Bound verified tariff; validated literal SKU and warehouse sets."""
     sku_list = list(skus)
@@ -183,20 +222,25 @@ WITH targets AS (
     SELECT TOP {MAX_SKUS + 1} ArticulosID, ArticulosCodigo, ArticulosNombre
     FROM {qualified_j3_table("AdmArticulos")}
     WHERE ArticulosCodigo IN ({sku_set})
+    ORDER BY ArticulosCodigo
 ), stock_rows AS (
-    SELECT e.ArticulosID, d.Ano, d.SaldoActual
+    SELECT e.ArticulosID, d.AlmacenID, d.Ano, d.SaldoActual
     FROM {qualified_j3_table("InvDetalleExistencias")} d
     JOIN {qualified_j3_table("InvExistencias")} e ON e.ExistenciasID = d.ExistenciasID
     JOIN {qualified_j3_table("AdmAlmacen")} al ON al.AlmacenID = d.AlmacenID
     WHERE e.ArticulosID IN (SELECT ArticulosID FROM targets)
       AND al.AlmacenCodigo IN ({warehouse_set})
+), stock_latest AS (
+{_latest_year_window("stock_rows")}
 ), baja_rotacion_rows AS (
-    SELECT e.ArticulosID, d.Ano, d.SaldoActual
+    SELECT e.ArticulosID, d.AlmacenID, d.Ano, d.SaldoActual
     FROM {qualified_j3_table("InvDetalleExistencias")} d
     JOIN {qualified_j3_table("InvExistencias")} e ON e.ExistenciasID = d.ExistenciasID
     JOIN {qualified_j3_table("AdmAlmacen")} al ON al.AlmacenID = d.AlmacenID
     WHERE e.ArticulosID IN (SELECT ArticulosID FROM targets)
       AND al.AlmacenCodigo IN ({baja_rotacion_set})
+), baja_rotacion_latest AS (
+{_latest_year_window("baja_rotacion_rows")}
 )
 SELECT TOP {MAX_SKUS + 1} a.ArticulosCodigo AS sku, a.ArticulosNombre AS name,
     pr.price_rows, pr.price_min, pr.price_max, st.qty, br.baja_rotacion
@@ -204,8 +248,8 @@ FROM targets a
 LEFT JOIN (
     SELECT p.ArticulosID, COUNT(*) AS price_rows,
       CASE WHEN COUNT(*) = COUNT(p.PreciosValor)
-        THEN MIN(CAST(p.PreciosValor AS DECIMAL(18,2))) END AS price_min,
-      MAX(CAST(p.PreciosValor AS DECIMAL(18,2))) AS price_max
+        THEN MIN(p.PreciosValor) END AS price_min,
+      MAX(p.PreciosValor) AS price_max
     FROM {qualified_j3_table("AdmPrecios")} p
     WHERE p.TarifasID = %s AND p.Cantidad = 0
       AND p.ArticulosID IN (SELECT ArticulosID FROM targets)
@@ -214,24 +258,27 @@ LEFT JOIN (
 LEFT JOIN (
     SELECT ArticulosID,
       CASE WHEN COUNT(*) = COUNT(SaldoActual) AND MIN(SaldoActual) >= 0
-        THEN SUM(CAST(SaldoActual AS DECIMAL(18,4))) END AS qty
-    FROM stock_rows WHERE Ano = (SELECT MAX(Ano) FROM stock_rows)
+            AND MAX(ties) = 1
+        THEN SUM(SaldoActual) END AS qty
+    FROM stock_latest
     GROUP BY ArticulosID
 ) st ON st.ArticulosID = a.ArticulosID
 LEFT JOIN (
     SELECT ArticulosID,
       CASE WHEN COUNT(*) = COUNT(SaldoActual) AND MIN(SaldoActual) >= 0
-        THEN SUM(CAST(SaldoActual AS DECIMAL(18,4))) END AS baja_rotacion
-    FROM baja_rotacion_rows WHERE Ano = (SELECT MAX(Ano) FROM baja_rotacion_rows)
+            AND MAX(ties) = 1
+        THEN SUM(SaldoActual) END AS baja_rotacion
+    FROM baja_rotacion_latest
     GROUP BY ArticulosID
 ) br ON br.ArticulosID = a.ArticulosID
+ORDER BY a.ArticulosCodigo
 """.strip()
 
 
 def tariff_decision(row: Mapping[str, Any]) -> Optional[str]:
     tariff_id = _positive_id(row.get("tarifas_id"))
-    codigo = str(row.get("tarifa_codigo") or "").strip()
-    nombre = str(row.get("tarifa_nombre") or "").strip().upper()
+    codigo = " ".join(str(row.get("tarifa_codigo") or "").strip().split())
+    nombre = " ".join(str(row.get("tarifa_nombre") or "").strip().split()).upper()
     if tariff_id == 6 or codigo == "006" or nombre == "AL COSTO":
         return "tariff_refused"
     if tariff_id is None or not (codigo or nombre):
@@ -239,19 +286,66 @@ def tariff_decision(row: Mapping[str, Any]) -> Optional[str]:
     return None
 
 
-def _as_float(value: Any) -> Optional[float]:
-    try:
-        number = float(value) if not isinstance(value, bool) else -1
-        return number if math.isfinite(number) and number >= 0 else None
-    except (TypeError, ValueError, OverflowError):
+def _as_decimal(value: Any) -> Optional[Decimal]:
+    """Exact non-negative finite ``Decimal``; floats are rejected.
+
+    A float cannot prove it did not already lose precision, so any float
+    (including ``nan``/``inf``) yields ``None`` (unknown) rather than a value.
+    """
+    if isinstance(value, bool):
         return None
+    if isinstance(value, Decimal):
+        number = value
+    elif isinstance(value, int):
+        number = Decimal(value)
+    elif isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        try:
+            number = Decimal(raw)
+        except (InvalidOperation, ValueError):
+            return None
+    else:
+        return None
+    if not number.is_finite() or number < 0:
+        return None
+    return number
 
 
-def _row_float(row: Optional[Mapping[str, Any]], key: str) -> Optional[float]:
-    """Read one optional numeric column from an article row."""
+def _as_count(value: Any) -> Optional[int]:
+    """Non-negative finite integer row count; malformed values are unknown."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, Decimal):
+        if not value.is_finite() or value < 0 or value != value.to_integral_value():
+            return None
+        return int(value)
+    if isinstance(value, str):
+        raw = value.strip()
+        if raw.isascii() and raw.isdigit():
+            return int(raw)
+        return None
+    return None
+
+
+def _decimal_json_token(value: Decimal) -> str:
+    """Canonical exact base-10 JSON token: fixed point, never float/exponent."""
+    return format(value, "f")
+
+
+def _row_decimal(row: Optional[Mapping[str, Any]], key: str) -> Optional[Decimal]:
     if row is None:
         return None
-    return _as_float(row.get(key))
+    return _as_decimal(row.get(key))
+
+
+def _row_count(row: Optional[Mapping[str, Any]], key: str) -> Optional[int]:
+    if row is None:
+        return None
+    return _as_count(row.get(key))
 
 
 def _build_lines(
@@ -267,43 +361,48 @@ def _build_lines(
     first_reason: Optional[str] = None
     reason: Optional[str]
     for sku in request.skus:
-        mapped: Optional[Mapping[str, Any]] = by_sku.get(sku.upper())
-        article_row: Optional[Mapping[str, Any]] = mapped
-        qty = _row_float(article_row, "qty")
-        baja_rotacion = _row_float(article_row, "baja_rotacion")
+        article_row: Optional[Mapping[str, Any]] = by_sku.get(sku.upper())
+        qty = _row_decimal(article_row, "qty")
+        baja_rotacion = _row_decimal(article_row, "baja_rotacion")
         name = str(article_row.get("name") or "") if article_row is not None else ""
         line: dict[str, Any] = {
             "sku": sku,
             "name": name,
-            "qty": qty,
+            "qty": _decimal_json_token(qty) if qty is not None else None,
             "stock_status": STOCK_UNKNOWN,
-            "baja_rotacion": baja_rotacion,
+            "baja_rotacion": (
+                _decimal_json_token(baja_rotacion)
+                if baja_rotacion is not None
+                else None
+            ),
             "baja_rotacion_status": BROT_UNKNOWN,
-            "requires_physical_origin_confirmation": False,
+            "requires_physical_origin_confirmation": None,
             "price": None,
         }
         if qty is not None:
             line["stock_status"] = STOCK_AVAILABLE if qty > 0 else STOCK_ZERO
         if baja_rotacion is not None:
-            brot_status = BROT_PRESENT if baja_rotacion > 0 else BROT_ZERO
-            line["baja_rotacion_status"] = brot_status
-        # B.ROT may overlap the physical warehouses and has no site. Any
-        # positive B.ROT stock requires human confirmation of the physical
-        # origin; the site's own availability stays independent.
-        if baja_rotacion is not None and baja_rotacion > 0:
-            line["requires_physical_origin_confirmation"] = True
+            line["baja_rotacion_status"] = (
+                BROT_PRESENT if baja_rotacion > 0 else BROT_ZERO
+            )
+            # The flag is meaningful only alongside a known B.ROT status:
+            # positive B.ROT stock always requires human confirmation of the
+            # physical origin; an explicit zero does not; unknown stays None.
+            line["requires_physical_origin_confirmation"] = baja_rotacion > 0
         reason = "article_not_found"
         if article_row is not None:
-            low = _row_float(article_row, "price_min")
-            high = _row_float(article_row, "price_max")
-            count = _row_float(article_row, "price_rows")
-            if count is None or count < 1 or low is None:
+            low = _row_decimal(article_row, "price_min")
+            high = _row_decimal(article_row, "price_max")
+            count = _row_count(article_row, "price_rows")
+            if count is None or count < 1:
                 reason = "price_missing"
-            elif not count.is_integer() or high is None or low != high:
+            elif low is None or low <= 0:
+                reason = "price_missing"
+            elif high is None or low != high:
                 reason = "price_ambiguous"
             else:
                 reason = None
-                line["price"] = low
+                line["price"] = _decimal_json_token(low)
         line["status"] = reason or STATUS_OK
         lines.append(line)
         first_reason = first_reason or reason
@@ -337,7 +436,8 @@ def fetch_customer_quote(db: Any, request: QuoteRequest) -> dict[str, Any]:
     }
     reason = tariff_decision(customer)
     if reason:
-        return error_payload(reason, site=site, tariff=tariff)
+        # A refused/missing tariff is a rejection: its metadata is not echoed.
+        return error_payload(reason, site=site)
     sql = build_customer_quote_lines_sql(site=site, skus=request.skus)
     rows = _query(db, sql, (_positive_id(customer.get("tarifas_id")),), MAX_SKUS + 1)
     if rows is None or len(rows) > len(request.skus):
@@ -352,8 +452,7 @@ def fetch_customer_quote(db: Any, request: QuoteRequest) -> dict[str, Any]:
     body: dict[str, Any] = {
         "status": status,
         "site": site,
-        "unit": UNIT,
-        "price_includes_iva": False,
+        "iva_status": IVA_STATUS_UNKNOWN,
         "tariff": tariff,
         "stock_coverage": stock_coverage(site),
         "lines": lines,
