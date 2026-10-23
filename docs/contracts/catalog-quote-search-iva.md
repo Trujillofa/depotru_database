@@ -133,6 +133,13 @@ It never feeds `price`, `price_basis`, `price_includes_iva`, `j3_price`,
 Consumers that require an IVA-inclusive price MUST use `price_with_iva`; they
 MUST NOT infer IVA from `magento_price` or `source`.
 
+**Informational (no behavior change):**
+
+- The J3↔Magento merge matches SKU by **exact case** (case-sensitive); a
+  case-only SKU mismatch silently yields no `name`/`product_url` enrichment.
+- A J3 row with no existence yields `website_qty` `"0.0000"` (not `null`) via
+  `ISNULL`/`COALESCE`.
+
 ---
 
 ## 5. Product IVA rate — `iva_rate`
@@ -245,11 +252,17 @@ the fake-only tests (§12).
 
 | `reason`           | Meaning                                                        |
 |--------------------|----------------------------------------------------------------|
-| `j3_price_missing` | no J3 row, or `j3_price` null / not a finite parseable decimal   |
+| `j3_price_missing` | no J3 row, or `j3_price` null / not a finite parseable decimal / **non-positive (zero or negative)** |
 | `line_not_found`   | article has no matching `AdmLineas.LineasID` (LEFT JOIN → NULL)  |
 | `iva_rate_null`    | line matched, but `AdmLineas.LineasPorcentaje` is NULL           |
 
 `price_with_iva_reason` is `null` when `price_with_iva` is non-null.
+
+A J3 row whose `ArticulosVenta` is null, zero, or negative is treated as
+`j3_price_missing`: `price` and `j3_price` are `null`, `price_with_iva` is
+`null`, and `price_with_iva_reason` is `"j3_price_missing"`; `price_basis`
+remains `"J3"` (the row exists). No IVA-inclusive price is computed for a
+non-positive price.
 
 **Precedence (deterministic; highest first):**
 

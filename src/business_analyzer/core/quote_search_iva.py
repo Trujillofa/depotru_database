@@ -132,6 +132,8 @@ def build_product(
 
     sku = str(j3_row.get("sku") or "")
     j3_price = to_decimal(j3_row.get("price"))
+    if j3_price is not None and j3_price <= 0:
+        j3_price = None
     iva_rate = to_decimal(j3_row.get("iva_rate"))
     line_id = j3_row.get("line_id")
     website_qty = to_decimal(j3_row.get("website_qty"))

@@ -240,6 +240,71 @@ def test_quote_search_merges_j3_rows(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.unit
+def test_quote_search_non_positive_price_is_j3_price_missing():
+    conn = _make_db()
+    conn.execute(
+        "INSERT INTO AdmLineas (LineasID, LineasPorcentaje) VALUES (1, '19.000')"
+    )
+    conn.execute(
+        "INSERT INTO AdmArticulos (ArticulosID, ArticulosCodigo, ArticulosNombre, "
+        "ArticulosVenta, LineasID, ArticulosEstado) VALUES "
+        "(1, 'ZERO', 'PRODUCTO ZERO', '0.0000', 1, 1), "
+        "(2, 'NEG', 'PRODUCTO NEG', '-50.0000', 1, 1), "
+        "(3, 'NULLP', 'PRODUCTO NULL', NULL, 1, 1), "
+        "(4, 'POS', 'PRODUCTO POS', '100.0000', 1, 1)"
+    )
+    products = {p["sku"]: p for p in _quote_products(conn, "producto")}
+
+    for sku in ("ZERO", "NEG", "NULLP"):
+        p = products[sku]
+        assert p["price"] is None
+        assert p["j3_price"] is None
+        assert p["price_with_iva"] is None
+        assert p["price_with_iva_reason"] == "j3_price_missing"
+        assert p["price_basis"] == "J3"
+
+    pos = products["POS"]
+    assert pos["price"] == "100.0000"
+    assert pos["j3_price"] == "100.0000"
+    assert pos["price_with_iva"] == 119
+    assert pos["price_with_iva_reason"] is None
+
+
+@pytest.mark.unit
+def test_quote_search_j3_passes_suppress_error_details(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured = {"suppress": False}
+
+    class FakeDB:
+        def __init__(self, suppress_error_details=False):
+            captured["suppress"] = suppress_error_details
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute_query(self, sql, params):
+            return [
+                {
+                    "sku": "0020080005",
+                    "name": "CEMENTO BLANCO ARGOS 20KG",
+                    "price": Decimal("36428.0000"),
+                    "iva_rate": Decimal("19.000"),
+                    "line_id": 5,
+                    "website_qty": Decimal("12.0000"),
+                }
+            ]
+
+    monkeypatch.setattr("business_analyzer.core.database.Database", FakeDB)
+    out = _tool_quote_search(ToolContext(audience=Audience.SALES), {"query": "cemento"})
+    assert out["status"] == "ok"
+    assert captured["suppress"] is True
+
+
+@pytest.mark.unit
 def test_quote_search_rates_19_5_0():
     conn = _make_db()
     conn.execute(
