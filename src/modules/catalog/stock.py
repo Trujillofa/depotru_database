@@ -370,9 +370,16 @@ def _process(rows: list, skus: List[str], sede: str) -> dict:
             return _error_consulta()
         if not _usable_id(row["articulos_id"]):
             return _error_consulta()
-        if row["almacen_id"] is not None and not _valid_multiplicity(
-            row["num_filas_ano"]
-        ):
+        aid = row["almacen_id"]
+        if aid is None:
+            if any(
+                row[k] is not None
+                for k in ("almacen_codigo", "saldo_actual", "num_filas_ano")
+            ):
+                return _error_consulta()
+        elif not isinstance(aid, int) or isinstance(aid, bool):
+            return _error_consulta()
+        elif not _valid_multiplicity(row["num_filas_ano"]):
             return _error_consulta()
         grouped[norm].append(row)
 

@@ -279,7 +279,7 @@ class TestProcess:
         assert res["sedes"] == {"neiva": "0"}
 
     def test_inventario_desconocido(self):
-        r = _process([row(almacen_id=None)], ["ABC"], "ambas")
+        r = _process([row(almacen_id=None, num_filas_ano=None)], ["ABC"], "ambas")
         assert r["results"][0] == {"sku": "ABC", "status": "inventario_desconocido"}
 
     def test_no_encontrado(self):
@@ -389,8 +389,8 @@ class TestProcess:
 
     def test_multi_id_precedes_unknown_inventory(self):
         rows = [
-            row(articulos_id=1, almacen_id=None),
-            row(articulos_id=2, almacen_id=None),
+            row(articulos_id=1, almacen_id=None, num_filas_ano=None),
+            row(articulos_id=2, almacen_id=None, num_filas_ano=None),
         ]
         res = _process(rows, ["ABC"], "ambas")["results"][0]
         assert res["reason"] == "validacion_fallida"
@@ -551,6 +551,35 @@ class TestRowIntegrity:
             "neiva",
         )
         assert error_consulta(r)
+
+    def test_positive_marker_null_id_global(self):
+        # LEFT JOIN row carries a positive multiplicity but no warehouse ID.
+        r = _process([row(almacen_id=None, num_filas_ano=1)], ["ABC"], "ambas")
+        assert error_consulta(r)
+
+    def test_real_id_absent_marker_global(self):
+        r = _process(
+            [row(codigo="ALM", almacen_id=10, saldo=Decimal("1"), num_filas_ano=None)],
+            ["ABC"],
+            "neiva",
+        )
+        assert error_consulta(r)
+
+    def test_almacen_id_invalid_type_global(self):
+        for bad in (True, 3.5, "10", [10]):
+            r = _process(
+                [
+                    row(
+                        codigo="ALM",
+                        almacen_id=bad,
+                        saldo=Decimal("1"),
+                        num_filas_ano=1,
+                    )
+                ],
+                ["ABC"],
+                "neiva",
+            )
+            assert error_consulta(r)
 
 
 # ---------------------------------------------------------------------------
