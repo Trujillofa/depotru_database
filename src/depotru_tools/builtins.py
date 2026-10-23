@@ -482,6 +482,60 @@ def _tool_quote_for_customer(
         return cast("dict[str, Any]", failure)
 
 
+def _tool_resolve_customer_phone(
+    ctx: ToolContext, params: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Resolve a phone, then store one verified ID for the B2 tool chain.
+
+    The phone is PII: it is never logged, returned, stored in context, or
+    interpolated into SQL. An authorized resolution attempt clears any prior
+    verified identity; only one unique usable tariff writes the new ID.
+    """
+    from business_analyzer.core.j3system_customer_phone import (
+        ALLOWED_AUDIENCES,
+        ALLOWED_PARAM_KEYS,
+        error_payload,
+        fetch_customer_by_phone,
+        phone_keys,
+    )
+    from business_analyzer.core.j3system_customer_quote import VERIFIED_CUSTOMER_KEY
+
+    def _failure(reason: str) -> dict[str, Any]:
+        return cast("dict[str, Any]", error_payload(reason))
+
+    if ctx.audience not in ALLOWED_AUDIENCES:
+        return _failure("audience_not_allowed")
+    try:
+        ctx.extras.pop(VERIFIED_CUSTOMER_KEY, None)
+    except Exception:  # noqa: BLE001 — fail closed; do not use stale identity
+        return _failure("erp_unavailable")
+    if not isinstance(params, Mapping) or set(params) - ALLOWED_PARAM_KEYS:
+        return _failure("unexpected_parameters")
+    if "phone" not in params:
+        return _failure("phone_required")
+    phone = params["phone"]
+    keys = phone_keys(phone)
+    if isinstance(keys, str):
+        return _failure(keys)
+    try:
+        from business_analyzer.core.database import Database
+
+        with Database() as db:
+            result = cast("dict[str, Any]", fetch_customer_by_phone(db, phone))
+        if result.get("status") == "ok":
+            verified_id = result.get("terceros_id")
+            if (
+                isinstance(verified_id, bool)
+                or not isinstance(verified_id, int)
+                or verified_id <= 0
+            ):
+                return _failure("erp_unavailable")
+            ctx.extras[VERIFIED_CUSTOMER_KEY] = verified_id
+        return result
+    except Exception:  # noqa: BLE001 — fail closed; never leak the driver message
+        return _failure("erp_unavailable")
+
+
 def _tool_sellable_qty_stub(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     """Customer-facing sellable qty via Magento MSI when configured.
 
@@ -633,6 +687,23 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             parameters_schema={
                 "site": "neiva or florencia",
                 "skus": "list of ArticulosCodigo, max 20",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.resolve_customer_phone",
+            description=(
+                "Resolve a customer phone to a single tercero + tariff for "
+                "the sales quote flow. Sales/Admin only; the phone is PII "
+                "and is never returned, logged, or written. Read-only; "
+                "never writes."
+            ),
+            scope=ToolScope.SALES_PORTFOLIO,
+            handler=_tool_resolve_customer_phone,
+            public_safe=False,
+            parameters_schema={
+                "phone": "customer phone (ASCII digits and separators only)",
             },
         )
     )
