@@ -136,6 +136,8 @@ def build_quote_search_sql(*, limit: int = 6, dialect: str = "tsql") -> str:
     an exact ``Decimal`` ``decimal_sum`` aggregate). Both emit the same query
     structure and logic.
     """
+    if dialect not in {"tsql", "sqlite"}:
+        raise ValueError(f"unsupported dialect: {dialect!r}")
     limit_n = max(1, min(int(limit), 10))
     allow_sql = sql_in_list(website_warehouse_allowlist())
 

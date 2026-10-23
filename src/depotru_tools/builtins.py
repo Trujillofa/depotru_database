@@ -389,7 +389,9 @@ def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
 
         config = MagentoConfig.from_env()
         if config is not None:
-            items = MagentoRestClient(config).search_products(query, page_size=limit)
+            items = MagentoRestClient(config).search_products(
+                query, page_size=limit, exact_prices=True
+            )
             if isinstance(items, list):
                 for item in items:
                     if not isinstance(item, dict):

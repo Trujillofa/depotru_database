@@ -1,11 +1,7 @@
 # Contract — `catalog.quote_search` price & IVA disambiguation (B0)
 
-> **Status:** Contract only (B0). This document is the closed contract and is
-> the only change of this pass — no code, test, `builtins.py`, or SQL change
-> was made here. A later local implementation phase is authorized by Fredy's
-> current order and MUST comply with this contract exactly.
->
-> **Branch:** `feat/bff-b0-iva` · **Base:** `9698f4193b96b71dae500100a69a9882f726991f`
+> **Status:** Implemented in slice 1 (B0+B1). The implementation, its fake-only
+> tests, and the SQL change are included.
 >
 > **IVA source confirmed by Fredy (22 oct 2026):** the product IVA rate is
 > `AdmLineas.LineasPorcentaje`, reached via `AdmArticulos.LineasID =
@@ -129,6 +125,18 @@ pass through `float`.
 whose IVA semantics this contract does **not** assert and does **not** rely on.
 It never feeds `price`, `price_basis`, `price_includes_iva`, `j3_price`,
 `iva_rate`, or `price_with_iva`.
+
+**Exact display-only Magento parsing (never used for IVA).** On the
+`catalog.quote_search` path, `magento_price` is parsed **exactly**: the Magento
+REST JSON price token is parsed as a `Decimal` (never `float`), and the
+`special_price` custom attribute text is parsed as a `Decimal`; the effective
+price (`special_price` when `> 0`, else `price`) and list price retain their
+`Decimal` scale and serialize as canonical base-10 strings (§6). This exact
+path is **opt-in** and used **only** by `catalog.quote_search`; the
+`search_products` default behavior (float) is unchanged for all other callers.
+`magento_price` remains display-only and is **never** used for IVA, `price`,
+`price_basis`, `price_includes_iva`, `j3_price`, `iva_rate`, or
+`price_with_iva`.
 
 Consumers that require an IVA-inclusive price MUST use `price_with_iva`; they
 MUST NOT infer IVA from `magento_price` or `source`.
@@ -435,10 +443,8 @@ are synthetic.
 
 ## 14. Out of scope (non-goals)
 
-- No implementation, SQL, or test changes were made in this pass; this document
-  is contract only. A later local implementation phase is authorized by the
-  current order and MUST comply with this contract exactly (including §7.1 and
-  §8).
+- Implementation, SQL, and fake-only test changes are included in slice 1
+  (B0+B1); final diff review is still pending.
 - No change to `catalog.search_products` or `inventory.sellable_qty`.
 - No hardcoding of any specific Colombian IVA rate or tariff code.
 - No Magento-derived IVA.

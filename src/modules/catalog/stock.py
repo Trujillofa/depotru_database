@@ -30,7 +30,6 @@ MIN_SKUS = 1
 MAX_SKUS = 5
 
 _QUERY_TIMEOUT_SECONDS = 10
-_QUERY_RETRIES = 0
 
 MAX_RESULT_ROWS = 1000
 _SENTINEL_ROWS = MAX_RESULT_ROWS + 1
@@ -46,6 +45,7 @@ _EXPECTED_KEYS = frozenset(
         "almacen_codigo",
         "saldo_actual",
         "num_filas_ano",
+        "num_filas_almacen",
     }
 )
 
@@ -90,27 +90,30 @@ def _build_stock_sql(skus: List[str]) -> Tuple[str, Tuple[str, ...]]:
     placeholders = ", ".join(["%s"] * len(skus))
 
     sql = f"""
+WITH cat AS (
+    SELECT DISTINCT
+        UPPER(LTRIM(RTRIM(a.ArticulosCodigo))) AS norm_sku,
+        a.ArticulosID
+    FROM {articulos} a
+    WHERE UPPER(LTRIM(RTRIM(a.ArticulosCodigo))) IN ({placeholders})
+)
 SELECT TOP ({_SENTINEL_ROWS})
     cat.norm_sku AS norm_sku,
     cat.ArticulosID AS articulos_id,
     ranked.AlmacenID AS almacen_id,
     ranked.AlmacenCodigo AS almacen_codigo,
     ranked.SaldoActual AS saldo_actual,
-    ranked.num_filas_ano AS num_filas_ano
-FROM (
-    SELECT DISTINCT
-        UPPER(LTRIM(RTRIM(a.ArticulosCodigo))) AS norm_sku,
-        a.ArticulosID
-    FROM {articulos} a
-    WHERE UPPER(LTRIM(RTRIM(a.ArticulosCodigo))) IN ({placeholders})
-) cat
+    ranked.num_filas_ano AS num_filas_ano,
+    ranked.num_filas_almacen AS num_filas_almacen
+FROM cat
 LEFT JOIN (
     SELECT
         base.ArticulosID,
         base.AlmacenID,
         base.SaldoActual,
         base.num_filas_ano,
-        al.AlmacenCodigo
+        al.AlmacenCodigo,
+        al.num_filas_almacen
     FROM (
         SELECT
             e.ArticulosID,
@@ -123,8 +126,15 @@ LEFT JOIN (
             ) AS rn
         FROM {detalle} d
         JOIN {existencias} e ON e.ExistenciasID = d.ExistenciasID
+        WHERE e.ArticulosID IN (SELECT ArticulosID FROM cat)
     ) base
-    LEFT JOIN {almacen} al ON al.AlmacenID = base.AlmacenID
+    LEFT JOIN (
+        SELECT
+            AlmacenID,
+            AlmacenCodigo,
+            COUNT(*) OVER (PARTITION BY AlmacenID) AS num_filas_almacen
+        FROM {almacen}
+    ) al ON al.AlmacenID = base.AlmacenID
     WHERE base.rn = 1
 ) ranked ON ranked.ArticulosID = cat.ArticulosID
 ORDER BY cat.norm_sku, cat.ArticulosID, ranked.AlmacenID
@@ -147,14 +157,17 @@ def _query_j3_system(sql: str, params: Tuple[str, ...]) -> list:
         timeout=_QUERY_TIMEOUT_SECONDS,
         tds_version=Config.DB_TDS_VERSION,
     )
+    cursor = None
     try:
         cursor = conn.cursor(as_dict=True)
         cursor.execute(sql, params)
-        rows = list(cursor)
-        cursor.close()
-        return rows
+        return list(cursor)
     finally:
-        conn.close()
+        try:
+            if cursor is not None:
+                cursor.close()
+        finally:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +207,11 @@ def _process_one(sku: str, rows: List[dict], sede: str) -> dict:
     if not real:
         return {"sku": sku, "status": "inventario_desconocido"}
     if any(row["num_filas_ano"] > 1 for row in real):
+        return _blocked(sku, "validacion_fallida")
+    if any(
+        row["num_filas_almacen"] is not None and row["num_filas_almacen"] > 1
+        for row in real
+    ):
         return _blocked(sku, "validacion_fallida")
 
     included: List[Tuple[str, Any]] = []
@@ -265,12 +283,21 @@ def _process(rows: list, skus: List[str], sede: str) -> dict:
         if aid is None:
             if any(
                 row[k] is not None
-                for k in ("almacen_codigo", "saldo_actual", "num_filas_ano")
+                for k in (
+                    "almacen_codigo",
+                    "saldo_actual",
+                    "num_filas_ano",
+                    "num_filas_almacen",
+                )
             ):
                 return _error("error_consulta", _MSG_ERROR_CONSULTA)
         elif not isinstance(aid, int) or isinstance(aid, bool):
             return _error("error_consulta", _MSG_ERROR_CONSULTA)
         elif not _valid_multiplicity(row["num_filas_ano"]):
+            return _error("error_consulta", _MSG_ERROR_CONSULTA)
+        elif row["num_filas_almacen"] is not None and not _valid_multiplicity(
+            row["num_filas_almacen"]
+        ):
             return _error("error_consulta", _MSG_ERROR_CONSULTA)
         grouped[norm].append(row)
 

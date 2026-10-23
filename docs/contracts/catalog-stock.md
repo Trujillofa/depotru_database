@@ -1,9 +1,8 @@
 # Contrato — `catalog.stock` (disponibilidad por SKU/sede)
 
-> **Estado:** BORRADOR — fase contractual. Requiere revisión del coordinador antes de la implementación.
-> **Rama:** `feat/bff-b1-stock` — base `9698f4193b96b71dae500100a69a9882f726991f`.
+> **Estado:** Implementado en la rebanada 1 (B0+B1). La implementación, sus
+> tests fake-only y el registro en `builtins.py` están incluidos.
 > **Alcance:** define únicamente el contrato de entrada/salida/errores de `catalog.stock`.
-> No modifica implementación, tests ni `builtins.py`. No se ejecutan pruebas en esta fase.
 >
 > **Supersede el borrador anterior:** la decisión vigente de Fredy permite cifras exactas de
 > existencia como **dato de herramienta**, solo cuando se validan en el servidor (§9); **no** hay

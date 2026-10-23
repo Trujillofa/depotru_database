@@ -866,7 +866,7 @@ def _configured_magento(monkeypatch: pytest.MonkeyPatch, search_products):
         MagentoConfig,
         "from_env",
         classmethod(
-            lambda cls: MagentoConfig(base_url="https://m.example", access_token="t")
+            lambda cls: MagentoConfig(base_url="https://m.example", access_token="")
         ),
     )
     monkeypatch.setattr(MagentoRestClient, "search_products", search_products)
@@ -877,7 +877,8 @@ def _configured_magento(monkeypatch: pytest.MonkeyPatch, search_products):
 def test_quote_search_never_uses_sales_history_search(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    def _fake_magento_search(self, query, *, page_size=5):
+    def _fake_magento_search(self, query, *, page_size=5, exact_prices=False):
+        assert exact_prices is True
         return [
             {
                 "sku": "SKU1",
@@ -932,7 +933,8 @@ def test_quote_search_never_uses_sales_history_search(
 def test_quote_search_magento_fail_closed_no_sales_history(
     monkeypatch: pytest.MonkeyPatch, behavior
 ):
-    def _fake_magento_search(self, query, *, page_size=5):
+    def _fake_magento_search(self, query, *, page_size=5, exact_prices=False):
+        assert exact_prices is True
         if behavior == "empty":
             return []
         if behavior == "raise":
@@ -979,7 +981,8 @@ def test_quote_search_magento_fail_closed_no_sales_history(
 def test_quote_search_magento_only_without_sales_history(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    def _fake_magento_search(self, query, *, page_size=5):
+    def _fake_magento_search(self, query, *, page_size=5, exact_prices=False):
+        assert exact_prices is True
         return [
             {
                 "sku": "M1",
@@ -1165,3 +1168,93 @@ def test_database_connect_and_close_suppress(monkeypatch: pytest.MonkeyPatch, ca
         db2.close()
     assert "sentinel" not in caplog.text
     assert db2._connection is None
+
+
+class _FakeResponse:
+    """Minimal urlopen-compatible response returning canned JSON bytes."""
+
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
+
+    def __enter__(self) -> "_FakeResponse":
+        return self
+
+    def __exit__(self, *args) -> bool:
+        return False
+
+
+def _client_with_urlopen(monkeypatch: pytest.MonkeyPatch, raw_bytes: bytes):
+    monkeypatch.setattr(
+        "depotru_integrations.magento.client.urlopen",
+        lambda req, timeout: _FakeResponse(raw_bytes),
+    )
+    from depotru_integrations.magento.client import MagentoConfig, MagentoRestClient
+
+    return MagentoRestClient(
+        MagentoConfig(base_url="https://m.example", access_token="")
+    )
+
+
+@pytest.mark.unit
+def test_magento_exact_prices_decimal_and_special_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    raw = (
+        b'{"items": ['
+        b'{"sku": "SKU1", "name": "PRODUCTO A", "price": 999.9900,'
+        b' "custom_attributes": ['
+        b'{"attribute_code": "special_price", "value": "899.9900"},'
+        b'{"attribute_code": "url_key", "value": "producto-a"}]},'
+        b'{"sku": "SKU2", "name": "PRODUCTO B", "price": 100,'
+        b' "custom_attributes": []},'
+        b'{"sku": "SKU3", "name": "PRODUCTO C", "price": 200.5,'
+        b' "custom_attributes": ['
+        b'{"attribute_code": "special_price", "value": "0.00"},'
+        b'{"attribute_code": "url_key", "value": "producto-c"}]}'
+        b"]}"
+    )
+    client = _client_with_urlopen(monkeypatch, raw)
+    out = client.search_products("producto", page_size=5, exact_prices=True)
+
+    assert out[0]["sku"] == "SKU1"
+    assert out[0]["price"] == Decimal("899.9900")  # special_price wins
+    assert out[0]["list_price"] == Decimal("999.9900")
+    assert str(out[0]["price"]) == "899.9900"
+    assert str(out[0]["list_price"]) == "999.9900"
+    assert isinstance(out[0]["price"], Decimal)
+    assert isinstance(out[0]["list_price"], Decimal)
+
+    assert out[1]["sku"] == "SKU2"
+    assert out[1]["price"] == Decimal("100")
+    assert out[1]["list_price"] == Decimal("100")
+
+    assert out[2]["sku"] == "SKU3"
+    assert out[2]["price"] == Decimal("200.5")  # special 0 → list price
+    assert out[2]["list_price"] == Decimal("200.5")
+
+    assert all(not isinstance(p["price"], float) for p in out)
+    assert all(not isinstance(p["list_price"], float) for p in out)
+
+
+@pytest.mark.unit
+def test_magento_default_search_still_returns_floats(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    raw = (
+        b'{"items": ['
+        b'{"sku": "SKU1", "name": "PRODUCTO A", "price": 999.9900,'
+        b' "custom_attributes": ['
+        b'{"attribute_code": "special_price", "value": "899.9900"},'
+        b'{"attribute_code": "url_key", "value": "producto-a"}]}'
+        b"]}"
+    )
+    client = _client_with_urlopen(monkeypatch, raw)
+    out = client.search_products("producto", page_size=5)  # default exact_prices=False
+
+    assert out[0]["price"] == 899.99
+    assert out[0]["list_price"] == 999.99
+    assert isinstance(out[0]["price"], float)
+    assert isinstance(out[0]["list_price"], float)

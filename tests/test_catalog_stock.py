@@ -7,6 +7,8 @@ exercised directly with synthetic rows.
 
 from __future__ import annotations
 
+import sys
+import types
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -38,6 +40,7 @@ def row(
     codigo=None,
     saldo=None,
     num_filas_ano=1,
+    num_filas_almacen=1,
 ):
     return {
         "norm_sku": sku,
@@ -46,6 +49,7 @@ def row(
         "almacen_codigo": codigo,
         "saldo_actual": saldo,
         "num_filas_ano": num_filas_ano,
+        "num_filas_almacen": num_filas_almacen,
     }
 
 
@@ -67,6 +71,62 @@ def error_consulta(result):
             "message": "error consultando inventario J3",
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Fake pymssql + Config modules (§10) — never a real connection
+# ---------------------------------------------------------------------------
+
+
+class _FakeCursor:
+    def __init__(self, rows=()):
+        self._rows = list(rows)
+        self.closed = False
+        self.executed = None
+
+    def execute(self, sql, params):
+        self.executed = (sql, params)
+
+    def __iter__(self):
+        return iter(self._rows)
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeConn:
+    def __init__(self, rows=()):
+        self._rows = list(rows)
+        self.closed = False
+        self.cursor_obj = None
+
+    def cursor(self, as_dict=False):
+        self.cursor_obj = _FakeCursor(self._rows)
+        return self.cursor_obj
+
+    def close(self):
+        self.closed = True
+
+
+def _fake_pymssql_module(connect_fn):
+    mod = types.ModuleType("pymssql")
+    mod.connect = connect_fn
+    return mod
+
+
+def _fake_config_module():
+    mod = types.ModuleType("business_analyzer.core.config")
+
+    class Config:
+        DB_HOST = None
+        DB_USER = None
+        DB_PASSWORD = None
+        DB_NAME_J3SYSTEM = "FAKE_DB"
+        DB_PORT = 1433
+        DB_TDS_VERSION = "7.4"
+
+    mod.Config = Config
+    return mod
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +229,21 @@ class TestBuildSql:
         assert "PARTITION BY e.ArticulosID, d.AlmacenID, d.Ano" in sql
         assert "MAX(" not in sql
 
+    def test_almacen_count_over_master_mapping(self):
+        sql, _ = _build_stock_sql(["ABC"])
+        assert "num_filas_almacen" in sql
+        # The mapping count is computed over AdmAlmacen itself, not the
+        # inventory base rows/years. Slice the `al` derived table and assert
+        # structural containment.
+        al_open = sql.index("LEFT JOIN (")
+        al_open = sql.index("LEFT JOIN (", al_open + 1)
+        al_close = sql.index(") al", al_open)
+        al_subquery = sql[al_open:al_close]
+        assert "COUNT(*) OVER (PARTITION BY AlmacenID)" in al_subquery
+        assert "AdmAlmacen" in al_subquery
+        assert "e.ArticulosID" not in al_subquery
+        assert "d.Ano" not in al_subquery
+
     def test_no_aggregation_cast_or_sign_filter(self):
         sql, _ = _build_stock_sql(["ABC"])
         assert "SUM(" not in sql
@@ -179,6 +254,31 @@ class TestBuildSql:
         sql, _ = _build_stock_sql(["ABC"])
         assert "AlmacenCodigo IS NOT NULL" not in sql
         assert "AlmacenCodigo <> ''" not in sql
+
+    def test_catalog_id_filter_before_windows(self):
+        sql, _ = _build_stock_sql(["ABC"])
+        assert "WITH cat AS (" in sql
+        filter_clause = "WHERE e.ArticulosID IN (SELECT ArticulosID FROM cat)"
+        assert filter_clause in sql
+
+        # SQL Server applies the inner SELECT's WHERE before its window
+        # functions, even though ROW_NUMBER()/COUNT(*) appear earlier in the
+        # text. Assert structural containment inside the `base` subquery
+        # instead of textual order.
+        base_open = sql.index("FROM (")
+        base_close = sql.index(") base")
+        assert base_open < base_close
+        base_subquery = sql[base_open:base_close]
+        assert "ROW_NUMBER()" in base_subquery
+        assert "COUNT(*) OVER" in base_subquery
+        assert filter_clause in base_subquery
+
+    def test_normalization_trim_case_with_binds(self):
+        sql, params = _build_stock_sql(["ABC", "XYZ"])
+        assert params == ("ABC", "XYZ")
+        assert "UPPER(LTRIM(RTRIM(a.ArticulosCodigo))) IN (%s, %s)" in sql
+        assert "ABC" not in sql
+        assert "XYZ" not in sql
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +400,11 @@ class TestProcess:
         assert res["sedes"] == {"neiva": "0"}
 
     def test_inventario_desconocido(self):
-        r = _process([row(almacen_id=None, num_filas_ano=None)], ["ABC"], "ambas")
+        r = _process(
+            [row(almacen_id=None, num_filas_ano=None, num_filas_almacen=None)],
+            ["ABC"],
+            "ambas",
+        )
         assert r["results"][0] == {"sku": "ABC", "status": "inventario_desconocido"}
 
     def test_no_encontrado(self):
@@ -356,6 +460,28 @@ class TestProcess:
             "reason": "codigo_no_clasificado",
         }
 
+    def test_missing_warehouse_mapping_blocks_sku(self):
+        # AlmacenID exists in inventory but has no AdmAlmacen row: the mapping
+        # count is NULL and the code is NULL → blocked per SKU, not a global
+        # error.
+        r = _process(
+            [
+                row(
+                    codigo=None,
+                    almacen_id=14,
+                    saldo=Decimal("1"),
+                    num_filas_almacen=None,
+                )
+            ],
+            ["ABC"],
+            "neiva",
+        )
+        assert r["results"][0] == {
+            "sku": "ABC",
+            "status": "bloqueado",
+            "reason": "codigo_no_clasificado",
+        }
+
     def test_real_row_blank_code_not_unknown_inventory(self):
         r = _process(
             [row(codigo="", almacen_id=15, saldo=Decimal("1"))], ["ABC"], "ambas"
@@ -396,6 +522,21 @@ class TestProcess:
             "reason": "validacion_fallida",
         }
 
+    def test_duplicate_almacen_mapping_blocks_no_figure(self):
+        # Two AdmAlmacen rows for the same AlmacenID would double the saldo
+        # under aggregation; the mapping guard blocks instead of emitting a
+        # figure.
+        rows = [
+            row(codigo="ALM", almacen_id=10, saldo=Decimal("3"), num_filas_almacen=2),
+            row(codigo="DIS", almacen_id=10, saldo=Decimal("3"), num_filas_almacen=2),
+        ]
+        res = _process(rows, ["ABC"], "neiva")["results"][0]
+        assert res == {
+            "sku": "ABC",
+            "status": "bloqueado",
+            "reason": "validacion_fallida",
+        }
+
     def test_multi_id_validacion_fallida(self):
         rows = [
             row(articulos_id=1, codigo="ALM", almacen_id=10, saldo=Decimal("1")),
@@ -410,8 +551,18 @@ class TestProcess:
 
     def test_multi_id_precedes_unknown_inventory(self):
         rows = [
-            row(articulos_id=1, almacen_id=None, num_filas_ano=None),
-            row(articulos_id=2, almacen_id=None, num_filas_ano=None),
+            row(
+                articulos_id=1,
+                almacen_id=None,
+                num_filas_ano=None,
+                num_filas_almacen=None,
+            ),
+            row(
+                articulos_id=2,
+                almacen_id=None,
+                num_filas_ano=None,
+                num_filas_almacen=None,
+            ),
         ]
         res = _process(rows, ["ABC"], "ambas")["results"][0]
         assert res["reason"] == "validacion_fallida"
@@ -441,12 +592,20 @@ class TestProcess:
         assert res["reason"] == "saldo_negativo"
 
     def test_mixed_skus(self):
-        rows = [row(sku="GOOD", codigo="ALM", almacen_id=10, saldo=Decimal("1"))]
+        rows = [
+            row(sku="GOOD", codigo="ALM", almacen_id=10, saldo=Decimal("1")),
+            row(sku="NEG", codigo="ALM", almacen_id=11, saldo=Decimal("-2")),
+        ]
         r = _process(rows, ["GOOD", "MISSING", "NEG"], "ambas")
         results = r["results"]
         assert [x["sku"] for x in results] == ["GOOD", "MISSING", "NEG"]
         assert results[0]["status"] == "ok"
         assert results[1]["status"] == "no_encontrado"
+        assert results[2] == {
+            "sku": "NEG",
+            "status": "bloqueado",
+            "reason": "saldo_negativo",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -533,11 +692,33 @@ class TestHandler:
     def test_success_flow(self):
         rows = [row(sku="ABC", codigo="ALM", almacen_id=10, saldo=Decimal("12.34"))]
         with patch.object(stock, "_query_j3_system", return_value=rows) as q:
-            result = catalog_stock(None, {"skus": ["abc"]})
+            result = catalog_stock(None, {"skus": [" abc "]})
         assert result["ok"] is True
         # query is parameterized and normalized
         _, params = q.call_args[0]
         assert params == ("ABC",)
+
+    def test_71_rows_unknown_code_blocks_only_that_sku(self):
+        good_rows = [
+            row(sku="GOOD", codigo="ALM", almacen_id=10 + i, saldo=Decimal("1"))
+            for i in range(69)
+        ]
+        weird_rows = [
+            row(sku="WEIRD", codigo="NUEVO", almacen_id=200, saldo=Decimal("1")),
+            row(sku="WEIRD", codigo="ALM", almacen_id=201, saldo=Decimal("1")),
+        ]
+        rows = good_rows + weird_rows
+        assert len(rows) == 71
+        with patch.object(stock, "_query_j3_system", return_value=rows):
+            result = catalog_stock(None, {"skus": ["GOOD", "WEIRD"]})
+        assert result["ok"] is True
+        by_sku = {r["sku"]: r for r in result["results"]}
+        assert by_sku["GOOD"]["status"] == "ok"
+        assert by_sku["WEIRD"] == {
+            "sku": "WEIRD",
+            "status": "bloqueado",
+            "reason": "codigo_no_clasificado",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -578,6 +759,22 @@ class TestRowIntegrity:
             )
             assert error_consulta(r)
 
+    def test_num_filas_almacen_invalid_global(self):
+        for bad in (0, -1, "2", True, 1.5):
+            r = _process(
+                [
+                    row(
+                        codigo="ALM",
+                        almacen_id=10,
+                        saldo=Decimal("1"),
+                        num_filas_almacen=bad,
+                    )
+                ],
+                ["ABC"],
+                "neiva",
+            )
+            assert error_consulta(r)
+
     def test_num_filas_ano_missing_key_global(self):
         r = _process(
             [
@@ -587,6 +784,7 @@ class TestRowIntegrity:
                     "almacen_id": 10,
                     "almacen_codigo": "ALM",
                     "saldo_actual": Decimal("1"),
+                    "num_filas_almacen": 1,
                 }
             ],
             ["ABC"],
@@ -596,12 +794,24 @@ class TestRowIntegrity:
 
     def test_positive_marker_null_id_global(self):
         # LEFT JOIN row carries a positive multiplicity but no warehouse ID.
-        r = _process([row(almacen_id=None, num_filas_ano=1)], ["ABC"], "ambas")
+        r = _process(
+            [row(almacen_id=None, num_filas_ano=1, num_filas_almacen=None)],
+            ["ABC"],
+            "ambas",
+        )
         assert error_consulta(r)
 
     def test_null_id_with_codigo_global(self):
         r = _process(
-            [row(almacen_id=None, codigo="ALM", saldo=None, num_filas_ano=None)],
+            [
+                row(
+                    almacen_id=None,
+                    codigo="ALM",
+                    saldo=None,
+                    num_filas_ano=None,
+                    num_filas_almacen=None,
+                )
+            ],
             ["ABC"],
             "ambas",
         )
@@ -609,7 +819,15 @@ class TestRowIntegrity:
 
     def test_null_id_with_saldo_global(self):
         r = _process(
-            [row(almacen_id=None, codigo=None, saldo=Decimal("1"), num_filas_ano=None)],
+            [
+                row(
+                    almacen_id=None,
+                    codigo=None,
+                    saldo=Decimal("1"),
+                    num_filas_ano=None,
+                    num_filas_almacen=None,
+                )
+            ],
             ["ABC"],
             "ambas",
         )
@@ -658,12 +876,131 @@ class TestRegistryAndBounds:
         assert not audience_may_use(Audience.PUBLIC, spec.scope)
         assert not audience_may_use(Audience.CUSTOMER, spec.scope)
 
-    def test_timeout_and_retries_explicit(self):
+    def test_timeout_explicit(self):
         assert stock._QUERY_TIMEOUT_SECONDS <= 10
-        assert stock._QUERY_RETRIES == 0
         assert stock.MAX_RESULT_ROWS == 1000
 
     def test_handler_not_public_safe(self):
         from depotru_tools.registry import get_default_registry
 
         assert get_default_registry().get("catalog.stock").public_safe is False
+
+
+# ---------------------------------------------------------------------------
+# Fake pymssql query path (§10) — never a real connection
+# ---------------------------------------------------------------------------
+
+
+class TestQueryJ3System:
+    def test_fake_pymssql_params_timeouts_and_close(self):
+        conn = _FakeConn(rows=[{"norm_sku": "ABC", "articulos_id": 1}])
+        connect_kwargs = {}
+
+        def connect(**kwargs):
+            connect_kwargs.update(kwargs)
+            return conn
+
+        with patch.dict(
+            sys.modules,
+            {
+                "pymssql": _fake_pymssql_module(connect),
+                "business_analyzer.core.config": _fake_config_module(),
+            },
+        ):
+            rows = stock._query_j3_system("SELECT %s", ("ABC",))
+
+        assert rows == [{"norm_sku": "ABC", "articulos_id": 1}]
+        assert connect_kwargs["server"] is None
+        assert connect_kwargs["user"] is None
+        assert connect_kwargs["password"] is None
+        assert connect_kwargs["database"] == "FAKE_DB"
+        assert connect_kwargs["port"] == "1433"
+        assert connect_kwargs["login_timeout"] == 10
+        assert connect_kwargs["timeout"] == 10
+        assert connect_kwargs["tds_version"] == "7.4"
+        assert conn.closed is True
+        assert conn.cursor_obj.closed is True
+        assert conn.cursor_obj.executed == ("SELECT %s", ("ABC",))
+
+    def test_fake_pymssql_closes_on_exception(self):
+        class BoomCursor:
+            def __init__(self):
+                self.closed = False
+
+            def execute(self, sql, params):
+                raise RuntimeError("boom")
+
+            def close(self):
+                self.closed = True
+
+        class BoomConn:
+            def __init__(self):
+                self.closed = False
+                self.cursor_obj = BoomCursor()
+
+            def cursor(self, as_dict=False):
+                return self.cursor_obj
+
+            def close(self):
+                self.closed = True
+
+        conn = BoomConn()
+
+        def connect(**kwargs):
+            return conn
+
+        with patch.dict(
+            sys.modules,
+            {
+                "pymssql": _fake_pymssql_module(connect),
+                "business_analyzer.core.config": _fake_config_module(),
+            },
+        ):
+            with pytest.raises(RuntimeError):
+                stock._query_j3_system("SELECT %s", ("ABC",))
+
+        assert conn.closed is True
+        assert conn.cursor_obj.closed is True
+
+    def test_fake_pymssql_closes_on_iteration_error(self):
+        class BoomIterCursor:
+            def __init__(self):
+                self.closed = False
+
+            def execute(self, sql, params):
+                pass
+
+            def __iter__(self):
+                raise RuntimeError("boom")
+
+            def close(self):
+                self.closed = True
+
+        class BoomIterConn:
+            def __init__(self):
+                self.closed = False
+                self.cursor_obj = BoomIterCursor()
+
+            def cursor(self, as_dict=False):
+                return self.cursor_obj
+
+            def close(self):
+                self.closed = True
+
+        conn = BoomIterConn()
+
+        def connect(**kwargs):
+            return conn
+
+        with patch.dict(
+            sys.modules,
+            {
+                "pymssql": _fake_pymssql_module(connect),
+                "business_analyzer.core.config": _fake_config_module(),
+            },
+        ):
+            with pytest.raises(RuntimeError):
+                stock._query_j3_system("SELECT %s", ("ABC",))
+
+        assert conn.closed is True
+        assert conn.cursor_obj.closed is True
