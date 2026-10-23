@@ -7,6 +7,7 @@ SKU without inventing a figure. See docs/contracts/catalog-stock.md.
 
 from __future__ import annotations
 
+import decimal
 import re
 from collections.abc import Mapping
 from decimal import Decimal
@@ -308,7 +309,13 @@ def _process_one(sku: str, rows: List[dict], sede: str) -> dict:
         if num is None:
             return _blocked(sku, "validacion_fallida")
         has.add(bucket)
-        sums[bucket] = sums.get(bucket, Decimal(0)) + num
+        with decimal.localcontext() as ctx:
+            ctx.prec = 80
+            ctx.traps[decimal.Inexact] = True
+            try:
+                sums[bucket] = sums.get(bucket, Decimal(0)) + num
+            except decimal.Inexact:
+                return _blocked(sku, "validacion_fallida")
 
     neiva = _bucket_state("neiva", has, sums)
     florencia = _bucket_state("florencia", has, sums)

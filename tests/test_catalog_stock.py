@@ -165,6 +165,15 @@ class TestBuildSql:
         assert "ORDER BY d.Ano DESC" in sql
         assert "num_filas_ano" in sql
         assert "WHERE base.rn = 1" in sql
+        assert "PARTITION BY e.ArticulosID, d.AlmacenID" in sql
+        assert "PARTITION BY e.ArticulosID, d.AlmacenID, d.Ano" in sql
+        assert "MAX(" not in sql
+
+    def test_no_aggregation_cast_or_sign_filter(self):
+        sql, _ = _build_stock_sql(["ABC"])
+        assert "SUM(" not in sql
+        assert "CAST" not in sql
+        assert ">= 0" not in sql
 
     def test_no_warehouse_filter_in_sql(self):
         sql, _ = _build_stock_sql(["ABC"])
@@ -225,6 +234,10 @@ class TestWarehouse:
         assert _classify_warehouse("B.ROT") == "baja_rotacion"
         assert _classify_warehouse("CON") == "excluded"
         assert _classify_warehouse("CEN") == "excluded"
+        assert _classify_warehouse("EXH") == "excluded"
+        assert _classify_warehouse("EXD") == "excluded"
+        assert _classify_warehouse("BDT") == "excluded"
+        assert _classify_warehouse("MDL") == "excluded"
         assert _classify_warehouse("TRA") == "excluded"
         assert _classify_warehouse("NUEVO") is None
         assert _classify_warehouse(None) is None
@@ -247,6 +260,14 @@ class TestProcess:
         assert res["sedes"] == {"neiva": "12.34"}
         assert res["baja_rotacion"] is None
         assert res["baja_rotacion_confirmation"] == "not_required"
+
+    def test_aggregation_exact_high_precision(self):
+        # 30 significant digits: would silently round in the default context.
+        qty = Decimal("123456789012345678901234567890")
+        r = _process([row(codigo="ALM", almacen_id=10, saldo=qty)], ["ABC"], "neiva")
+        res = r["results"][0]
+        assert res["status"] == "ok"
+        assert res["sedes"] == {"neiva": "123456789012345678901234567890"}
 
     def test_ok_florencia(self):
         r = _process(
@@ -404,6 +425,21 @@ class TestProcess:
         res = _process(rows, ["ABC"], "neiva")["results"][0]
         assert res["reason"] == "codigo_no_clasificado"
 
+    def test_precedence_tie_before_unclassified(self):
+        # empate (num_filas_ano > 1) precede al código no clasificado (§5.2)
+        rows = [row(codigo="NUEVO", almacen_id=16, saldo=Decimal("1"), num_filas_ano=2)]
+        res = _process(rows, ["ABC"], "neiva")["results"][0]
+        assert res["reason"] == "validacion_fallida"
+
+    def test_precedence_negative_before_null(self):
+        # negativo precede al saldo NULL (§5.2)
+        rows = [
+            row(codigo="ALM", almacen_id=10, saldo=Decimal("-1")),
+            row(codigo="ALM", almacen_id=11, saldo=None),
+        ]
+        res = _process(rows, ["ABC"], "neiva")["results"][0]
+        assert res["reason"] == "saldo_negativo"
+
     def test_mixed_skus(self):
         rows = [row(sku="GOOD", codigo="ALM", almacen_id=10, saldo=Decimal("1"))]
         r = _process(rows, ["GOOD", "MISSING", "NEG"], "ambas")
@@ -448,6 +484,12 @@ class TestLowRotation:
     def test_rot_positive_physical_absent_unknown(self):
         res = self._rot("ambas", rot_saldo="7.5", neiva_saldo="0")
         assert res["baja_rotacion_confirmation"] == "unknown"
+
+    def test_rot_single_sede_neiva(self):
+        # sede="neiva" solicita solo el bucket neiva; una mutación que ignore la
+        # sede y evalúe siempre ambas daría "unknown" aquí (§8).
+        res = self._rot("neiva", rot_saldo="7.5", neiva_saldo="0")
+        assert res["baja_rotacion_confirmation"] == "required"
 
 
 # ---------------------------------------------------------------------------
@@ -555,6 +597,22 @@ class TestRowIntegrity:
     def test_positive_marker_null_id_global(self):
         # LEFT JOIN row carries a positive multiplicity but no warehouse ID.
         r = _process([row(almacen_id=None, num_filas_ano=1)], ["ABC"], "ambas")
+        assert error_consulta(r)
+
+    def test_null_id_with_codigo_global(self):
+        r = _process(
+            [row(almacen_id=None, codigo="ALM", saldo=None, num_filas_ano=None)],
+            ["ABC"],
+            "ambas",
+        )
+        assert error_consulta(r)
+
+    def test_null_id_with_saldo_global(self):
+        r = _process(
+            [row(almacen_id=None, codigo=None, saldo=Decimal("1"), num_filas_ano=None)],
+            ["ABC"],
+            "ambas",
+        )
         assert error_consulta(r)
 
     def test_real_id_absent_marker_global(self):
