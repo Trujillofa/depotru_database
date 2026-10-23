@@ -8,6 +8,7 @@ from depotru_kernel.attribution import resolve_seller
 from depotru_kernel.auth import ToolScope
 from depotru_kernel.documents import CANONICAL_EXCLUDED_DOCUMENT_CODES
 from depotru_tools.registry import ToolContext, ToolRegistry, ToolSpec
+from modules.catalog.stock import catalog_stock
 
 # Public storefront locations (SSOT for customers: depositotrujillo.co/bodegas).
 # Do not expose ERP document codes (FED/FEF/FET) to customers.
@@ -704,6 +705,22 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             public_safe=False,
             parameters_schema={
                 "phone": "customer phone (ASCII digits and separators only)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.stock",
+            description=(
+                "Exact SKU/sede availability from J3 inventory (sales flow). "
+                "Read-only, fail-closed; returns exact fixed-point decimal strings."
+            ),
+            scope=ToolScope.SALES_PORTFOLIO,
+            handler=catalog_stock,
+            public_safe=False,
+            parameters_schema={
+                "skus": "list of 1-5 exact SKU codes",
+                "sede": "optional 'neiva' | 'florencia' (absent → ambas)",
             },
         )
     )
