@@ -85,13 +85,9 @@ def _coerce_number(value: Any) -> Decimal | None:
 
 
 def _upper_ascii(text: str) -> str | None:
-    out: List[str] = []
-    for ch in text:
-        o = ord(ch)
-        if o > 127:
-            return None
-        out.append(chr(o - 32) if 97 <= o <= 122 else ch)
-    return "".join(out)
+    if any(ord(ch) > 127 for ch in text):
+        return None
+    return text.upper()
 
 
 def _normalize_one_sku(raw: Any) -> str:
@@ -256,14 +252,6 @@ def _blocked(sku: str, reason: str) -> dict:
     return {"sku": sku, "status": "bloqueado", "reason": reason}
 
 
-def _not_found(sku: str) -> dict:
-    return {"sku": sku, "status": "no_encontrado"}
-
-
-def _unknown_inventory(sku: str) -> dict:
-    return {"sku": sku, "status": "inventario_desconocido"}
-
-
 def _bucket_state(bucket: str, has: set, sums: dict) -> Tuple[str, str | None]:
     if bucket not in has:
         return ("absent", None)
@@ -284,13 +272,13 @@ def _low_rotation_signal(rot_state: str, requested: List[str]) -> str:
 def _process_one(sku: str, rows: List[dict], sede: str) -> dict:
     ids = {row["articulos_id"] for row in rows}
     if not ids:
-        return _not_found(sku)
+        return {"sku": sku, "status": "no_encontrado"}
     if len(ids) > 1:
         return _blocked(sku, "validacion_fallida")
 
     real = [row for row in rows if row["almacen_id"] is not None]
     if not real:
-        return _unknown_inventory(sku)
+        return {"sku": sku, "status": "inventario_desconocido"}
     if any(row["num_filas_ano"] > 1 for row in real):
         return _blocked(sku, "validacion_fallida")
 
@@ -364,23 +352,23 @@ def _process(rows: list, skus: List[str], sede: str) -> dict:
     grouped: dict = {sku: [] for sku in skus}
     for row in rows:
         if not isinstance(row, Mapping) or not _EXPECTED_KEYS.issubset(row):
-            return _error_consulta()
+            return _error("error_consulta", _MSG_ERROR_CONSULTA)
         norm = row["norm_sku"]
         if not isinstance(norm, str) or norm not in requested:
-            return _error_consulta()
+            return _error("error_consulta", _MSG_ERROR_CONSULTA)
         if not _usable_id(row["articulos_id"]):
-            return _error_consulta()
+            return _error("error_consulta", _MSG_ERROR_CONSULTA)
         aid = row["almacen_id"]
         if aid is None:
             if any(
                 row[k] is not None
                 for k in ("almacen_codigo", "saldo_actual", "num_filas_ano")
             ):
-                return _error_consulta()
+                return _error("error_consulta", _MSG_ERROR_CONSULTA)
         elif not isinstance(aid, int) or isinstance(aid, bool):
-            return _error_consulta()
+            return _error("error_consulta", _MSG_ERROR_CONSULTA)
         elif not _valid_multiplicity(row["num_filas_ano"]):
-            return _error_consulta()
+            return _error("error_consulta", _MSG_ERROR_CONSULTA)
         grouped[norm].append(row)
 
     results = [_process_one(sku, grouped[sku], sede) for sku in skus]
@@ -392,18 +380,8 @@ def _process(rows: list, skus: List[str], sede: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _error_entrada_invalida() -> dict:
-    return {
-        "ok": False,
-        "error": {"type": "entrada_invalida", "message": _MSG_ENTRADA_INVALIDA},
-    }
-
-
-def _error_consulta() -> dict:
-    return {
-        "ok": False,
-        "error": {"type": "error_consulta", "message": _MSG_ERROR_CONSULTA},
-    }
+def _error(error_type: str, message: str) -> dict:
+    return {"ok": False, "error": {"type": error_type, "message": message}}
 
 
 # ---------------------------------------------------------------------------
@@ -415,18 +393,18 @@ def catalog_stock(ctx: Any, params: Any) -> dict:
     try:
         skus, sede = _validate_input(params)
     except _InvalidInputError:
-        return _error_entrada_invalida()
+        return _error("entrada_invalida", _MSG_ENTRADA_INVALIDA)
 
     try:
         sql, sql_params = _build_stock_sql(skus)
         rows = _query_j3_system(sql, sql_params)
     except Exception:  # noqa: BLE001 — fixed message, no raw logging
-        return _error_consulta()
+        return _error("error_consulta", _MSG_ERROR_CONSULTA)
 
     if not isinstance(rows, list) or len(rows) > MAX_RESULT_ROWS:
-        return _error_consulta()
+        return _error("error_consulta", _MSG_ERROR_CONSULTA)
 
     try:
         return _process(rows, skus, sede)
     except Exception:  # noqa: BLE001 — fixed message, no raw logging
-        return _error_consulta()
+        return _error("error_consulta", _MSG_ERROR_CONSULTA)
