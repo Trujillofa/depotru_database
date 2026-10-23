@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, cast
 
 from depotru_kernel.attribution import resolve_seller
 from depotru_kernel.auth import ToolScope
 from depotru_kernel.documents import CANONICAL_EXCLUDED_DOCUMENT_CODES
 from depotru_tools.registry import ToolContext, ToolRegistry, ToolSpec
+from modules.catalog.stock import catalog_stock
 
 # Public storefront locations (SSOT for customers: depositotrujillo.co/bodegas).
 # Do not expose ERP document codes (FED/FEF/FET) to customers.
@@ -315,57 +316,61 @@ def _tool_search_products(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     }
 
 
+_QUOTE_SEARCH_REQUIRED_ALIASES = (
+    "sku",
+    "name",
+    "price",
+    "iva_rate",
+    "line_id",
+    "website_qty",
+)
+
+
 def _quote_search_j3(query: str, limit: int = 6) -> list[dict]:
-    """Live J3 list price + website-allowlist stock. Never returns cost."""
+    """Raw J3 rows: list price + IVA rate + website-allowlist stock. No cost.
+
+    Raises a fixed internal failure on any J3 connection/query failure or an
+    unreadable/malformed result set (missing required alias or a missing/blank
+    SKU); the caller maps that to the fixed ``catalog_unavailable`` tool error.
+    Driver details are suppressed.
+    """
     q = (query or "").strip()
     if not q or len(q) < 2:
         return []
-    try:
-        from business_analyzer.core.database import Database
-        from business_analyzer.core.j3system_website_stock import build_quote_search_sql
+    from business_analyzer.core.database import Database
+    from business_analyzer.core.j3system_website_stock import build_quote_search_sql
 
-        sql = build_quote_search_sql(limit=limit)
-        pattern = f"%{q}%"
-        with Database() as db:
-            rows = db.execute_query(sql, (pattern, pattern))
-        if not isinstance(rows, list):
-            return []
-        out: list[dict] = []
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            sku = str(row.get("sku") or "")
-            if not sku:
-                continue
-            try:
-                raw_price = row.get("price")
-                price = float(raw_price) if raw_price is not None else None
-            except (TypeError, ValueError):
-                price = None
-            try:
-                raw_qty = row.get("website_qty")
-                website_qty = float(raw_qty) if raw_qty is not None else 0.0
-            except (TypeError, ValueError):
-                website_qty = 0.0
-            out.append(
-                {
-                    "sku": sku,
-                    "name": str(row.get("name") or ""),
-                    "price": price,
-                    "website_qty": website_qty,
-                    "in_stock": website_qty > 0,
-                    "source": "j3",
-                }
-            )
-        return out
-    except Exception:  # noqa: BLE001 — tool must never crash the inbox
-        return []
+    sql = build_quote_search_sql(limit=limit)
+    pattern = f"%{q}%"
+    with Database(suppress_error_details=True) as db:
+        rows = db.execute_query(sql, (pattern, pattern))
+    if not isinstance(rows, list):
+        raise RuntimeError("unreadable result set")
+    out: list[dict] = []
+    for r in rows:
+        if not isinstance(r, Mapping):
+            raise RuntimeError("unreadable result set")
+        row = dict(r)
+        if any(alias not in row for alias in _QUOTE_SEARCH_REQUIRED_ALIASES):
+            raise RuntimeError("unreadable result set")
+        sku = row.get("sku")
+        if sku is None or not str(sku).strip():
+            raise RuntimeError("unreadable result set")
+        out.append(row)
+    return out
 
 
 def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
-    """Agent quote: J3 price/stock plus Magento PDP URL when configured."""
-    query = str(params.get("query") or params.get("q") or "").strip()
-    limit = max(1, min(int(params.get("limit") or 6), 10))
+    """Agent quote: J3 price (before IVA) + IVA + stock, Magento display-only."""
+    raw_query = params.get("query")
+    query = raw_query.strip() if isinstance(raw_query, str) else ""
+    raw_limit = params.get("limit")
+    if isinstance(raw_limit, bool):
+        limit = 6
+    elif isinstance(raw_limit, int):
+        limit = max(1, min(raw_limit, 10))
+    else:
+        limit = 6
     search_url = _storefront_search_url(query)
     if len(query) < 2:
         return {
@@ -379,65 +384,157 @@ def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
         }
 
     magento_by_sku: dict[str, dict] = {}
-    magento_search: dict = {"products": [], "source": "none"}
     try:
-        from depotru_integrations.magento.client import MagentoConfig
+        from depotru_integrations.magento.client import MagentoConfig, MagentoRestClient
 
-        if MagentoConfig.from_env() is not None:
-            magento_search = _tool_search_products(
-                ctx, {"query": query, "limit": limit}
-            )
-    except Exception:  # noqa: BLE001
-        magento_search = {"products": [], "source": "none"}
-    for item in magento_search.get("products") or []:
-        if not isinstance(item, dict):
-            continue
-        sku = str(item.get("sku") or "")
-        if sku:
-            magento_by_sku[sku] = item
+        config = MagentoConfig.from_env()
+        if config is not None:
+            items = MagentoRestClient(config).search_products(query, page_size=limit)
+            if isinstance(items, list):
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    sku = str(item.get("sku") or "")
+                    if sku:
+                        magento_by_sku[sku] = item
+    except Exception:  # noqa: BLE001 — fail closed, never fall back to sales history
+        magento_by_sku = {}
 
-    j3_products = _quote_search_j3(query, limit=limit)
+    try:
+        j3_rows = _quote_search_j3(query, limit=limit)
+    except Exception:  # noqa: BLE001 — map any J3 failure to the fixed reason
+        return {
+            "query": query,
+            "products": [],
+            "count": 0,
+            "source": "none",
+            "search_url": search_url,
+            "status": "error",
+            "reason": "catalog_unavailable",
+        }
+
+    from business_analyzer.core.quote_search_iva import build_product
+
     products: list[dict] = []
-    seen: set[str] = set()
-    for row in j3_products:
-        sku = row["sku"]
-        seen.add(sku)
-        mag = magento_by_sku.get(sku) or {}
-        mag_price = mag.get("price")
-        products.append(
-            {
-                "sku": sku,
-                "name": str(mag.get("name") or row.get("name") or ""),
-                "price": mag_price if mag_price is not None else row.get("price"),
-                "website_qty": row.get("website_qty"),
-                "in_stock": bool(row.get("in_stock")),
-                "product_url": str(mag.get("product_url") or ""),
-                "source": "j3+magento" if mag else "j3",
-            }
-        )
+    try:
+        for row in j3_rows:
+            sku = str(row.get("sku") or "")
+            products.append(build_product(j3_row=row, magento=magento_by_sku.get(sku)))
 
-    if not products:
-        for sku, mag in magento_by_sku.items():
-            products.append(
-                {
-                    "sku": sku,
-                    "name": str(mag.get("name") or ""),
-                    "price": mag.get("price"),
-                    "website_qty": None,
-                    "in_stock": None,
-                    "product_url": str(mag.get("product_url") or ""),
-                    "source": str(magento_search.get("source") or "magento"),
-                }
-            )
+        if not products:
+            for sku, mag in magento_by_sku.items():
+                products.append(build_product(magento=mag))
+    except Exception:  # noqa: BLE001 — unexpected validation/Decimal failure
+        return {
+            "query": query,
+            "products": [],
+            "count": 0,
+            "source": "none",
+            "search_url": search_url,
+            "status": "error",
+            "reason": "catalog_unavailable",
+        }
 
     return {
         "query": query,
         "products": products,
         "count": len(products),
-        "source": "j3" if j3_products else magento_search.get("source") or "none",
+        "source": "j3" if j3_rows else ("magento" if magento_by_sku else "none"),
         "search_url": search_url,
         "status": "ok" if products else "empty",
     }
+
+
+def _tool_quote_for_customer(
+    ctx: ToolContext, params: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Sales-only quote for the server-verified customer of this request.
+
+    The customer identity comes only from the server-side context extras, so
+    the model can neither pass nor override a customer id. A missing identity,
+    an unknown parameter, a missing tariff or a refused tariff (006 AL COSTO)
+    fails closed without touching the item prices. Never writes.
+    """
+    from business_analyzer.core.j3system_customer_quote import (
+        ALLOWED_AUDIENCES,
+        error_payload,
+        fetch_customer_quote,
+        parse_quote_request,
+    )
+
+    if ctx.audience not in ALLOWED_AUDIENCES:
+        failure = error_payload("audience_not_allowed")
+        return cast("dict[str, Any]", failure)
+    request, error = parse_quote_request(params, ctx.extras)
+    if error is not None:
+        failure = error
+        return cast("dict[str, Any]", failure)
+    if request is None:
+        failure = error_payload("erp_unavailable")
+        return cast("dict[str, Any]", failure)
+    try:
+        from business_analyzer.core.database import Database
+
+        with Database() as db:
+            quote = fetch_customer_quote(db, request)
+            return cast("dict[str, Any]", quote)
+    except Exception:  # noqa: BLE001 — fail closed; never leak the driver message
+        failure = error_payload("erp_unavailable", site=request.site)
+        return cast("dict[str, Any]", failure)
+
+
+def _tool_resolve_customer_phone(
+    ctx: ToolContext, params: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Resolve a phone, then store one verified ID for the B2 tool chain.
+
+    The phone is PII: it is never logged, returned, stored in context, or
+    interpolated into SQL. An authorized resolution attempt clears any prior
+    verified identity; only one unique usable tariff writes the new ID.
+    """
+    from business_analyzer.core.j3system_customer_phone import (
+        ALLOWED_AUDIENCES,
+        ALLOWED_PARAM_KEYS,
+        error_payload,
+        fetch_customer_by_phone,
+        phone_keys,
+    )
+    from business_analyzer.core.j3system_customer_quote import VERIFIED_CUSTOMER_KEY
+
+    def _failure(reason: str) -> dict[str, Any]:
+        return cast("dict[str, Any]", error_payload(reason))
+
+    if ctx.audience not in ALLOWED_AUDIENCES:
+        return _failure("audience_not_allowed")
+    try:
+        ctx.extras.pop(VERIFIED_CUSTOMER_KEY, None)
+    except Exception:  # noqa: BLE001 — fail closed; do not use stale identity
+        return _failure("erp_unavailable")
+    if not isinstance(params, Mapping) or set(params) - ALLOWED_PARAM_KEYS:
+        return _failure("unexpected_parameters")
+    if "phone" not in params:
+        return _failure("phone_required")
+    phone = params["phone"]
+    keys = phone_keys(phone)
+    if isinstance(keys, str):
+        return _failure(keys)
+    try:
+        from business_analyzer.core.database import Database
+
+        with Database() as db:
+            result = cast("dict[str, Any]", fetch_customer_by_phone(db, phone))
+        if result.get("status") == "ok":
+            verified_id = result.get("terceros_id")
+            if (
+                isinstance(verified_id, bool)
+                or not isinstance(verified_id, int)
+                or verified_id <= 0
+            ):
+                return _failure("erp_unavailable")
+            ctx.extras[VERIFIED_CUSTOMER_KEY] = verified_id
+        return result
+    except Exception:  # noqa: BLE001 — fail closed; never leak the driver message
+        return _failure("erp_unavailable")
 
 
 def _tool_sellable_qty_stub(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
@@ -572,6 +669,58 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             parameters_schema={
                 "query": "product name or SKU fragment",
                 "limit": "max results (default 6)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.quote_for_customer",
+            description=(
+                "Customer quote for the already-verified customer of this "
+                "request: the customer's tariff list price and stock at the "
+                "site warehouses (neiva: ALM, BD6, SUR, DIS, BOD; florencia: "
+                "FLO). IVA status is reported as unknown, never net/gross. "
+                "Never accepts a customer id. Fails closed; never writes."
+            ),
+            scope=ToolScope.SALES_PORTFOLIO,
+            handler=_tool_quote_for_customer,
+            public_safe=False,
+            parameters_schema={
+                "site": "neiva or florencia",
+                "skus": "list of ArticulosCodigo, max 20",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.resolve_customer_phone",
+            description=(
+                "Resolve a customer phone to a single tercero + tariff for "
+                "the sales quote flow. Sales/Admin only; the phone is PII "
+                "and is never returned, logged, or written. Read-only; "
+                "never writes."
+            ),
+            scope=ToolScope.SALES_PORTFOLIO,
+            handler=_tool_resolve_customer_phone,
+            public_safe=False,
+            parameters_schema={
+                "phone": "customer phone (ASCII digits and separators only)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.stock",
+            description=(
+                "Exact SKU/sede availability from J3 inventory (sales flow). "
+                "Read-only, fail-closed; returns exact fixed-point decimal strings."
+            ),
+            scope=ToolScope.SALES_PORTFOLIO,
+            handler=catalog_stock,
+            public_safe=False,
+            parameters_schema={
+                "skus": "list of 1-5 exact SKU codes",
+                "sede": "optional 'neiva' | 'florencia' (absent → ambas)",
             },
         )
     )
