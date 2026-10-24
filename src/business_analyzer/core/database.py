@@ -168,12 +168,14 @@ class Database:
         connection_type: ConnectionType = ConnectionType.DIRECT,
         conn_details: Optional[Dict[str, Any]] = None,
         ncx_file_path: Optional[str] = None,
+        suppress_error_details: bool = False,
     ):
         self.connection_type, self.conn_details, self.ncx_file_path = (
             connection_type,
             conn_details or {},
             ncx_file_path or Config.NCX_FILE_PATH,
         )
+        self._suppress_error_details = suppress_error_details
         self._connection = None
         self._pool_enabled = _default_pool_enabled()
         self._pool = ConnectionPool(
@@ -332,6 +334,8 @@ class Database:
             return self
         except Exception as e:
             self._connection = None
+            if self._suppress_error_details:
+                raise ConnectionError("Failed to connect") from None
             if "timeout" in str(e).lower():
                 raise ConnectionError(f"Connection timeout: {e}")
             raise ConnectionError(f"Failed to connect: {e}")
@@ -345,7 +349,8 @@ class Database:
                     self._connection.close()
                 logger.info("✓ Connection closed")
             except Exception as e:
-                logger.warning(f"Error closing: {e}")
+                if not self._suppress_error_details:
+                    logger.warning(f"Error closing: {e}")
             finally:
                 self._connection = None
 
@@ -470,18 +475,23 @@ class Database:
             except Exception as e:
                 last_error = e
                 if is_transient_db_error(e) and attempt < max_attempts - 1:
-                    logger.warning(
-                        "Transient DB error (attempt %s/%s): %s",
-                        attempt + 1,
-                        max_attempts,
-                        e,
-                    )
+                    if not self._suppress_error_details:
+                        logger.warning(
+                            "Transient DB error (attempt %s/%s): %s",
+                            attempt + 1,
+                            max_attempts,
+                            e,
+                        )
                     self._invalidate_connection()
                     time.sleep(1.5 * (attempt + 1))
                     continue
+                if self._suppress_error_details:
+                    raise QueryError("Query failed") from None
                 raise QueryError(f"Query failed: {e}") from e
 
         if last_error is not None:
+            if self._suppress_error_details:
+                raise QueryError("Query failed") from None
             raise QueryError(f"Query failed: {last_error}") from last_error
         raise ConnectionError("Not connected. Call connect() first.")
 

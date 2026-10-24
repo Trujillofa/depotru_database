@@ -122,40 +122,83 @@ WHERE {year_filter}
 """.strip()
 
 
-def build_quote_search_sql(*, limit: int = 6) -> str:
-    """Name/SKU search with allowlisted website qty and list price.
+def build_quote_search_sql(*, limit: int = 6, dialect: str = "tsql") -> str:
+    """Name/SKU search with allowlisted website qty, list price, and IVA rate.
 
-    Price is ``AdmArticulos.ArticulosVenta`` (mostrador). Never select cost.
-    Stock is J3 ``InvDetalleExistencias.SaldoActual`` on the website allowlist.
+    Price is ``AdmArticulos.ArticulosVenta`` (money, before IVA). Never select
+    cost and never filter on ``ArticulosEstado``. The IVA rate is
+    ``AdmLineas.LineasPorcentaje`` (percentage, not a fraction) reached via a
+    LEFT JOIN so a missing line/NULL rate never removes the product. Stock is
+    J3 ``InvDetalleExistencias.SaldoActual`` on the website allowlist.
+
+    ``dialect`` selects the parameter/limit/coalesce syntax: ``"tsql"`` (the
+    production SQL Server dialect) or ``"sqlite"`` (used by fake-only tests via
+    an exact ``Decimal`` ``decimal_sum`` aggregate). Both emit the same query
+    structure and logic.
     """
+    if dialect not in {"tsql", "sqlite"}:
+        raise ValueError(f"unsupported dialect: {dialect!r}")
     limit_n = max(1, min(int(limit), 10))
     allow_sql = sql_in_list(website_warehouse_allowlist())
-    articulos = qualified_j3_table("AdmArticulos")
-    detalle = qualified_j3_table("InvDetalleExistencias")
-    existencias = qualified_j3_table("InvExistencias")
-    almacen = qualified_j3_table("AdmAlmacen")
+
+    sqlite = dialect == "sqlite"
+    if sqlite:
+        table = lambda name: name  # noqa: E731 — bare names for the SQLite fixture
+        placeholder = "?"
+        top = ""
+        tail = f"LIMIT {limit_n}"
+        price_expr = "a.ArticulosVenta"
+        website_qty_expr = "COALESCE(s.website_qty, '0.0000')"
+        stock_sum_expr = (
+            f"decimal_sum(CASE WHEN al.AlmacenCodigo IN ({allow_sql}) "
+            f"THEN d.SaldoActual END)"
+        )
+        stock_filter = "decimal_ge(d.SaldoActual, '0') = 1"
+        sort_cond = "decimal_gt(COALESCE(s.website_qty, '0.0000'), '0') = 1"
+    else:
+        table = qualified_j3_table
+        placeholder = "%s"
+        top = f"TOP {limit_n} "
+        tail = ""
+        price_expr = "a.ArticulosVenta"
+        website_qty_expr = "ISNULL(s.website_qty, 0)"
+        stock_sum_expr = (
+            f"SUM(CASE WHEN al.AlmacenCodigo IN ({allow_sql}) "
+            f"THEN d.SaldoActual ELSE 0 END)"
+        )
+        stock_filter = "d.SaldoActual >= 0"
+        sort_cond = "ISNULL(s.website_qty, 0) > 0"
+
+    articulos = table("AdmArticulos")
+    lineas = table("AdmLineas")
+    detalle = table("InvDetalleExistencias")
+    existencias = table("InvExistencias")
+    almacen = table("AdmAlmacen")
     return f"""
-SELECT TOP {limit_n}
+SELECT {top}
     a.ArticulosCodigo AS sku,
     a.ArticulosNombre AS name,
-    CAST(a.ArticulosVenta AS DECIMAL(18, 2)) AS price,
-    CAST(ISNULL(s.website_qty, 0) AS DECIMAL(18, 4)) AS website_qty
+    {price_expr} AS price,
+    l.LineasPorcentaje AS iva_rate,
+    l.LineasID AS line_id,
+    {website_qty_expr} AS website_qty
 FROM {articulos} a
+LEFT JOIN {lineas} l ON l.LineasID = a.LineasID
 LEFT JOIN (
     SELECT
         e.ArticulosID,
-        SUM(CASE WHEN al.AlmacenCodigo IN ({allow_sql})
-            THEN CAST(d.SaldoActual AS DECIMAL(18, 4)) ELSE 0 END) AS website_qty
+        {stock_sum_expr} AS website_qty
     FROM {detalle} d
     JOIN {existencias} e ON e.ExistenciasID = d.ExistenciasID
     JOIN {almacen} al ON al.AlmacenID = d.AlmacenID
     WHERE d.Ano = (SELECT MAX(Ano) FROM {detalle})
-      AND CAST(d.SaldoActual AS DECIMAL(18, 4)) >= 0
+      AND {stock_filter}
     GROUP BY e.ArticulosID
 ) s ON s.ArticulosID = a.ArticulosID
-WHERE (a.ArticulosNombre LIKE %s OR a.ArticulosCodigo LIKE %s)
-ORDER BY CASE WHEN ISNULL(s.website_qty, 0) > 0 THEN 0 ELSE 1 END,
+WHERE (a.ArticulosNombre LIKE {placeholder} OR a.ArticulosCodigo LIKE {placeholder})
+ORDER BY CASE WHEN {sort_cond} THEN 0 ELSE 1 END,
          a.ArticulosNombre
+{tail}
 """.strip()
 
 

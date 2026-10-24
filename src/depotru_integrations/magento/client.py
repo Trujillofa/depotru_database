@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -47,6 +48,8 @@ class MagentoRestClient:
         method: str,
         path: str,
         body: Optional[Dict[str, Any]] = None,
+        *,
+        parse_float: Optional[Any] = None,
     ) -> Any:
         url = f"{self.config.base_url}{path}"
         data = None
@@ -63,7 +66,9 @@ class MagentoRestClient:
                 raw = resp.read().decode("utf-8")
                 if not raw:
                     return None
-                return json.loads(raw)
+                if parse_float is None:
+                    return json.loads(raw)
+                return json.loads(raw, parse_float=parse_float)
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(
@@ -90,10 +95,52 @@ class MagentoRestClient:
         except (TypeError, ValueError):
             return None
 
+    @staticmethod
+    def _as_decimal(value: Any) -> Optional[Decimal]:
+        """Parse an already-exact JSON number token (Decimal/int) to Decimal."""
+        if value is None or value == "":
+            return None
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, Decimal):
+            d = value
+        elif isinstance(value, int):
+            d = Decimal(value)
+        else:
+            return None
+        if not d.is_finite():
+            return None
+        return d
+
+    @staticmethod
+    def _as_decimal_text(value: Any) -> Optional[Decimal]:
+        """Parse an exact base-10 decimal string (special_price) to Decimal."""
+        if value is None or value == "":
+            return None
+        if isinstance(value, bool):
+            return None
+        try:
+            d = Decimal(str(value).strip())
+        except (InvalidOperation, ValueError):
+            return None
+        if not d.is_finite():
+            return None
+        return d
+
     def _prices(self, item: Dict[str, Any]) -> tuple[Optional[float], Optional[float]]:
         """Return (effective, list). special_price wins when > 0."""
         list_price = self._as_float(item.get("price"))
         special = self._as_float(self._custom_attr(item, "special_price"))
+        if special is not None and special > 0:
+            return special, list_price
+        return list_price, list_price
+
+    def _prices_exact(
+        self, item: Dict[str, Any]
+    ) -> tuple[Optional[Decimal], Optional[Decimal]]:
+        """Return (effective, list) as exact Decimal. special_price wins when > 0."""
+        list_price = self._as_decimal(item.get("price"))
+        special = self._as_decimal_text(self._custom_attr(item, "special_price"))
         if special is not None and special > 0:
             return special, list_price
         return list_price, list_price
@@ -133,8 +180,14 @@ class MagentoRestClient:
         query: str,
         *,
         page_size: int = 5,
+        exact_prices: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Search products by name (LIKE) via Magento REST searchCriteria."""
+        """Search products by name (LIKE) via Magento REST searchCriteria.
+
+        ``exact_prices=True`` is an opt-in display-only path: JSON price tokens
+        and ``special_price`` text parse as exact ``Decimal`` (never ``float``).
+        Default (``False``) keeps float behavior for all other callers.
+        """
         from urllib.parse import quote
 
         q = (query or "").strip()
@@ -149,7 +202,11 @@ class MagentoRestClient:
             f"&searchCriteria[pageSize]={page_size}"
             "&searchCriteria[currentPage]=1"
         )
-        data = self._request("GET", f"/rest/V1/products?{params}")
+        path = f"/rest/V1/products?{params}"
+        if exact_prices:
+            data = self._request("GET", path, parse_float=Decimal)
+        else:
+            data = self._request("GET", path)
         if not isinstance(data, dict):
             return []
         items = data.get("items") or []
@@ -159,7 +216,9 @@ class MagentoRestClient:
                 continue
             url_key = self._custom_attr(item, "url_key")
             product_url = self.product_url_for_key(url_key) if url_key else ""
-            price, list_price = self._prices(item)
+            price, list_price = (
+                self._prices_exact(item) if exact_prices else self._prices(item)
+            )
             out.append(
                 {
                     "sku": str(item.get("sku") or ""),
