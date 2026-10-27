@@ -489,6 +489,27 @@ def _tool_sellable_qty_stub(ctx: ToolContext, params: Mapping[str, Any]) -> dict
     }
 
 
+def _tool_brand_categories(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Categories and subcategories of a brand, from the Ecommerce storefront.
+
+    The J3 category columns are not customer-facing ("OTRAS" holds most of
+    Pintuco); the storefront taxonomy is what the customer sees. Read-only.
+    """
+    brand = str(params.get("brand") or params.get("marca") or "").strip()
+    try:
+        from depotru_integrations.magento.categories import brand_category_overview
+
+        return dict(brand_category_overview(brand))
+    except Exception as exc:  # noqa: BLE001 — a tool must never crash the inbox
+        return {
+            "brand": brand,
+            "status": "error",
+            "reason": "adapter_error",
+            "detail": str(exc)[:200],
+            "categories": [],
+        }
+
+
 def register_builtin_tools(registry: ToolRegistry) -> None:
     from modules.b2b.register import register_b2b_tools
 
@@ -554,6 +575,19 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             handler=_tool_sellable_qty_stub,
             public_safe=True,
             parameters_schema={"sku": "product SKU"},
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.brand_categories",
+            description=(
+                "Categories and subcategories of one brand as the Ecommerce "
+                "storefront organises them. Read-only, no prices."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_brand_categories,
+            public_safe=True,
+            parameters_schema={"brand": "brand name, e.g. pintuco"},
         )
     )
     registry.register(
