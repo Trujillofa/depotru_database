@@ -543,6 +543,31 @@ def _tool_brand_suggest(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
         }
 
 
+def _tool_term_suggest(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Catalogue words that look like the word the customer typed.
+
+    «semento»/«cemento», «blnaco»/«blanco»: the dictionary comes from the ERP
+    article names, so a suggestion is always a word the catalogue really uses.
+    """
+    query = str(params.get("query") or params.get("term") or "").strip()
+    try:
+        limit = int(params.get("limit") or 3)
+    except (TypeError, ValueError):
+        limit = 3
+    try:
+        from depotru_integrations.j3.terms import suggest_terms
+
+        return dict(suggest_terms(query, limit))
+    except Exception as exc:  # noqa: BLE001 — a tool must never crash the inbox
+        return {
+            "query": query,
+            "status": "error",
+            "reason": "adapter_error",
+            "detail": str(exc)[:200],
+            "suggestions": [],
+        }
+
+
 def register_builtin_tools(registry: ToolRegistry) -> None:
     from modules.b2b.register import register_b2b_tools
 
@@ -622,6 +647,22 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             public_safe=True,
             parameters_schema={
                 "query": "word the customer used, e.g. accesco",
+                "limit": "max suggestions (default 3)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.term_suggest",
+            description=(
+                "Catalogue words close to what the customer typed, taken from "
+                "the ERP article names. Read-only, no prices."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_term_suggest,
+            public_safe=True,
+            parameters_schema={
+                "query": "word the customer used, e.g. semento",
                 "limit": "max suggestions (default 3)",
             },
         )
