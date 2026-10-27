@@ -219,6 +219,7 @@ markers = [
     "module_crm: CRM module",
     "module_wms: WMS module",
     "module_catalog: Catalog / affinity module",
+    "module_b2b: B2B BFF module (quotes/credit/orders)",
 ]
 
 # ============================================================================

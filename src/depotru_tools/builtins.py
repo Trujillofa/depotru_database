@@ -490,6 +490,9 @@ def _tool_sellable_qty_stub(ctx: ToolContext, params: Mapping[str, Any]) -> dict
 
 
 def register_builtin_tools(registry: ToolRegistry) -> None:
+    from modules.b2b.register import register_b2b_tools
+
+    register_b2b_tools(registry)
     registry.register(
         ToolSpec(
             name="platform.health",
