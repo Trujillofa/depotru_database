@@ -340,10 +340,17 @@ def _quote_search_j3(query: str, limit: int = 6) -> list[dict]:
     from business_analyzer.core.database import Database
     from business_analyzer.core.j3system_website_stock import build_quote_search_sql
 
-    sql = build_quote_search_sql(limit=limit)
     pattern = f"%{q}%"
     with Database(suppress_error_details=True) as db:
-        rows = db.execute_query(sql, (pattern, pattern))
+        rows = db.execute_query(build_quote_search_sql(limit=limit), (pattern, pattern))
+        words = [w for w in q.split() if w]
+        if not rows and len(words) >= 2:
+            # «sikafill galon» names a product whose name is
+            # «SIKAFILL 7 POWER BLANCO X GALON»: the words are all there, but
+            # not together. A phrase-only match answers "no encontrado" to a
+            # customer who named the article exactly.
+            fallback = build_quote_search_sql(limit=limit, tokens=words)
+            rows = db.execute_query(fallback, tuple(f"%{w.lower()}%" for w in words))
     if not isinstance(rows, list):
         raise RuntimeError("unreadable result set")
     out: list[dict] = []

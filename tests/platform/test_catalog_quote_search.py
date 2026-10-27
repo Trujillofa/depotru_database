@@ -1259,3 +1259,13 @@ def test_magento_default_search_still_returns_floats(
     assert out[0]["list_price"] == 999.99
     assert isinstance(out[0]["price"], float)
     assert isinstance(out[0]["list_price"], float)
+
+
+def test_quote_search_tokens_match_every_word() -> None:  # noqa: D103
+    """«sikafill galon» names a product whose words are not contiguous."""
+    from business_analyzer.core.j3system_website_stock import build_quote_search_sql
+
+    sql = build_quote_search_sql(dialect="sqlite", tokens=["sikafill", "galon"])
+    assert "LOWER(a.ArticulosNombre) LIKE ?" in sql
+    assert sql.count("LOWER(a.ArticulosNombre) LIKE ?") == 2
+    assert " AND " in sql.split("WHERE", 1)[1]
