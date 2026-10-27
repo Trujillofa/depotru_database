@@ -16,6 +16,7 @@ class Audience(str, Enum):
     ADMIN = "admin"  # Full internal
     SERVICE = "service"  # Machine / Magento ops / cron
     AGENT = "agent"  # MCP / IDE agents
+    B2B = "b2b"  # Dedicated Magento-service B2B credential (R22)
 
 
 class ToolScope(str, Enum):
@@ -31,6 +32,9 @@ class ToolScope(str, Enum):
     BI_INTERNAL = "bi_internal"
     ATTRIBUTION = "attribution"
     ADMIN = "admin"
+    B2B_QUOTE = "b2b_quote"  # Company-scoped negotiated quotes (never public)
+    B2B_CREDIT = "b2b_credit"  # Fail-closed credit status (R14: blocked)
+    B2B_ORDER = "b2b_order"  # Idempotent order adapter (R15: submit disabled)
 
 
 # Default allow-lists per audience (expand carefully).
@@ -87,6 +91,15 @@ _AUDIENCE_SCOPES: Mapping[Audience, FrozenSet[ToolScope]] = {
             ToolScope.BI_INTERNAL,
             ToolScope.ATTRIBUTION,
             ToolScope.WMS_OPS,
+        }
+    ),
+    # R22: the B2B credential invokes ONLY B2B routes — no catalog, sales,
+    # stock, BI, or agent capabilities leak through this key.
+    Audience.B2B: frozenset(
+        {
+            ToolScope.B2B_QUOTE,
+            ToolScope.B2B_CREDIT,
+            ToolScope.B2B_ORDER,
         }
     ),
 }
