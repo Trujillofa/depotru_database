@@ -368,7 +368,7 @@ def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     if isinstance(raw_limit, bool):
         limit = 6
     elif isinstance(raw_limit, int):
-        limit = max(1, min(raw_limit, 10))
+        limit = max(1, min(raw_limit, 40))
     else:
         limit = 6
     search_url = _storefront_search_url(query)

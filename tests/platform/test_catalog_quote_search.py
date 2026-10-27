@@ -677,7 +677,8 @@ def test_quote_search_limit_parsing(monkeypatch: pytest.MonkeyPatch):
     assert "TOP 6" in top_for(True)  # bool → default 6
     assert "TOP 1" in top_for(0)  # supplied 0 clamps to 1, not default
     assert "TOP 1" in top_for(-5)  # negative clamps to 1
-    assert "TOP 10" in top_for(99)  # above max clamps to 10
+    assert "TOP 40" in top_for(99)  # above max clamps to 40
+    assert "TOP 25" in top_for(25)  # a wide family window is honoured
     assert "TOP 5" in top_for(5)  # valid int passes through
 
 

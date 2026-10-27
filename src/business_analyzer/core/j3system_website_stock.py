@@ -138,7 +138,9 @@ def build_quote_search_sql(*, limit: int = 6, dialect: str = "tsql") -> str:
     """
     if dialect not in {"tsql", "sqlite"}:
         raise ValueError(f"unsupported dialect: {dialect!r}")
-    limit_n = max(1, min(int(limit), 10))
+    # Six rows alphabetically hid whole families ("SIKAFILL 7" after 100 and
+    # 12): the caller decides how wide to look, up to a bounded window.
+    limit_n = max(1, min(int(limit), 40))
     allow_sql = sql_in_list(website_warehouse_allowlist())
 
     sqlite = dialect == "sqlite"
