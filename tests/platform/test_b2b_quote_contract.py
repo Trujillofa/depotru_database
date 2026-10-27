@@ -14,7 +14,7 @@ Locked by docs/b2b requirements R11/R12/R19/R22 + erp-contract.md:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Mapping, Optional
 

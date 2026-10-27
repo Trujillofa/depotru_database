@@ -9,7 +9,7 @@ exposes an available-credit amount for checkout.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 CREDIT_STATUS_UNAVAILABLE = "unavailable"
 CREDIT_REASON = "credit_terms_blocked_r14"
