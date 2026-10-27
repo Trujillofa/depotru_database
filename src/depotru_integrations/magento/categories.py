@@ -15,6 +15,7 @@ import json
 import os
 import time
 import unicodedata
+from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -311,3 +312,59 @@ def reset_cache() -> None:
     global _brand_options_cache
     _cache.clear()
     _brand_options_cache = None
+
+
+SUGGEST_MIN_SCORE = 0.7
+
+
+def suggest_brands(query: str, limit: int = 3) -> Dict[str, Any]:
+    """Storefront brands that look like what the customer typed.
+
+    «accesco» is a typo for ACESCO: refusing the word leaves the conversation
+    with nothing to answer, while naming the brand the storefront does carry is
+    a recommendation the customer can accept or correct. This never resolves a
+    brand by itself — it only offers candidates.
+    """
+    try:
+        wanted = _fold(normalize_brand(query))
+    except BrandQueryError as exc:
+        return {
+            "query": query,
+            "status": "error",
+            "reason": str(exc),
+            "suggestions": [],
+        }
+    if not wanted:
+        return {"query": query, "status": "empty", "suggestions": []}
+    try:
+        options = brand_options()
+    except (HTTPError, URLError, RuntimeError, json.JSONDecodeError, OSError):
+        return {
+            "query": query,
+            "status": "error",
+            "reason": "upstream_error",
+            "suggestions": [],
+        }
+    scored: List[tuple[float, str]] = []
+    for label, value in options.items():
+        if label.startswith(wanted) or wanted.startswith(label):
+            score = 0.95
+        else:
+            score = SequenceMatcher(None, wanted, label).ratio()
+        if score >= SUGGEST_MIN_SCORE:
+            scored.append((score, label))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    suggestions = [
+        {
+            "brand": label.upper(),
+            "value": options.get(label, ""),
+            "score": round(score, 3),
+        }
+        for score, label in scored[: max(1, min(limit, 5))]
+    ]
+    return {
+        "query": query,
+        "status": "ok" if suggestions else "empty",
+        "suggestions": suggestions,
+        "source": "ecommerce",
+    }

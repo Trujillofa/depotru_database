@@ -517,6 +517,32 @@ def _tool_brand_categories(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
         }
 
 
+def _tool_brand_suggest(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Storefront brands that look like the word the customer used.
+
+    A typo («accesco» for ACESCO) must not end the conversation: naming the
+    closest brand the storefront carries is a recommendation, not a guess —
+    the customer confirms it.
+    """
+    query = str(params.get("query") or params.get("brand") or "").strip()
+    try:
+        limit = int(params.get("limit") or 3)
+    except (TypeError, ValueError):
+        limit = 3
+    try:
+        from depotru_integrations.magento.categories import suggest_brands
+
+        return dict(suggest_brands(query, limit))
+    except Exception as exc:  # noqa: BLE001 — a tool must never crash the inbox
+        return {
+            "query": query,
+            "status": "error",
+            "reason": "adapter_error",
+            "detail": str(exc)[:200],
+            "suggestions": [],
+        }
+
+
 def register_builtin_tools(registry: ToolRegistry) -> None:
     from modules.b2b.register import register_b2b_tools
 
@@ -582,6 +608,22 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             handler=_tool_sellable_qty_stub,
             public_safe=True,
             parameters_schema={"sku": "product SKU"},
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.brand_suggest",
+            description=(
+                "Storefront brands close to what the customer typed; used to "
+                "recommend a real brand instead of refusing a typo. Read-only."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_brand_suggest,
+            public_safe=True,
+            parameters_schema={
+                "query": "word the customer used, e.g. accesco",
+                "limit": "max suggestions (default 3)",
+            },
         )
     )
     registry.register(

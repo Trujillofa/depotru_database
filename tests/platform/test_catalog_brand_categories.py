@@ -6,7 +6,7 @@ import pytest
 
 from depotru_integrations.magento import categories as brand_categories
 from depotru_kernel.auth import Audience
-from depotru_tools.builtins import _tool_brand_categories
+from depotru_tools.builtins import _tool_brand_categories, _tool_brand_suggest
 from depotru_tools.registry import (
     ToolContext,
     get_default_registry,
@@ -222,3 +222,58 @@ def test_tool_never_raises_when_the_adapter_fails(monkeypatch: pytest.MonkeyPatc
     )
     assert result["status"] == "error"
     assert result["categories"] == []
+
+
+def test_suggest_brands_recognises_a_typo(monkeypatch):
+    """«accesco» es un error de dedo por ACESCO: se recomienda, no se niega."""
+    monkeypatch.setattr(
+        brand_categories,
+        "brand_options",
+        lambda: {
+            "acesco": "12",
+            "pintuco": "175",
+            "sika": "193",
+        },
+    )
+    result = brand_categories.suggest_brands("accesco")
+    assert result["status"] == "ok"
+    nombres = [item["brand"] for item in result["suggestions"]]
+    assert "ACESCO" in nombres
+    assert result["suggestions"][0]["brand"] == "ACESCO"
+
+
+def test_suggest_brands_prefers_a_prefix(monkeypatch):
+    monkeypatch.setattr(
+        brand_categories,
+        "brand_options",
+        lambda: {
+            "pintuco": "175",
+            "pinturas del sur": "300",
+        },
+    )
+    result = brand_categories.suggest_brands("pintu")
+    assert result["suggestions"][0]["brand"] == "PINTUCO"
+
+
+def test_suggest_brands_returns_nothing_for_an_unrelated_word(monkeypatch):
+    monkeypatch.setattr(
+        brand_categories,
+        "brand_options",
+        lambda: {
+            "pintuco": "175",
+            "sika": "193",
+        },
+    )
+    result = brand_categories.suggest_brands("zzzzqqq")
+    assert result["status"] == "empty"
+    assert result["suggestions"] == []
+
+
+def test_brand_suggest_tool_never_raises(monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("storefront caído")
+
+    monkeypatch.setattr(brand_categories, "brand_options", boom)
+    out = _tool_brand_suggest(None, {"query": "accesco"})  # type: ignore[arg-type]
+    assert out["status"] == "error"
+    assert out["suggestions"] == []
