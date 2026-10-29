@@ -140,6 +140,24 @@ POST /v1/tools/call  {"name":"b2b.quote", ...}  X-API-Key: <public key>
 ERP call failed — check `B2B_ERP_MODE`, ERP reachability, and the BFF log. It does
 **not** mean the transport is broken.
 
+3. The customer path writes a real snapshot. `QuoteRequestService::request()` with
+   the approved company's buyer (company 2, `customer_id` 128, site `neiva`) created
+   `depotru_b2b_quote_snapshot` rows whose JSON holds the ERP price:
+
+```
+{"entity_id":3,"quote_reference":"B2B-20261029231718-DB6BFD5E","company_id":2,
+ "customer_id":128,"site":"neiva","currency":"COP",
+ "snapshot_json":{"lines":[{"sku":"0040120004","qty":"1",
+                            "unit_net_price":"2408.00","line_total":"2408.00","unit":"UND"}]}}
+```
+
+Note what this path is and is not: there is **no quote total collector** in the
+module — nothing rewrites cart prices from a quote. The flow is "customer asks for a
+quote, Magento stores the snapshot", and the order still goes through the normal
+checkout at list price until the ERP submit work (gated) lands. Do not expect the
+storefront cart to show `2408.00`.
+
+
 ## Key rotation
 
 1. Add the new key to `PLATFORM_API_KEYS` and restart the BFF.
