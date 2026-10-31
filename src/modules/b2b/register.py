@@ -55,7 +55,7 @@ def register_b2b_tools(registry: ToolRegistry) -> None:
                 "company_ref": "staff-linked company reference",
                 "terceros_id": "server-resolved ERP customer id",
                 "site": "'neiva' | 'florencia'",
-                "items": "[{sku, qty}] (max 20 SKUs)",
+                "items": "[{sku, qty}]",
             },
         )
     )

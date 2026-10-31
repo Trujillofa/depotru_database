@@ -7,7 +7,7 @@ Locked by docs/b2b requirements R11/R12/R19/R22 + erp-contract.md:
   correlation ID. Omit phone, legal ID, cost, margin, customer name and
   warehouse qty (R12 blocked).
 - Fail closed: invalid site/SKU, missing tariff, refused tariff (006 / id 6 /
-  AL COSTO), over-limit items (MAX_SKUS = 20), ERP failure, timeouts. Never
+  AL COSTO), oversized carts (no cap), ERP failure, timeouts. Never
   fall back to retail / catalog.quote_search list price.
 """
 
@@ -29,7 +29,6 @@ from depotru_tools.registry import (
 )
 from modules.b2b.contracts import (
     CURRENCY,
-    MAX_SKUS,
     SKU_MAX_LEN,
     UNIT,
     ErpTimeoutError,
@@ -263,14 +262,14 @@ def test_empty_or_non_list_items_rejected():
 
 
 @pytest.mark.unit
-def test_over_limit_skus_rejected_at_20():
-    assert MAX_SKUS == 20
-    items = [{"sku": f"SKU-{i:03d}", "qty": "1"} for i in range(MAX_SKUS + 1)]
+def test_no_sku_cap_reaches_line_validation():
+    """R19 cap removed (Yderf, 2026-10-31): a 21-SKU cart is no longer refused
+    up front; it proceeds to per-line validation and reaches the ERP."""
+    items = [{"sku": f"SKU-{i:03d}", "qty": "1"} for i in range(21)]
     erp = FakeErp(_GOOD_PRICES)
     resp = request_quote(_request(items=items), erp, now=_NOW)
-    assert resp["status"] == "error"
-    assert resp["reason"] == "too_many_skus"
-    assert erp.called_with is None  # request never reached the ERP
+    assert resp.get("reason") != "too_many_skus"
+    assert erp.called_with is not None  # request was not blocked before the ERP
 
 
 # ---------------------------------------------------------------------------

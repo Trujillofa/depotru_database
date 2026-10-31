@@ -17,7 +17,6 @@ from typing import Any, Mapping, Optional
 from modules.b2b.contracts import (
     CONTRACT_VERSION,
     CURRENCY,
-    MAX_SKUS,
     PRICE_INCLUDES_IVA,
     SKU_MAX_LEN,
     UNIT,
@@ -85,8 +84,6 @@ def request_quote(
     items = payload.get("items")
     if not isinstance(items, list) or not items:
         return {**base, "status": "error", "reason": "items_invalid"}
-    if len(items) > MAX_SKUS:
-        return {**base, "status": "error", "reason": "too_many_skus"}
 
     # --- line validation ----------------------------------------------------
     lines: list[dict[str, Any]] = []
