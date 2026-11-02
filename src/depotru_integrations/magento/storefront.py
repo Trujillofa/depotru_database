@@ -25,6 +25,7 @@ Read-only, no credentials: it uses the same public GraphQL endpoint as
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Any, Dict, List
 
 from depotru_integrations.magento.categories import post_graphql
@@ -122,7 +123,9 @@ def _products(block: Any) -> tuple[List[Dict[str, Any]], int]:
     return products, int(block.get("total_count") or 0)
 
 
-def _match_categories(term: str) -> List[Dict[str, str]]:
+@lru_cache(maxsize=256)
+def _cached_categories(term: str) -> tuple[Dict[str, str], ...]:
+    """Las categorías cambian por temporada, no por minuto: 1,5 s es mucho."""
     data = post_graphql(_CATEGORY_QUERY, {"term": term, "size": MAX_CATEGORIES})
     items = (data.get("categories") or {}).get("items") or []
     out: List[Dict[str, str]] = []
@@ -135,7 +138,11 @@ def _match_categories(term: str) -> List[Dict[str, str]]:
             out.append(
                 {"uid": uid, "name": name, "url_path": str(item.get("url_path") or "")}
             )
-    return out
+    return tuple(out)
+
+
+def _match_categories(term: str) -> List[Dict[str, str]]:
+    return [dict(category) for category in _cached_categories(term)]
 
 
 def _resolve_category(term: str) -> tuple[List[Dict[str, str]], str]:

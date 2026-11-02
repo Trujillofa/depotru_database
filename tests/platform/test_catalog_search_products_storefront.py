@@ -17,6 +17,15 @@ from depotru_tools.registry import ToolContext
 
 CTX = ToolContext(audience=Audience.PUBLIC)
 
+
+@pytest.fixture(autouse=True)
+def _fresh_category_cache():
+    # El catálogo se cachea; entre pruebas cada una tiene su propio mago.
+    storefront_module._cached_categories.cache_clear()
+    yield
+    storefront_module._cached_categories.cache_clear()
+
+
 REVESTIMIENTO_CATEGORIES = {
     "categories": {
         "items": [
