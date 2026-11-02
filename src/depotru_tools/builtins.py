@@ -274,6 +274,21 @@ def _search_products_db(query: str, limit: int = 5) -> list[dict]:
         return []
 
 
+def _tool_cross_sell_affinity(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Complementos medidos en las facturas de J3 (afinidad de canasta)."""
+    from depotru_integrations.j3.affinity import cross_sell_affinity
+
+    sku = str(params.get("sku") or "").strip()
+    if not sku:
+        return {"status": "error", "reason": "missing_sku", "products": []}
+    try:
+        limit = int(params.get("limit") or 5)
+    except (TypeError, ValueError):
+        limit = 5
+    result: dict[str, Any] = cross_sell_affinity(sku, limit)
+    return result
+
+
 def _tool_cross_sell(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     """Lo que la tienda declara como complemento de un SKU (sin variantes)."""
     sku = str(params.get("sku") or params.get("query") or "").strip()
@@ -747,6 +762,23 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             ),
             scope=ToolScope.PUBLIC_CATALOG,
             handler=_tool_cross_sell,
+            public_safe=True,
+            parameters_schema={
+                "sku": "SKU already quoted, e.g. 0020090002",
+                "limit": "max results (default 5)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.cross_sell_affinity",
+            description=(
+                "Complements of one SKU measured on J3 invoices (basket affinity, "
+                "last 12 months): what customers actually buy together, ordered by "
+                "shared baskets. Read-only, no prices."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_cross_sell_affinity,
             public_safe=True,
             parameters_schema={
                 "sku": "SKU already quoted, e.g. 0020090002",
