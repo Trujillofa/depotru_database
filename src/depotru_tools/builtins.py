@@ -289,24 +289,34 @@ def _tool_search_products(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
 
     products: list[dict] = []
     source = "none"
+    reason = ""
 
+    # La tienda primero: nombra, describe y clasifica el producto como lo ve el
+    # cliente, y su índice busca también en categorías («revestimiento» es una
+    # categoría, no un artículo: el ERP no la dice nunca). Precio y cantidad no
+    # se leen aquí, son de J3.
     try:
-        from depotru_integrations.magento.client import MagentoConfig, MagentoRestClient
+        from depotru_integrations.magento.storefront import search_storefront
 
-        config = MagentoConfig.from_env()
-        if config is not None:
-            products = MagentoRestClient(config).search_products(query, page_size=limit)
-            if products:
-                source = "magento"
-    except Exception:  # noqa: BLE001
+        found = search_storefront(query, limit=limit)
+        if found.get("status") == "error":
+            reason = str(found.get("reason") or "storefront_error")
+        products = found.get("products") or []
+        total_count = int(found.get("total_count") or 0)
+        if products:
+            source = "ecommerce"
+    except Exception as exc:  # noqa: BLE001 — un fallo debe verse, no esconderse
         products = []
+        total_count = 0
+        reason = f"storefront_error: {str(exc)[:160]}"
 
     if not products:
+        total_count = 0
         products = _search_products_db(query, limit=limit)
         if products:
             source = "banco_datos"
 
-    return {
+    result = {
         "query": query,
         "products": products,
         "count": len(products),
@@ -314,6 +324,13 @@ def _tool_search_products(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
         "search_url": _storefront_search_url(query),
         "status": "ok" if products else "empty",
     }
+    if source == "ecommerce":
+        result["total_count"] = total_count
+    if reason:
+        # Sin esto, «la tienda no respondió» y «la tienda no tiene nada» se ven
+        # igual, que es el defecto que dejó esta herramienta mintiendo un año.
+        result["reason"] = reason
+    return result
 
 
 _QUOTE_SEARCH_REQUIRED_ALIASES = (

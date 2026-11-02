@@ -111,6 +111,15 @@ def _post_query(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def post_graphql(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
+    """Canonical storefront GraphQL call, for every module that reads it.
+
+    Kept as a public name so product search does not re-implement the request,
+    the timeout or the error handling of this one.
+    """
+    return _post_query(query, variables)
+
+
 def brand_options() -> Dict[str, str]:
     """Folded brand label -> storefront option id, cached for ten minutes."""
     global _brand_options_cache
