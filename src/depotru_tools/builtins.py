@@ -274,6 +274,17 @@ def _search_products_db(query: str, limit: int = 5) -> list[dict]:
         return []
 
 
+def _tool_cross_sell(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Lo que la tienda declara como complemento de un SKU (sin variantes)."""
+    sku = str(params.get("sku") or params.get("query") or "").strip()
+    limit = int(params.get("limit") or 5)
+    limit = max(1, min(limit, 10))
+    from depotru_integrations.magento.storefront import cross_sell_storefront
+
+    result: dict[str, Any] = cross_sell_storefront(sku, limit=limit)
+    return result
+
+
 def _tool_search_products(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     """Search catalog by free-text name (Magento REST and/or sales history)."""
     query = str(params.get("query") or params.get("q") or "").strip()
@@ -723,6 +734,23 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             parameters_schema={
                 "query": "product name or SKU fragment",
                 "limit": "max results (default 6)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.cross_sell",
+            description=(
+                "Products the Ecommerce storefront declares as complements of "
+                "one SKU (cross-sell, related, upsell), without colour or "
+                "presentation variants. Read-only, no prices."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_cross_sell,
+            public_safe=True,
+            parameters_schema={
+                "sku": "SKU already quoted, e.g. 0020090002",
+                "limit": "max results (default 5)",
             },
         )
     )

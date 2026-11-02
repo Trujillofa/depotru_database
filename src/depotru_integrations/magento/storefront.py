@@ -35,6 +35,7 @@ DEFAULT_LIMIT = 5
 MAX_LIMIT = 10
 MAX_CATEGORIES = 4
 DESCRIPTION_CHARS = 240
+MAX_SKU_LEN = 40
 
 _CATEGORY_QUERY = """
 query StorefrontCategories($term: String!, $size: Int!) {
@@ -143,6 +144,104 @@ def _cached_categories(term: str) -> tuple[Dict[str, str], ...]:
 
 def _match_categories(term: str) -> List[Dict[str, str]]:
     return [dict(category) for category in _cached_categories(term)]
+
+
+_CROSS_SELL_QUERY = """
+query StorefrontCrossSell($sku: String!) {
+  products(filter: {sku: {eq: $sku}}) {
+    items {
+      sku
+      name
+      crosssell_products { sku name url_key categories { name url_path } }
+      related_products { sku name url_key categories { name url_path } }
+      upsell_products { sku name url_key categories { name url_path } }
+    }
+  }
+}
+"""
+
+# «Sikaceram 630 Color Boquilla Negro» y «… Blanco» no son complementos: son
+# el mismo producto en otro color. Se comparan las tres primeras palabras.
+_HEAD_WORDS = 3
+
+
+def _head(name: str) -> str:
+    words = [
+        word for word in re.split(r"[^0-9a-záéíóúüñ]+", (name or "").lower()) if word
+    ]
+    return " ".join(words[:_HEAD_WORDS])
+
+
+def cross_sell_storefront(sku: str, limit: int = DEFAULT_LIMIT) -> Dict[str, Any]:
+    """Relaciones que la tienda declara para un SKU, sin variantes de color.
+
+    Merchandising es quien posee la relación; esta función sólo la lee y quita
+    lo que no es un complemento: el mismo producto en otra presentación o color
+    (misma cabeza de nombre) y el propio SKU. Sin precios ni cantidades.
+    """
+    wanted = (sku or "").strip()
+    if not wanted or len(wanted) > MAX_SKU_LEN:
+        return {
+            "sku": wanted,
+            "status": "error",
+            "reason": "sku_invalid",
+            "products": [],
+            "count": 0,
+            "source": "ecommerce",
+        }
+
+    size = max(1, min(int(limit), MAX_LIMIT))
+    try:
+        data = post_graphql(_CROSS_SELL_QUERY, {"sku": wanted})
+    except Exception as exc:  # noqa: BLE001 — se explica, no se esconde
+        return {
+            "sku": wanted,
+            "status": "error",
+            "reason": f"storefront_unavailable: {str(exc)[:160]}",
+            "products": [],
+            "count": 0,
+            "source": "ecommerce",
+        }
+
+    items = ((data.get("products") or {}).get("items")) or []
+    base = items[0] if items else {}
+    origin_head = _head(str(base.get("name") or ""))
+    products: List[Dict[str, Any]] = []
+    seen = {wanted}
+    for relation in ("crosssell_products", "related_products", "upsell_products"):
+        for candidate in base.get(relation) or []:
+            if not isinstance(candidate, dict):
+                continue
+            candidate_sku = str(candidate.get("sku") or "").strip()
+            name = str(candidate.get("name") or "").strip()
+            if not candidate_sku or not name or candidate_sku in seen:
+                continue
+            if origin_head and _head(name) == origin_head:
+                continue
+            seen.add(candidate_sku)
+            product = _product(candidate)
+            product["relation"] = relation.replace("_products", "")
+            products.append(product)
+            if len(products) >= size:
+                break
+        if len(products) >= size:
+            break
+
+    if not products:
+        return {
+            "sku": wanted,
+            "status": "empty",
+            "products": [],
+            "count": 0,
+            "source": "ecommerce",
+        }
+    return {
+        "sku": wanted,
+        "status": "ok",
+        "products": products,
+        "count": len(products),
+        "source": "ecommerce",
+    }
 
 
 def _resolve_category(term: str) -> tuple[List[Dict[str, str]], str]:
