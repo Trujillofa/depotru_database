@@ -300,6 +300,17 @@ def _tool_cross_sell(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     return result
 
 
+def _tool_names_by_sku(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Nombre comercial de varios SKU en una sola consulta a la tienda."""
+    from depotru_integrations.magento.storefront import names_by_sku
+
+    raw = params.get("skus") or []
+    if isinstance(raw, str):
+        raw = [part for part in raw.split(",") if part.strip()]
+    result: dict[str, Any] = names_by_sku(list(raw))
+    return result
+
+
 def _tool_search_products(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     """Search catalog by free-text name (Magento REST and/or sales history)."""
     query = str(params.get("query") or params.get("q") or "").strip()
@@ -783,6 +794,22 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             parameters_schema={
                 "sku": "SKU already quoted, e.g. 0020090002",
                 "limit": "max results (default 5)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.names_by_sku",
+            description=(
+                "Commercial name of several SKUs in one storefront call. Used to "
+                "name a quote with the store's identity instead of the warehouse's. "
+                "Names only: price and quantity stay in J3."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_names_by_sku,
+            public_safe=True,
+            parameters_schema={
+                "skus": 'list of SKUs already quoted, e.g. ["0020090002"]',
             },
         )
     )

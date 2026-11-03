@@ -328,3 +328,53 @@ def search_storefront(query: str, limit: int = DEFAULT_LIMIT) -> Dict[str, Any]:
         # no se puede explicar y el asesor vuelve a contestar «no lo tengo».
         "matched_categories": matched,
     }
+
+
+_NAMES_QUERY = """
+query StorefrontNames($skus: [String!]!) {
+  products(filter: {sku: {in: $skus}}) {
+    items { sku name }
+  }
+}
+"""
+
+
+def names_by_sku(skus: List[str]) -> Dict[str, Any]:
+    """Nombre comercial de varios SKU en UNA consulta a la tienda.
+
+    Existe porque el asesor necesita nombrar hasta cinco filas de una cotización
+    y no puede pagar cinco consultas por respuesta (N+1). Devuelve sólo nombres:
+    el precio y la cantidad siguen siendo de J3.
+    """
+    wanted = [s.strip() for s in skus if isinstance(s, str) and s.strip()]
+    wanted = [s for s in wanted if len(s) <= MAX_SKU_LEN][:MAX_LIMIT]
+    if not wanted:
+        return {
+            "status": "error",
+            "reason": "skus_invalid",
+            "names": {},
+            "count": 0,
+            "source": "ecommerce",
+        }
+    try:
+        data = post_graphql(_NAMES_QUERY, {"skus": wanted})
+    except Exception as exc:  # noqa: BLE001 — se explica, no se esconde
+        return {
+            "status": "error",
+            "reason": f"storefront_unavailable: {str(exc)[:160]}",
+            "names": {},
+            "count": 0,
+            "source": "ecommerce",
+        }
+    items = (((data or {}).get("products") or {}).get("items")) or []
+    names = {
+        str(item.get("sku")): str(item.get("name"))
+        for item in items
+        if item.get("sku") and item.get("name")
+    }
+    return {
+        "status": "ok" if names else "empty",
+        "names": names,
+        "count": len(names),
+        "source": "ecommerce",
+    }
