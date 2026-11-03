@@ -192,3 +192,26 @@ def test_non_b2b_keys_get_403_on_b2b_stock():
 @pytest.mark.unit
 def test_b2b_key_may_call_b2b_stock():
     assert audience_may_use(Audience.B2B, ToolScope.B2B_STOCK)
+
+
+@pytest.mark.unit
+def test_b2b_stock_delegates_to_the_catalog_aggregate(monkeypatch):
+    """One implementation: b2b.stock must forward ctx+params to catalog_stock."""
+    import modules.b2b.register as reg_mod
+
+    seen = {}
+
+    def _fake(ctx, params):  # noqa: ANN001
+        seen["ctx"] = ctx
+        seen["params"] = params
+        return {"ok": True, "results": []}
+
+    monkeypatch.setattr(reg_mod, "catalog_stock", _fake)
+    reg = ToolRegistry()
+    reg_mod.register_b2b_tools(reg)
+    ctx = ToolContext(audience=Audience.B2B)
+    params = {"skus": ["A"], "sede": "florencia"}
+
+    assert reg.call("b2b.stock", params, context=ctx) == {"ok": True, "results": []}
+    assert seen["params"] is params
+    assert seen["ctx"] is ctx
