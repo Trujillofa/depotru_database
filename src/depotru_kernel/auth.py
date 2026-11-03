@@ -35,6 +35,9 @@ class ToolScope(str, Enum):
     B2B_QUOTE = "b2b_quote"  # Company-scoped negotiated quotes (never public)
     B2B_CREDIT = "b2b_credit"  # Fail-closed credit status (R14: blocked)
     B2B_ORDER = "b2b_order"  # Idempotent order adapter (R15: submit disabled)
+    B2B_STOCK = (
+        "b2b_stock"  # Sede availability for the B2B storefront (Florencia pickup)
+    )
 
 
 # Default allow-lists per audience (expand carefully).
@@ -100,6 +103,7 @@ _AUDIENCE_SCOPES: Mapping[Audience, FrozenSet[ToolScope]] = {
             ToolScope.B2B_QUOTE,
             ToolScope.B2B_CREDIT,
             ToolScope.B2B_ORDER,
+            ToolScope.B2B_STOCK,
         }
     ),
 }

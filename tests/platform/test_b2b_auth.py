@@ -29,6 +29,7 @@ B2B_SCOPES = {
     ToolScope.B2B_QUOTE,
     ToolScope.B2B_CREDIT,
     ToolScope.B2B_ORDER,
+    ToolScope.B2B_STOCK,
 }
 
 _NON_ADMIN_AUDIENCES = (
@@ -155,3 +156,62 @@ def test_dedicated_b2b_key_maps_to_b2b_audience(monkeypatch):
         require_scoped_api_key(x_api_key="store-key", x_audience=None)
         is Audience.PUBLIC
     )
+
+
+# ---------------------------------------------------------------------------
+# b2b.stock: the storefront needs a stock route the B2B credential may call
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_b2b_stock_is_registered_on_its_own_scope():
+    from modules.b2b.register import register_b2b_tools
+
+    reg = ToolRegistry()
+    register_b2b_tools(reg)
+    spec = reg.get("b2b.stock")
+    assert spec.scope is ToolScope.B2B_STOCK
+    assert spec.public_safe is False
+
+
+@pytest.mark.unit
+def test_non_b2b_keys_get_403_on_b2b_stock():
+    from modules.b2b.register import register_b2b_tools
+
+    reg = ToolRegistry()
+    register_b2b_tools(reg)
+    for aud in (Audience.PUBLIC, Audience.SALES, Audience.AGENT, Audience.SERVICE):
+        with pytest.raises(ToolPermissionError):
+            reg.call(
+                "b2b.stock",
+                {"skus": ["X"], "sede": "florencia"},
+                context=ToolContext(audience=aud),
+            )
+
+
+@pytest.mark.unit
+def test_b2b_key_may_call_b2b_stock():
+    assert audience_may_use(Audience.B2B, ToolScope.B2B_STOCK)
+
+
+@pytest.mark.unit
+def test_b2b_stock_delegates_to_the_catalog_aggregate(monkeypatch):
+    """One implementation: b2b.stock must forward ctx+params to catalog_stock."""
+    import modules.b2b.register as reg_mod
+
+    seen = {}
+
+    def _fake(ctx, params):  # noqa: ANN001
+        seen["ctx"] = ctx
+        seen["params"] = params
+        return {"ok": True, "results": []}
+
+    monkeypatch.setattr(reg_mod, "catalog_stock", _fake)
+    reg = ToolRegistry()
+    reg_mod.register_b2b_tools(reg)
+    ctx = ToolContext(audience=Audience.B2B)
+    params = {"skus": ["A"], "sede": "florencia"}
+
+    assert reg.call("b2b.stock", params, context=ctx) == {"ok": True, "results": []}
+    assert seen["params"] is params
+    assert seen["ctx"] is ctx
