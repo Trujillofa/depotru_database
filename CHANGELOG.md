@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cross-sell affinity materialized to the advisor table** (`catalog.cross_sell_affinity`):
+  - `depotru-cross-sell-affinity` reads `SmartBusiness.dbo.banco_datos` (read-only),
+    computes directed pairs with >= 20 baskets over 12 months, and replaces
+    `advisor_cross_sell_affinity` only with `--apply` (Postgres/Neon via `psql`;
+    SQLite for demo/tests). Dry-run is the default.
+  - `catalog.cross_sell_affinity` reads the precomputed table first and falls
+    back to the live J3 query when the table is empty or unreachable.
 - **Hybrid stub-first LLM assistant** (`ASSISTANT_LLM=1`):
   - Confident stub paths (greetings, sedes, cart, guides, product search) skip LLM
   - Generic-help fallthrough uses Grok tool loop (`info.branches`, `catalog.search_products`)

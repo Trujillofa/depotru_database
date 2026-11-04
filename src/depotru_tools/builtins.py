@@ -786,7 +786,8 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             description=(
                 "Complements of one SKU measured on J3 invoices (basket affinity, "
                 "last 12 months): what customers actually buy together, ordered by "
-                "shared baskets. Read-only, no prices."
+                "shared baskets. Reads the nightly precomputed table and falls back "
+                "to the live J3 query when it has no row. Read-only, no prices."
             ),
             scope=ToolScope.PUBLIC_CATALOG,
             handler=_tool_cross_sell_affinity,

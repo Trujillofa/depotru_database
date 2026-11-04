@@ -15,6 +15,8 @@ from functools import lru_cache
 from typing import Any
 
 from business_analyzer.core.database import get_db_connection
+from depotru_integrations.affinity.store import TABLE as AFFINITY_TABLE
+from depotru_integrations.affinity.store import AffinityRecord, configured_store
 
 WINDOW_MONTHS = 12
 
@@ -48,10 +50,17 @@ ORDER BY canastas DESC
 
 def _fetch(sku: str, limit: int) -> list[tuple[str, str, int]]:
     """Consulta J3 (sólo lectura). Aislada para poder sustituirla en pruebas."""
-    conn = get_db_connection().get_j3system_connection()
-    cur = conn.cursor()
-    cur.execute(_SQL.format(months=WINDOW_MONTHS, limit=int(limit)), (sku, sku))
-    return [(str(r[0]), str(r[1] or ""), int(str(r[2]))) for r in cur.fetchall()]
+    database = get_db_connection()
+    connection = None
+    try:
+        connection = database.get_j3system_connection()
+        cur = connection.cursor()
+        cur.execute(_SQL.format(months=WINDOW_MONTHS, limit=int(limit)), (sku, sku))
+        return [(str(r[0]), str(r[1] or ""), int(str(r[2]))) for r in cur.fetchall()]
+    finally:
+        if connection is not None:
+            connection.close()
+        database.close()
 
 
 @lru_cache(maxsize=1024)
@@ -59,28 +68,75 @@ def _cached(sku: str, limit: int) -> tuple[tuple[str, str, int], ...]:
     return tuple(_fetch(sku, limit))
 
 
+def _from_table(sku: str, limit: int) -> tuple[list[AffinityRecord] | None, str | None]:
+    """Lee la tabla precalculada; ``(None, motivo)`` si no se puede usar."""
+    try:
+        store = configured_store()
+    except Exception as exc:  # noqa: BLE001 - la tabla es opcional, no el único camino
+        return None, f"table_unavailable: {type(exc).__name__}"
+    if store is None:
+        return None, None
+    try:
+        records = store.top_for_sku(sku, limit)
+    except Exception as exc:  # noqa: BLE001 - cae a la consulta en vivo
+        return None, f"table_unavailable: {type(exc).__name__}"
+    if not records:
+        return None, "table_empty"
+    return list(records), None
+
+
 def cross_sell_affinity(sku: str, limit: int = 5) -> dict[str, Any]:
-    """Complementos del SKU por afinidad de canasta, sin precios."""
+    """Complementos del SKU: tabla precalculada primero, J3 en vivo después."""
     clean = (sku or "").strip()
     if not clean:
         return {"status": "error", "reason": "missing_sku", "products": []}
     size = max(1, min(int(limit), 10))
+
+    records, table_reason = _from_table(clean, size)
+    if records:
+        products = [
+            {
+                "sku": record.complement_sku,
+                "name": record.complement_name or record.complement_sku,
+                "baskets": record.baskets,
+                "relation": "basket",
+            }
+            for record in records
+            if record.complement_sku
+        ]
+        if products:
+            return {
+                "status": "ok",
+                "source": "precomputed",
+                "source_table": AFFINITY_TABLE,
+                "window_months": records[0].window_months,
+                "products": products,
+            }
+
     try:
         rows = _cached(clean, size)
     except Exception as exc:  # noqa: BLE001 - la herramienta no miente: informa
-        return {
+        error_result: dict[str, Any] = {
             "status": "error",
             "reason": f"j3_unavailable: {type(exc).__name__}",
             "products": [],
         }
+        if table_reason:
+            error_result["table_status"] = table_reason
+        return error_result
     products = [
         {"sku": row[0], "name": row[1], "baskets": row[2], "relation": "basket"}
         for row in rows
         if row[0] and row[1]
     ]
-    return {
+    result: dict[str, Any] = {
         "status": "ok" if products else "empty",
         "source": "j3_baskets",
         "window_months": WINDOW_MONTHS,
         "products": products,
     }
+    if table_reason:
+        # Visible para operación: la tabla no respondió o no tenía el SKU y se
+        # pagó la consulta en vivo. No se esconde el motivo.
+        result["table_status"] = table_reason
+    return result
