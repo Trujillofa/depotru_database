@@ -12,7 +12,7 @@ from typing import Any, Optional
 
 import pytest
 
-from modules.b2b.contracts import MAX_SKUS, SKU_MAX_LEN, ErpUnavailableError
+from modules.b2b.contracts import SKU_MAX_LEN, ErpUnavailableError
 from modules.b2b.erp import J3CustomerQuoteClient, get_b2b_erp_client
 from modules.b2b.j3_customer_quote import (
     FORBIDDEN_SQL_FRAGMENTS,
@@ -210,5 +210,4 @@ def test_default_client_is_j3_adapter():
 
 @pytest.mark.unit
 def test_sku_cap_matches_contract():
-    assert MAX_SKUS == 20
     assert SKU_MAX_LEN == 40

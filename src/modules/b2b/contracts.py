@@ -17,7 +17,6 @@ UNIT = "UND"  # candidate assumption; verify against released contract
 PRICE_INCLUDES_IVA = False  # R11: net before IVA; Magento owns tax
 CONTRACT_VERSION = "1"
 
-MAX_SKUS = 20  # R19 (matches the uncommitted candidate MAX_SKUS)
 SKU_MAX_LEN = 40  # candidate ERP cap
 MAX_QUANTITY = Decimal("999999")
 

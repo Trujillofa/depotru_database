@@ -6,7 +6,6 @@ R14 (credit blocked), R15 (ERP submit disabled), R22 (dedicated audience).
 
 from modules.b2b.contracts import (
     CURRENCY,
-    MAX_SKUS,
     SKU_MAX_LEN,
     UNIT,
     ErpTimeoutError,
@@ -15,7 +14,6 @@ from modules.b2b.contracts import (
 
 __all__ = [
     "CURRENCY",
-    "MAX_SKUS",
     "SKU_MAX_LEN",
     "UNIT",
     "ErpTimeoutError",
