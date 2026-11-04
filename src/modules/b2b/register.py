@@ -14,6 +14,7 @@ from depotru_tools.registry import ToolContext, ToolRegistry, ToolSpec
 from modules.b2b.credit import credit_status
 from modules.b2b.erp import get_b2b_erp_client
 from modules.b2b.service import request_quote
+from modules.catalog.stock import catalog_stock
 
 
 def _tool_b2b_quote(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
@@ -38,6 +39,18 @@ def _tool_b2b_order_submit(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
             "pilot path is manual sales handoff (R13)"
         ),
     }
+
+
+def _tool_b2b_stock(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Sede availability for the B2B storefront.
+
+    One implementation, not two: the storefront's Florencia placement gate asks
+    the same aggregate as ``catalog.stock``. It is registered on its own B2B
+    scope because R22 forbids the B2B credential the sales-portfolio scope that
+    ``catalog.stock`` requires -- without this route the gate could never get an
+    answer, and every pickup order would be refused as "stock unknown".
+    """
+    return dict(catalog_stock(ctx, params))
 
 
 def register_b2b_tools(registry: ToolRegistry) -> None:
@@ -85,6 +98,23 @@ def register_b2b_tools(registry: ToolRegistry) -> None:
             parameters_schema={
                 "order_key": "idempotency key (Magento order ref)",
                 "payload": "order payload (unused while disabled)",
+            },
+        )
+    )
+
+    registry.register(
+        ToolSpec(
+            name="b2b.stock",
+            description=(
+                "Exact SKU/sede availability for the B2B storefront (Florencia "
+                "pickup); same fail-closed aggregate as catalog.stock"
+            ),
+            scope=ToolScope.B2B_STOCK,
+            handler=_tool_b2b_stock,
+            public_safe=False,
+            parameters_schema={
+                "skus": "1-5 exact SKU codes",
+                "sede": "'neiva' | 'florencia' (absent -> both)",
             },
         )
     )
