@@ -37,3 +37,49 @@ def test_configured_audiences_parses_map() -> None:
         "public",
     }
     assert configured_audiences("a:b2b, x:service") == {"b2b", "service"}
+
+
+def test_duplicate_key_with_two_audiences_is_refused() -> None:
+    # v1 keeps the last mapping, so a duplicated key would be silently
+    # reassigned; the app must refuse to start instead of guessing.
+    with pytest.raises(RuntimeError, match="two audiences"):
+        configured_audiences("storefront:b2b,storefront:public")
+
+
+def test_b2b_key_reaches_b2b_stock_over_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The route must be proven through the published app, not the registry.
+
+    The 403 that broke the pickup gate was an audience/scope mismatch that no
+    registry-level test can see: only a request through create_app() sees it.
+    """
+    from fastapi.testclient import TestClient
+
+    import modules.b2b.register as reg_mod
+
+    monkeypatch.setenv("PLATFORM_API_KEYS", "store:b2b,bi:public")
+    monkeypatch.setattr(
+        reg_mod,
+        "catalog_stock",
+        lambda ctx, params: {
+            "ok": True,
+            "sede": "florencia",
+            "results": [{"sku": "X", "status": "ok"}],
+        },
+    )
+    client = TestClient(create_app())
+
+    ok = client.post(
+        "/v1/tools/call",
+        json={"name": "b2b.stock", "params": {"skus": ["X"], "sede": "florencia"}},
+        headers={"X-API-Key": "store"},
+    )
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["audience"] == "b2b"
+    assert ok.json()["result"]["results"][0]["sku"] == "X"
+
+    denied = client.post(
+        "/v1/tools/call",
+        json={"name": "b2b.stock", "params": {"skus": ["X"], "sede": "florencia"}},
+        headers={"X-API-Key": "bi"},
+    )
+    assert denied.status_code == 403
