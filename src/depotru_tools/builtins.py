@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any, Mapping, Optional
 
 from depotru_kernel.attribution import resolve_seller
@@ -540,13 +541,55 @@ def _tool_sellable_qty_stub(ctx: ToolContext, params: Mapping[str, Any]) -> dict
             "policy": "never invent stock; SafetyStock may reduce sellable below ERP",
         }
 
+    # Sin Magento: stock real del ERP. `catalog.stock` ya resuelve bodegas de
+    # venta web, año máximo, decimales exactos y distingue 0 de ausente.
+    try:
+        stock = catalog_stock(ctx, {"skus": [sku]})
+    except Exception:  # noqa: BLE001 — nunca inventar una cifra
+        return {
+            "sku": sku,
+            "sellable_qty": None,
+            "in_stock": None,
+            "status": "error",
+            "reason": "j3_request_failed",
+            "policy": "nunca inventar stock; sin dato si J3 no responde",
+        }
+
+    if not stock.get("ok"):
+        return {
+            "sku": sku,
+            "sellable_qty": None,
+            "in_stock": None,
+            "status": "error",
+            "reason": "j3_request_failed",
+            "policy": "nunca inventar stock; sin dato si J3 no responde",
+        }
+
+    row = stock["results"][0]
+    if row.get("status") != "ok":
+        return {
+            "sku": sku,
+            "sellable_qty": None,
+            "in_stock": None,
+            "status": "unknown",
+            "reason": row.get("status"),
+            "source": "j3",
+            "policy": "sin dato: el SKU no es publicable con certeza",
+        }
+
+    total = sum(
+        (Decimal(v) for v in row["sedes"].values() if v is not None),
+        Decimal(0),
+    )
+    qty = format(total, "f")
     return {
         "sku": sku,
-        "sellable_qty": None,
-        "status": "unavailable",
-        "reason": "magento_adapter_not_configured",
-        "hint": "Set MAGENTO_BASE_URL + MAGENTO_ACCESS_TOKEN for live MSI reads",
-        "policy": "never invent stock; SafetyStock may reduce sellable below ERP",
+        "sellable_qty": qty,
+        "website_qty": qty,  # alias para la normalización de lib/catalog.ts
+        "in_stock": total > 0,
+        "status": "ok",
+        "source": "j3_website_allowlist",
+        "policy": "on-hand ERP en bodegas de venta web; no descuenta reservas",
     }
 
 
