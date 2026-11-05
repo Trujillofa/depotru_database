@@ -296,7 +296,6 @@ def cartera_summary_response(
         buckets = _empty_buckets()
         for key in BUCKET_KEYS:
             buckets[key] = _money(row.get(key))
-        total = _as_decimal(row.get("open_total"))
         clients.append(
             {
                 "terceros_id": _text(row.get("terceros_id")),

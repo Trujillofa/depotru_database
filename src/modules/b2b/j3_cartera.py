@@ -10,8 +10,6 @@ own account or the platform-admin view, never log payload.
 
 from __future__ import annotations
 
-from typing import Any
-
 
 def build_cartera_header_sql() -> str:
     """One tercero's identity/cupo header (any open doc row carries it)."""
