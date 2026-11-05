@@ -38,6 +38,9 @@ class ToolScope(str, Enum):
     B2B_STOCK = (
         "b2b_stock"  # Sede availability for the B2B storefront (Florencia pickup)
     )
+    B2B_CARTERA = (
+        "b2b_cartera"  # Read-only open-AR display (R23: admin all, member own)
+    )
 
 
 # Default allow-lists per audience (expand carefully).
@@ -104,6 +107,7 @@ _AUDIENCE_SCOPES: Mapping[Audience, FrozenSet[ToolScope]] = {
             ToolScope.B2B_CREDIT,
             ToolScope.B2B_ORDER,
             ToolScope.B2B_STOCK,
+            ToolScope.B2B_CARTERA,
         }
     ),
 }

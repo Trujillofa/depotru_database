@@ -30,6 +30,7 @@ B2B_SCOPES = {
     ToolScope.B2B_CREDIT,
     ToolScope.B2B_ORDER,
     ToolScope.B2B_STOCK,
+    ToolScope.B2B_CARTERA,  # R23: read-only open-AR display (admin all / member own)
 }
 
 _NON_ADMIN_AUDIENCES = (
@@ -57,6 +58,7 @@ def test_b2b_scopes_exist():
     assert ToolScope.B2B_QUOTE.value == "b2b_quote"
     assert ToolScope.B2B_CREDIT.value == "b2b_credit"
     assert ToolScope.B2B_ORDER.value == "b2b_order"
+    assert ToolScope.B2B_CARTERA.value == "b2b_cartera"
 
 
 @pytest.mark.unit

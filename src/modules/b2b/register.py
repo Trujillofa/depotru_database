@@ -11,6 +11,11 @@ from typing import Any, Mapping
 
 from depotru_kernel.auth import ToolScope
 from depotru_tools.registry import ToolContext, ToolRegistry, ToolSpec
+from modules.b2b.cartera import (
+    cartera_detail_response,
+    cartera_summary_response,
+    get_b2b_cartera_client,
+)
 from modules.b2b.credit import credit_status
 from modules.b2b.erp import get_b2b_erp_client
 from modules.b2b.service import request_quote
@@ -39,6 +44,22 @@ def _tool_b2b_order_submit(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
             "pilot path is manual sales handoff (R13)"
         ),
     }
+
+
+def _tool_b2b_cartera_detail(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """One staff-linked company's open AR (R23: member's own tercero only)."""
+    result: dict = cartera_detail_response(
+        params.get("terceros_id"), get_b2b_cartera_client()
+    )
+    return result
+
+
+def _tool_b2b_cartera_summary(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """All open AR accounts, biggest debt first (R23: platform-admin view)."""
+    result: dict = cartera_summary_response(
+        params.get("max_rows"), get_b2b_cartera_client()
+    )
+    return result
 
 
 def _tool_b2b_stock(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
@@ -98,6 +119,38 @@ def register_b2b_tools(registry: ToolRegistry) -> None:
             parameters_schema={
                 "order_key": "idempotency key (Magento order ref)",
                 "payload": "order payload (unused while disabled)",
+            },
+        )
+    )
+
+    registry.register(
+        ToolSpec(
+            name="b2b.cartera_detail",
+            description=(
+                "Open AR documents, aging buckets and cupo for ONE staff-linked "
+                "company (R23: display-only; member sees only its own tercero)"
+            ),
+            scope=ToolScope.B2B_CARTERA,
+            handler=_tool_b2b_cartera_detail,
+            public_safe=False,
+            parameters_schema={
+                "terceros_id": "server-resolved ERP customer id (1..9999999)",
+            },
+        )
+    )
+
+    registry.register(
+        ToolSpec(
+            name="b2b.cartera_summary",
+            description=(
+                "Client-grain open AR across ALL companies, biggest debt first "
+                "(R23: display-only; storefront gate is platform-admin only)"
+            ),
+            scope=ToolScope.B2B_CARTERA,
+            handler=_tool_b2b_cartera_summary,
+            public_safe=False,
+            parameters_schema={
+                "max_rows": "1..500 (default 200)",
             },
         )
     )
