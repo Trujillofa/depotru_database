@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from depotru_integrations.magento import categories as categories_module
 from depotru_integrations.magento import storefront as storefront_module
 from depotru_kernel.auth import Audience
 from depotru_tools.builtins import _tool_search_products
@@ -22,8 +23,12 @@ CTX = ToolContext(audience=Audience.PUBLIC)
 def _fresh_category_cache():
     # El catálogo se cachea; entre pruebas cada una tiene su propio mago.
     storefront_module._cached_categories.cache_clear()
+    categories_module._brand_options_cache = None
+    categories_module._brand_labels_cache = None
     yield
     storefront_module._cached_categories.cache_clear()
+    categories_module._brand_options_cache = None
+    categories_module._brand_labels_cache = None
 
 
 REVESTIMIENTO_CATEGORIES = {
@@ -185,3 +190,117 @@ def test_a_query_with_markup_is_refused_not_forwarded(monkeypatch):
     assert result["status"] == "empty"
     assert result["reason"] == "query_invalid_characters"
     assert fake.calls == []
+
+
+BRAND_META = {
+    "customAttributeMetadata": {
+        "items": [
+            {
+                "attribute_options": [
+                    {"label": "Firplak", "value": 123},
+                    {"label": "Rioplast", "value": 456},
+                ]
+            }
+        ]
+    }
+}
+
+LAVAPLATOS_ITEMS = [
+    {
+        "sku": "0010210129",
+        "name": "Lavaplatos Firplak Koa 84X56",
+        "url_key": "lavaplatos-koa",
+        "description": {"html": ""},
+        "categories": [],
+        "brand": 123,
+    },
+    {
+        "sku": "0020210003",
+        "name": "Sifón Lavaplatos Rioplast",
+        "url_key": "sifon-rioplast",
+        "description": {"html": ""},
+        "categories": [],
+        "brand": 456,
+    },
+]
+
+
+class FakeWithBrand:
+    """Answers categories, product queries and the brand metadata."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, dict]] = []
+
+    def __call__(self, query: str, variables: dict) -> dict:
+        self.calls.append((query, variables))
+        if "customAttributeMetadata" in query:
+            return BRAND_META
+        if "categories(" in query:
+            return {"categories": {"items": []}}
+        return {"products": {"total_count": 2, "items": LAVAPLATOS_ITEMS}}
+
+
+@pytest.mark.unit
+def test_the_brand_is_the_structured_attribute_not_word_counting(monkeypatch):
+    """La marca brilla en el atributo de la tienda; el contenido del nombre es
+    libre («CEMEX» puede faltar o venir dos veces) y el conteo de palabras
+    equivocaba a FIRPLAK con llaves Stretto. El atributo no lo inventa: lo lee.
+    """
+    fake = FakeWithBrand()
+    monkeypatch.setattr(storefront_module, "post_graphql", fake)
+    monkeypatch.setattr(categories_module, "_post_query", fake)
+
+    result = _tool_search_products(CTX, {"query": "lavaplatos", "limit": 2})
+
+    assert result["source"] == "ecommerce"
+    assert [p["brand"] for p in result["products"]] == ["Firplak", "Rioplast"]
+
+
+@pytest.mark.unit
+def test_every_product_query_selects_the_brand_attribute(monkeypatch):
+    fake = FakeWithBrand()
+    monkeypatch.setattr(storefront_module, "post_graphql", fake)
+    monkeypatch.setattr(categories_module, "_post_query", fake)
+
+    _tool_search_products(CTX, {"query": "lavaplatos", "limit": 2})
+
+    product_calls = [c for c in fake.calls if "products(" in c[0]]
+    assert len(product_calls) >= 1
+    for query, _ in product_calls:
+        assert " brand " in query.replace("\n", " ")
+
+
+@pytest.mark.unit
+def test_a_metadata_failure_leaves_the_brand_empty_not_the_tool_down(monkeypatch):
+    fake = FakeWithBrand()
+
+    def broken_meta(query: str, variables: dict) -> dict:
+        fake.calls.append((query, variables))
+        if "customAttributeMetadata" in query:
+            raise RuntimeError("storefront boom")
+        if "categories(" in query:
+            return {"categories": {"items": []}}
+        return {"products": {"total_count": 2, "items": LAVAPLATOS_ITEMS}}
+
+    monkeypatch.setattr(storefront_module, "post_graphql", broken_meta)
+    monkeypatch.setattr(categories_module, "_post_query", broken_meta)
+
+    result = _tool_search_products(CTX, {"query": "lavaplatos", "limit": 2})
+
+    assert result["status"] == "ok"
+    assert [p["brand"] for p in result["products"]] == ["", ""]
+
+
+@pytest.mark.unit
+def test_names_by_sku_carries_the_brand_for_the_batch(monkeypatch):
+    fake = FakeWithBrand()
+    monkeypatch.setattr(storefront_module, "post_graphql", fake)
+    monkeypatch.setattr(categories_module, "_post_query", fake)
+
+    from depotru_integrations.magento.storefront import names_by_sku
+
+    result = names_by_sku(["0010210129", "0020210003"])
+
+    assert result["names"]["0010210129"] == "Lavaplatos Firplak Koa 84X56"
+    assert result["brands"]["0010210129"] == "Firplak"
+    assert result["brands"]["0020210003"] == "Rioplast"

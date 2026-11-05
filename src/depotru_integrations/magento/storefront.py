@@ -28,7 +28,7 @@ import re
 from functools import lru_cache
 from typing import Any, Dict, List
 
-from depotru_integrations.magento.categories import post_graphql
+from depotru_integrations.magento.categories import brand_labels, post_graphql
 
 MAX_QUERY_LEN = 80
 DEFAULT_LIMIT = 5
@@ -49,7 +49,7 @@ _PRODUCTS_IN_CATEGORIES = """
 query StorefrontProducts($term: String!, $size: Int!, $uids: [String!]) {
   products(filter: {category_uid: {in: $uids}}, search: $term, pageSize: $size) {
     total_count
-    items { sku name url_key description { html } categories { name url_path } }
+    items { sku name url_key description { html } categories { name url_path } brand }
   }
 }
 """
@@ -58,7 +58,7 @@ _PRODUCTS_BY_SEARCH = """
 query StorefrontSearch($term: String!, $size: Int!) {
   products(search: $term, pageSize: $size) {
     total_count
-    items { sku name url_key description { html } categories { name url_path } }
+    items { sku name url_key description { html } categories { name url_path } brand }
   }
 }
 """
@@ -112,7 +112,20 @@ def _product(item: Dict[str, Any]) -> Dict[str, Any]:
         "product_url": storefront_product_url(url_key) if url_key else "",
         "description": _plain_text(str(html or ""))[:DESCRIPTION_CHARS],
         "categories": _categories(item),
+        "brand": _brand_label(item),
     }
+
+
+def _brand_label(item: Dict[str, Any]) -> str:
+    """La marca es el atributo de la tienda, no el texto del nombre."""
+    value = str(item.get("brand") or "").strip()
+    if not value:
+        return ""
+    try:
+        label = brand_labels().get(value)
+    except Exception:  # noqa: BLE001 — sin tabla de marcas la marca es vacía
+        return ""
+    return label if isinstance(label, str) else ""
 
 
 def _products(block: Any) -> tuple[List[Dict[str, Any]], int]:
@@ -333,7 +346,7 @@ def search_storefront(query: str, limit: int = DEFAULT_LIMIT) -> Dict[str, Any]:
 _NAMES_QUERY = """
 query StorefrontNames($skus: [String!]!) {
   products(filter: {sku: {in: $skus}}) {
-    items { sku name }
+    items { sku name brand }
   }
 }
 """
@@ -367,14 +380,21 @@ def names_by_sku(skus: List[str]) -> Dict[str, Any]:
             "source": "ecommerce",
         }
     items = (((data or {}).get("products") or {}).get("items")) or []
-    names = {
-        str(item.get("sku")): str(item.get("name"))
-        for item in items
-        if item.get("sku") and item.get("name")
-    }
+    names: Dict[str, str] = {}
+    brands: Dict[str, str] = {}
+    for item in items:
+        sku = str(item.get("sku") or "")
+        if not sku:
+            continue
+        if item.get("name"):
+            names[sku] = str(item.get("name"))
+        brand = _brand_label(item)
+        if brand:
+            brands[sku] = brand
     return {
         "status": "ok" if names else "empty",
         "names": names,
+        "brands": brands,
         "count": len(names),
         "source": "ecommerce",
     }

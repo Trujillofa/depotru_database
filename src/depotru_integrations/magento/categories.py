@@ -53,6 +53,7 @@ query BrandProducts($id: String!, $size: Int!, $page: Int!) {
 
 _cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
 _brand_options_cache: Optional[tuple[float, Dict[str, str]]] = None
+_brand_labels_cache: Optional[tuple[float, Dict[str, str]]] = None
 
 
 class BrandQueryError(ValueError):
@@ -120,6 +121,31 @@ def post_graphql(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
     return _post_query(query, variables)
 
 
+def brand_labels() -> Dict[str, str]:
+    """Estado: valor de opción -> etiqueta visible de la marca. Cache 10 min."""
+    global _brand_labels_cache
+    if (
+        _brand_labels_cache is not None
+        and time.monotonic() - _brand_labels_cache[0] < CACHE_TTL_SEC
+    ):
+        return _brand_labels_cache[1]
+    data = _post_query(_BRAND_OPTIONS_QUERY, {})
+    items = (data.get("customAttributeMetadata") or {}).get("items") or []
+    labels: Dict[str, str] = {}
+    for block in items:
+        if not isinstance(block, dict):
+            continue
+        for option in block.get("attribute_options") or []:
+            if not isinstance(option, dict):
+                continue
+            label = str(option.get("label") or "").strip()
+            value = str(option.get("value") or "").strip()
+            if label and value:
+                labels.setdefault(value, label)
+    _brand_labels_cache = (time.monotonic(), labels)
+    return labels
+
+
 def brand_options() -> Dict[str, str]:
     """Folded brand label -> storefront option id, cached for ten minutes."""
     global _brand_options_cache
@@ -128,19 +154,11 @@ def brand_options() -> Dict[str, str]:
         and time.monotonic() - _brand_options_cache[0] < CACHE_TTL_SEC
     ):
         return _brand_options_cache[1]
-    data = _post_query(_BRAND_OPTIONS_QUERY, {})
-    items = (data.get("customAttributeMetadata") or {}).get("items") or []
     options: Dict[str, str] = {}
-    for block in items:
-        if not isinstance(block, dict):
-            continue
-        for option in block.get("attribute_options") or []:
-            if not isinstance(option, dict):
-                continue
-            label = _fold(str(option.get("label") or ""))
-            value = str(option.get("value") or "").strip()
-            if label and value:
-                options.setdefault(label, value)
+    for value, label in brand_labels().items():
+        folded = _fold(label)
+        if folded:
+            options.setdefault(folded, value)
     _brand_options_cache = (time.monotonic(), options)
     return options
 
@@ -319,8 +337,10 @@ def brand_category_overview(brand: str) -> Dict[str, Any]:
 
 def reset_cache() -> None:
     global _brand_options_cache
+    global _brand_labels_cache
     _cache.clear()
     _brand_options_cache = None
+    _brand_labels_cache = None
 
 
 SUGGEST_MIN_SCORE = 0.7
