@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping, Optional
 
 from depotru_kernel.attribution import resolve_seller
@@ -231,16 +232,67 @@ def storefront_product_url(url_key: str) -> str:
     return f"{base}/{key}{suffix}" if suffix else f"{base}/{key}"
 
 
+def _catalog_search_tokens(query: str) -> list[str]:
+    """Split a free-text catalog query into AND-able name tokens.
+
+    Drops filler words (precio, de, x) so «sikafill 7 x galon precio» becomes
+    ``sikafill``, ``7``, ``galon`` and matches names with intervening words.
+    """
+    noise = {
+        "precio",
+        "precios",
+        "valor",
+        "cuesta",
+        "cuanto",
+        "cuánto",
+        "vale",
+        "de",
+        "del",
+        "la",
+        "el",
+        "los",
+        "las",
+        "un",
+        "una",
+        "unos",
+        "unas",
+        "por",
+        "para",
+        "con",
+        "x",
+        "y",
+        "en",
+    }
+    tokens: list[str] = []
+    for raw in re.split(r"[\s+/,_-]+", (query or "").strip()):
+        t = raw.strip(".,;:¿?¡!\"'()").casefold()
+        if len(t) < 1 or t in noise:
+            continue
+        if t not in tokens:
+            tokens.append(t)
+        if len(tokens) >= 6:
+            break
+    return tokens
+
+
 def _search_products_db(query: str, limit: int = 5) -> list[dict]:
     """Best-effort product search on SmartBusiness sales history."""
     q = (query or "").strip()
-    if not q or len(q) < 2:
+    tokens = _catalog_search_tokens(q)
+    if not q or (len(q) < 2 and not tokens):
         return []
     try:
         from business_analyzer.core.database import Database
         from depotru_kernel.documents import excluded_document_sql_in_list
 
         excl = excluded_document_sql_in_list()
+        use_tokens = tokens if len(tokens) >= 2 else []
+        if use_tokens:
+            name_clause = " AND ".join(["ArticulosNombre LIKE %s"] * len(use_tokens))
+            params: tuple = tuple(f"%{t}%" for t in use_tokens)
+        else:
+            name_clause = "ArticulosNombre LIKE %s"
+            params = (f"%{q}%",)
         sql = f"""
             SELECT TOP {int(limit)}
                 ArticulosCodigo AS sku,
@@ -248,13 +300,12 @@ def _search_products_db(query: str, limit: int = 5) -> list[dict]:
                 SUM(Cantidad) AS qty_sold
             FROM banco_datos
             WHERE DocumentosCodigo NOT IN ({excl})
-              AND ArticulosNombre LIKE %s
+              AND {name_clause}
             GROUP BY ArticulosCodigo
             ORDER BY SUM(Cantidad) DESC
-        """  # nosec B608 — excl from constants; limit cast int
-        pattern = f"%{q}%"
+        """  # nosec B608 — excl from constants; limit cast int; tokens bounded
         with Database() as db:
-            rows = db.execute_query(sql, (pattern,))
+            rows = db.execute_query(sql, params)
         if not isinstance(rows, list):
             return []
         out = []
@@ -326,24 +377,13 @@ _QUOTE_SEARCH_REQUIRED_ALIASES = (
 )
 
 
-def _quote_search_j3(query: str, limit: int = 6) -> list[dict]:
-    """Raw J3 rows: list price + IVA rate + website-allowlist stock. No cost.
-
-    Raises a fixed internal failure on any J3 connection/query failure or an
-    unreadable/malformed result set (missing required alias or a missing/blank
-    SKU); the caller maps that to the fixed ``catalog_unavailable`` tool error.
-    Driver details are suppressed.
-    """
-    q = (query or "").strip()
-    if not q or len(q) < 2:
-        return []
+def _quote_search_j3_rows(sql: str, params: tuple, *, limit: int) -> list[dict]:
+    """Execute a quote-search SQL and validate required aliases."""
     from business_analyzer.core.database import Database
-    from business_analyzer.core.j3system_website_stock import build_quote_search_sql
 
-    sql = build_quote_search_sql(limit=limit)
-    pattern = f"%{q}%"
+    del limit  # limit is already baked into ``sql`` via TOP/LIMIT
     with Database(suppress_error_details=True) as db:
-        rows = db.execute_query(sql, (pattern, pattern))
+        rows = db.execute_query(sql, params)
     if not isinstance(rows, list):
         raise RuntimeError("unreadable result set")
     out: list[dict] = []
@@ -358,6 +398,51 @@ def _quote_search_j3(query: str, limit: int = 6) -> list[dict]:
             raise RuntimeError("unreadable result set")
         out.append(row)
     return out
+
+
+def _quote_search_j3(query: str, limit: int = 6) -> list[dict]:
+    """Raw J3 rows: list price + IVA rate + website-allowlist stock. No cost.
+
+    Raises a fixed internal failure on any J3 connection/query failure or an
+    unreadable/malformed result set (missing required alias or a missing/blank
+    SKU); the caller maps that to the fixed ``catalog_unavailable`` tool error.
+    Driver details are suppressed.
+
+    Multi-token queries use AND of (name OR sku) LIKE per token so
+    «sikafill 7 galon» matches «SIKAFILL 7 POWER BLANCO X GALON».
+    """
+    q = (query or "").strip()
+    tokens = _catalog_search_tokens(q)
+    if not q or (len(q) < 2 and not tokens):
+        return []
+    from business_analyzer.core.j3system_website_stock import build_quote_search_sql
+
+    # Contiguous phrase first (preserves exact SKU / short-name hits)
+    sql = build_quote_search_sql(limit=limit)
+    pattern = f"%{q}%"
+    rows = _quote_search_j3_rows(sql, (pattern, pattern), limit=limit)
+    if rows or len(tokens) < 2:
+        if rows:
+            return rows
+        if len(tokens) == 1:
+            pat = f"%{tokens[0]}%"
+            return _quote_search_j3_rows(sql, (pat, pat), limit=limit)
+        return rows
+
+    # Token AND: each token must match name or sku
+    and_clause = " AND ".join(
+        ["(a.ArticulosNombre LIKE %s OR a.ArticulosCodigo LIKE %s)"] * len(tokens)
+    )
+    sql_multi = sql.replace(
+        "WHERE (a.ArticulosNombre LIKE %s OR a.ArticulosCodigo LIKE %s)",
+        f"WHERE {and_clause}",
+        1,
+    )
+    params: list[str] = []
+    for t in tokens:
+        pat = f"%{t}%"
+        params.extend([pat, pat])
+    return _quote_search_j3_rows(sql_multi, tuple(params), limit=limit)
 
 
 def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:

@@ -136,6 +136,44 @@ _LEADING_QTY_RE = re.compile(
     r"^\s*\d+(?:[.,]\d+)?\s*(?:x\s*)?(?:und(?:s|ades?)?|unidades?)?\s+",
     re.I,
 )
+# Explicit catalog intent — wins over brand-matched problem guides («tienen sika»)
+_CATALOG_INTENT_RE = re.compile(
+    r"(?:"
+    r"\btienen?\b|"
+    r"\bhay\b|"
+    r"\bbusco\b|"
+    r"\bbuscando\b|"
+    r"\bcotizar\b|"
+    r"\bvenden\b|"
+    r"\bprecio\b|"
+    r"\bprecios\b|"
+    r"\bstock\b|"
+    r"\bexistencia\b|"
+    r"\bme\s+recomiendan?\b"
+    r")",
+    re.I,
+)
+# Noise words stripped from product queries («… precio», «x galon»)
+_QUERY_NOISE_RE = re.compile(
+    r"\b(precio|precios|valor|cuesta|cu[aá]nto|vale)\b",
+    re.I,
+)
+# Follow-up size/pack refiners that need prior product context («galon»)
+_SIZE_REFINER_RE = re.compile(
+    r"^(?:x\s*)?(?:"
+    r"gal[oó]n(?:es)?|"
+    r"caneca(?:s)?|"
+    r"cu[nñ]ete(?:s)?|"
+    r"cuarto(?:s)?|"
+    r"1/?4|"
+    r"und(?:s|ades?)?|"
+    r"\d+\s*kg"
+    r")$",
+    re.I,
+)
+# Last successful product query per session (size refiners / «precio» follow-ups)
+_SESSION_LAST_PRODUCT: Dict[str, str] = {}
+_SESSION_LAST_PRODUCT_MAX = 500
 
 _HELP_REPLY = (
     "Soy el asistente de Depósito Trujillo. "
@@ -165,6 +203,10 @@ def _clean_product_query(raw: str) -> str:
         flags=re.I,
     ).strip()
     q = _LEADING_QTY_RE.sub("", q).strip()
+    q = _QUERY_NOISE_RE.sub(" ", q)
+    # Normalize pack separators: «7 x galon» → «7 galon»
+    q = re.sub(r"\s*[x×]\s*", " ", q, flags=re.I)
+    q = re.sub(r"\s+", " ", q).strip()
     q = re.sub(r"\s+(por\s+favor|pls|please)\s*$", "", q, flags=re.I).strip()
     if len(q) < 2 or _STOP_QUERY.search(q):
         return ""
@@ -172,6 +214,45 @@ def _clean_product_query(raw: str) -> str:
     if re.fullmatch(r"\d{4,14}", q):
         return ""
     return q[:80]
+
+
+def prefers_catalog_over_guide(text: str) -> bool:
+    """True when the customer is asking for a product/price, not a job guide."""
+    return bool(_CATALOG_INTENT_RE.search(text or ""))
+
+
+def _remember_product_query(session_id: str, product_q: str) -> None:
+    q = (product_q or "").strip()
+    if not session_id or not q:
+        return
+    if len(_SESSION_LAST_PRODUCT) >= _SESSION_LAST_PRODUCT_MAX:
+        # Drop an arbitrary oldest-ish entry (insertion order on 3.7+)
+        try:
+            del _SESSION_LAST_PRODUCT[next(iter(_SESSION_LAST_PRODUCT))]
+        except StopIteration:
+            pass
+    _SESSION_LAST_PRODUCT[session_id] = q
+
+
+def _refine_with_session(
+    session_id: str, text: str, product_q: Optional[str]
+) -> Optional[str]:
+    """Combine a size/pack follow-up («galon») with the last product in-session."""
+    candidate = (product_q or "").strip()
+    raw = re.sub(r"[¿?¡!.,;:]+", "", (text or "").strip())
+    raw = re.sub(r"\s+", " ", raw).strip()
+    last = (_SESSION_LAST_PRODUCT.get(session_id) or "").strip()
+    if not last:
+        return candidate or None
+    refiner = candidate if candidate and _SIZE_REFINER_RE.match(candidate) else None
+    if refiner is None and _SIZE_REFINER_RE.match(raw):
+        refiner = raw
+    if not refiner:
+        return candidate or None
+    # Avoid duplicating if already present
+    if refiner.casefold() in last.casefold():
+        return last
+    return f"{last} {refiner}".strip()[:80]
 
 
 def _strip_leading_greeting(text: str) -> str:
@@ -287,16 +368,34 @@ def _collect_products(
     return (linked + plain)[:limit]
 
 
+def _format_price_cop(product: Dict[str, Any]) -> str:
+    """Customer-facing integer COP with IVA when quote_search provides it."""
+    raw = product.get("price_with_iva")
+    if raw is None:
+        return ""
+    try:
+        amount = int(raw)
+    except (TypeError, ValueError):
+        return ""
+    if amount <= 0:
+        return ""
+    formatted = f"{amount:,}".replace(",", ".")
+    return f"${formatted} (IVA incluido)"
+
+
 def format_product_lines(products: List[Dict[str, Any]], limit: int = 5) -> str:
-    """Customer-facing bullets: name + optional PDP URL (never SKU)."""
+    """Customer-facing bullets: name + optional price + PDP URL (never SKU)."""
     lines: List[str] = []
     for p in _collect_products(products, limit=limit):
         name = (p.get("name") or "").strip()
         url = (p.get("product_url") or "").strip()
+        price = _format_price_cop(p)
+        bits = [name]
+        if price:
+            bits.append(price)
         if url:
-            lines.append(f"• {name} — {url}")
-        else:
-            lines.append(f"• {name}")
+            bits.append(url)
+        lines.append("• " + " — ".join(bits))
     return "\n".join(lines)
 
 
@@ -386,6 +485,20 @@ def _reply_problem_topic(
     return "\n".join(parts)
 
 
+def _quote_search_products(
+    registry: Any,
+    ctx: ToolContext,
+    query: str,
+    limit: int = 5,
+) -> Dict[str, Any]:
+    result = registry.call(
+        "catalog.quote_search",
+        {"query": query, "limit": limit},
+        context=ctx,
+    )
+    return result if isinstance(result, dict) else {}
+
+
 def _reply_product_name_search(
     registry: Any,
     ctx: ToolContext,
@@ -393,11 +506,20 @@ def _reply_product_name_search(
     tool_results: List[Dict[str, Any]],
     product_q: str,
 ) -> str:
-    result = _search_products(registry, ctx, product_q, limit=5)
-    tools_used.append("catalog.search_products")
-    tool_results.append({"tool": "catalog.search_products", "result": result})
+    # Prefer quote_search (J3 list price + IVA) for named product lookups
+    result = _quote_search_products(registry, ctx, product_q, limit=5)
+    tools_used.append("catalog.quote_search")
+    tool_results.append({"tool": "catalog.quote_search", "result": result})
     products = result.get("products") or []
     search_url = result.get("search_url") or ""
+
+    if not products:
+        fallback = _search_products(registry, ctx, product_q, limit=5)
+        tools_used.append("catalog.search_products")
+        tool_results.append({"tool": "catalog.search_products", "result": fallback})
+        products = fallback.get("products") or []
+        search_url = search_url or fallback.get("search_url") or ""
+
     product_block = format_product_lines(products, limit=5)
 
     if product_block:
@@ -481,7 +603,24 @@ def run_stub_turn(req: ChatRequest) -> ChatResponse:
             mode="stub_tools",
         )
 
-    # Problem / project first (customer language)
+    # Product name search first when catalog intent is clear
+    # («tienen sika?» must not fall into the Sika job guide)
+    product_q = extract_product_query(text)
+    product_q = _refine_with_session(session_id, text, product_q)
+    if product_q and prefers_catalog_over_guide(text):
+        reply = _reply_product_name_search(
+            registry, ctx, tools_used, tool_results, product_q
+        )
+        _remember_product_query(session_id, product_q)
+        return ChatResponse(
+            reply=reply,
+            session_id=session_id,
+            tools_used=tools_used,
+            tool_results=tool_results,
+            product_query=product_q,
+        )
+
+    # Problem / project (customer language) — skipped when catalog intent won
     if looks_like_problem(text) or match_guide(text):
         guided = _reply_problem_guide(registry, ctx, tools_used, tool_results, text)
         if guided:
@@ -504,11 +643,10 @@ def run_stub_turn(req: ChatRequest) -> ChatResponse:
                 product_query=topic,
             )
 
-    # Product name search: "tienen cemento?", "busco varilla", "cotizar un tanque"
-    product_q = extract_product_query(text)
+    # Product without explicit catalog verbs («sikafill 7», «precio» already cleaned)
     if product_q:
-        # If the product phrase is itself a problem phrase, prefer guide
-        if match_guide(product_q) or looks_like_problem(product_q):
+        # Only defer to a guide when the *extracted* phrase is a job, not a brand
+        if looks_like_problem(product_q) and not prefers_catalog_over_guide(text):
             guided = _reply_problem_guide(
                 registry, ctx, tools_used, tool_results, product_q
             )
@@ -522,22 +660,10 @@ def run_stub_turn(req: ChatRequest) -> ChatResponse:
                     guide_id=guide_id,
                     product_query=product_q,
                 )
-        # Full message may match a guide even when extract is a product noun
-        if match_guide(text):
-            guided = _reply_problem_guide(registry, ctx, tools_used, tool_results, text)
-            if guided:
-                guide_reply, guide_id = guided
-                return ChatResponse(
-                    reply=guide_reply,
-                    session_id=session_id,
-                    tools_used=tools_used,
-                    tool_results=tool_results,
-                    guide_id=guide_id,
-                    product_query=product_q,
-                )
         reply = _reply_product_name_search(
             registry, ctx, tools_used, tool_results, product_q
         )
+        _remember_product_query(session_id, product_q)
         return ChatResponse(
             reply=reply,
             session_id=session_id,
@@ -560,14 +686,12 @@ def run_stub_turn(req: ChatRequest) -> ChatResponse:
 
     # Bare product name / model / industrial phrase fallthrough
     bare_q = bare_product_query(text)
+    bare_q = _refine_with_session(session_id, text, bare_q)
     if bare_q:
-        if match_guide(bare_q) or match_guide(text):
+        # Brand-only bare queries (sika, sikafill) → catalog, not job guide
+        if looks_like_problem(bare_q) and not _SIZE_REFINER_RE.match(bare_q):
             guided = _reply_problem_guide(
-                registry,
-                ctx,
-                tools_used,
-                tool_results,
-                text if match_guide(text) else bare_q,
+                registry, ctx, tools_used, tool_results, bare_q
             )
             if guided:
                 guide_reply, guide_id = guided
@@ -582,6 +706,7 @@ def run_stub_turn(req: ChatRequest) -> ChatResponse:
         reply = _reply_product_name_search(
             registry, ctx, tools_used, tool_results, bare_q
         )
+        _remember_product_query(session_id, bare_q)
         return ChatResponse(
             reply=reply,
             session_id=session_id,
