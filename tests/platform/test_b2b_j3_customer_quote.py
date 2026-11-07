@@ -74,6 +74,8 @@ _TARIFF_006 = {
 @pytest.mark.unit
 def test_tariff_sql_is_parameterized_and_has_no_pii_or_list_price():
     sql = build_customer_tariff_sql()
+    assert "TercerosReteFuente" in sql
+    assert "QuienFuente" in sql
     assert "%s" in sql
     assert "AdmTerceros" in sql
     assert "AdmTarifas" in sql
