@@ -46,7 +46,11 @@ def parse_terceros_id(value: Any) -> Optional[int]:
 
 
 def build_customer_tariff_sql() -> str:
-    """One tercero's tariff. No name, phone, identification, or list price."""
+    """One tercero's tariff + retention flags. No name, phone, ID, or list price.
+
+    ``retefuente_flag`` / ``quien_fuente`` are informational for Magento B2B
+    estimate UI only — they must never change ``net_price``.
+    """
     terceros = qualified_j3_table("AdmTerceros")
     tarifas = qualified_j3_table("AdmTarifas")
     return f"""
@@ -54,7 +58,9 @@ SELECT
     t.TercerosID AS terceros_id,
     t.TarifasID AS tarifas_id,
     tf.TarifasCodigo AS tarifa_codigo,
-    tf.TarifasNombre AS tarifa_nombre
+    tf.TarifasNombre AS tarifa_nombre,
+    t.TercerosReteFuente AS retefuente_flag,
+    t.QuienFuente AS quien_fuente
 FROM {terceros} t
 LEFT JOIN {tarifas} tf ON tf.TarifasID = t.TarifasID
 WHERE t.TercerosID = %s
@@ -111,7 +117,22 @@ def _safe_skus(skus: Sequence[str]) -> list[str]:
     return out
 
 
-def _tariff_fields(row: dict[str, Any]) -> dict[str, str]:
+def _as_flag(value: Any) -> bool:
+    """True when J3 numeric/bool flag is non-zero."""
+    if value is None or value == "":
+        return False
+    if isinstance(value, bool):
+        return value
+    try:
+        return int(value) != 0
+    except (TypeError, ValueError):
+        try:
+            return Decimal(str(value)) != 0
+        except (InvalidOperation, ValueError):
+            return False
+
+
+def _tariff_fields(row: dict[str, Any]) -> dict[str, Any]:
     raw_id = row.get("tarifas_id")
     try:
         tariff_id = str(int(raw_id)) if raw_id is not None and raw_id != "" else ""
@@ -121,6 +142,9 @@ def _tariff_fields(row: dict[str, Any]) -> dict[str, str]:
         "tariff_id": tariff_id,
         "tariff_code": str(row.get("tarifa_codigo") or "").strip(),
         "tariff_name": str(row.get("tarifa_nombre") or "").strip(),
+        # Informational only — Magento may show an estimate; never price input.
+        "retefuente_suggested": _as_flag(row.get("retefuente_flag"))
+        or _as_flag(row.get("quien_fuente")),
     }
 
 
