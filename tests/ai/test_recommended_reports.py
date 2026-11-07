@@ -80,11 +80,17 @@ class TestRecommendedReportsCatalog:
     def test_payload_includes_period_defaults_and_month_names(self):
         payload = recommended_reports_payload(today=date(2024, 12, 15))
         assert "reports" in payload
-        assert len(payload["reports"]) == 8
+        assert len(payload["reports"]) == 10
         assert payload["default_year"] == 2024
         assert payload["default_month"] == 11
         assert payload["month_names"]["12"] == "Diciembre"
         assert payload["default_as_of_date"] == "2024-12-14"
+        assert {report["group"] for report in payload["reports"]} == {
+            "Gerencial",
+            "Sedes",
+            "Operación",
+            "TSOL",
+        }
 
     def test_build_manager_action_pdf_question(self):
         action = build_manager_action(year=2024, month=12, fmt="pdf")
@@ -109,22 +115,18 @@ class TestRecommendedReportsCatalog:
         assert "sika center" in action["question"]
         assert action["branch"] == "sika_center"
 
-    def test_inject_recommended_reports_ui_adds_panel_and_period_controls(self):
-        html = '<html><head></head><body class="bg-white dark:bg-slate-900"><div id="app"></div></body></html>'
+    def test_inject_recommended_reports_ui_adds_panel_and_assets(self):
+        html = (
+            '<html><head></head><body class="bg-white dark:bg-slate-900">'
+            '<div id="app"></div></body></html>'
+        )
         patched = inject_recommended_reports_ui(html)
         assert 'id="informes-recomendados"' in patched
         assert "Informes recomendados" in patched
+        assert 'href="/assets/informes.css"' in patched
+        assert 'src="/assets/informes.js"' in patched
         assert "informes-recomendados-loader" in patched
-        assert "informe-period" in patched
-        assert "informe-month" in patched
-        assert "informe-year" in patched
-        assert "informe-generate-btn" in patched
-        assert "informe-format" in patched
-        assert "informe-week" in patched
-        assert "generate_kpi_board" in patched
-        assert "generate_rotacion" in patched
-        assert "generate_cartera" in patched
-        assert "informe-as-of" in patched
+        assert 'class="bg-white dark:bg-slate-900 informes-layout"' in patched
 
 
 @pytest.fixture
@@ -181,6 +183,12 @@ class TestRecommendedReportsFlaskRoutes:
         assert car_entry["period_type"] == "as_of_date"
         assert car_entry["action"]["type"] == "generate_cartera"
         assert "as_of_date" in car_entry["action"]
+        tsol_sika = next(r for r in payload["reports"] if r["id"] == "tsol-sika")
+        assert tsol_sika["period_type"] == "tsol"
+        assert tsol_sika["action"]["type"] == "generate_tsol"
+        assert tsol_sika["action"]["brand"] == "sika"
+        tsol_pintuco = next(r for r in payload["reports"] if r["id"] == "tsol-pintuco")
+        assert tsol_pintuco["action"]["brand"] == "pintuco"
 
         evidence = tmp_path / "recommended-reports.json"
         evidence.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -192,7 +200,30 @@ class TestRecommendedReportsFlaskRoutes:
         body = response.get_data(as_text=True)
         assert "informes-recomendados" in body
         assert "Informes recomendados" in body
+        assert 'href="/assets/informes.css"' in body
+        assert 'src="/assets/informes.js"' in body
         (tmp_path / "vanna-index.html").write_text(body, encoding="utf-8")
+
+    def test_informes_assets_and_layered_vendor_css(self, report_client):
+        client, _, _ = report_client
+        script = client.get("/assets/informes.js")
+        assert script.status_code == 200
+        assert b"informe-card-body" in script.data
+        stylesheet = client.get("/assets/informes.css")
+        assert stylesheet.status_code == 200
+        assert b"@layer vanna, informes;" in stylesheet.data
+        vendor = client.get("/assets/vendor.css")
+        assert vendor.status_code == 200
+        assert vendor.data.startswith(b"@layer vanna {")
+
+    def test_debug_stream_off_and_unknown_api_returns_404(self, report_client):
+        client, _, _ = report_client
+        config = client.get("/api/v0/get_config").get_json()
+        assert config["config"]["debug"] is False
+        for path in ("/api/v0/log", "/api/v0/definitely_not_a_route"):
+            response = client.get(path)
+            assert response.status_code == 404
+            assert response.get_json()["type"] == "error"
 
     def test_catalog_html_entry_triggers_manager_report(self, report_client, tmp_path):
         client, stub, success = report_client
@@ -210,6 +241,36 @@ class TestRecommendedReportsFlaskRoutes:
         (tmp_path / "report-trigger-html.json").write_text(
             json.dumps(payload, ensure_ascii=False, indent=2)
         )
+
+    def test_generate_tsol_endpoint(self, report_client, tmp_path, monkeypatch):
+        client, _, _ = report_client
+        xlsx = tmp_path / "TSOL_SIKA_2026-07.xlsx"
+        xlsx.write_bytes(b"PK")
+
+        def _fake_build(**kwargs):
+            return {
+                "status": "success",
+                "path": str(xlsx),
+                "brand": kwargs.get("brand"),
+                "period_start": "2026-07-01",
+                "period_end": "2026-07-31",
+                "message": "TSOL listo",
+                "quality": {"venta_rows": 1},
+            }
+
+        monkeypatch.setattr(
+            "business_analyzer.reports.tsol_export.build_tsol_result",
+            _fake_build,
+        )
+        response = client.post(
+            "/api/v0/generate_tsol",
+            json={"brand": "sika", "year": 2026, "month": 7},
+        )
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["type"] == "tsol"
+        assert payload["download_url"] == "/reports/TSOL_SIKA_2026-07.xlsx"
+        assert payload["brand"] == "sika"
 
     def test_catalog_pdf_entry_uses_explicit_format(self, report_client, tmp_path):
         client, stub, success = report_client

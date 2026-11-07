@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import traceback
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -163,6 +164,38 @@ def cartera_status_text(result: Dict[str, Any]) -> str:
     return f"✓ Cartera / aging — {as_of}"
 
 
+def tsol_status_text(result: Dict[str, Any]) -> str:
+    filename = Path(result["path"]).name if result.get("path") else None
+    brand = result.get("brand") or "TSOL"
+    start = result.get("period_start") or ""
+    end = result.get("period_end") or ""
+    if filename:
+        return f"✓ TSOL {brand} {start}–{end} ({filename})"
+    return f"✓ TSOL {brand} listo."
+
+
+def tsol_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
+    status = result.get("status")
+    if status == "error":
+        return {
+            "type": "error",
+            "id": cache_id,
+            "error": result.get("message", "Error generando TSOL"),
+        }
+    return {
+        "type": "tsol",
+        "id": cache_id,
+        "text": result.get("message", ""),
+        "status_text": tsol_status_text(result),
+        "download_url": manager_report_download_path(result.get("path")),
+        "format": "xlsx",
+        "brand": result.get("brand"),
+        "period_start": result.get("period_start"),
+        "period_end": result.get("period_end"),
+        "quality": result.get("quality"),
+    }
+
+
 def cartera_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
     status = result.get("status")
     if status == "error":
@@ -230,17 +263,48 @@ class SmartVannaFlaskApp(VannaFlaskApp):
     """VannaFlaskApp that caches raw query results for deterministic charts."""
 
     def __init__(self, *args, **kwargs):
+        # Waitress cannot serve Vanna's /api/v0/log WebSocket, so the debug
+        # console would fail on every page load. Callers on a WS-capable
+        # server can still opt in explicitly with debug=True.
+        kwargs.setdefault("debug", False)
         super().__init__(*args, **kwargs)
+        self._patch_api_catch_all()
         self._patch_chart_routes()
         self._patch_manager_report_routes()
         self._patch_plotly_cdn()
+
+    def _patch_api_catch_all(self) -> None:
+        """Return 404 for unknown /api/v0 paths instead of Vanna's 200 stub."""
+
+        def api_not_found(catch_all: str = ""):
+            return (
+                jsonify(
+                    {
+                        "type": "error",
+                        "error": f"Not found: /api/v0/{catch_all}",
+                    }
+                ),
+                404,
+            )
+
+        try:
+            _replace_route_view(
+                self.flask_app,
+                "/api/v0/<path:catch_all>",
+                ["GET", "POST"],
+                api_not_found,
+            )
+        except RuntimeError:
+            pass
 
     def _patch_plotly_cdn(self) -> None:
         """Use a maintained Plotly.js build instead of deprecated plotly-latest."""
         patched_html = inject_recommended_reports_ui(
             html_content.replace(
-                "https://cdn.plot.ly/plotly-latest.min.js",
-                "https://cdn.plot.ly/plotly-2.35.2.min.js",
+                '<script src="https://cdn.plot.ly/plotly-latest.min.js" '
+                'type="text/javascript"></script>',
+                '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" '
+                'type="text/javascript" defer></script>',
             )
         )
 
@@ -264,17 +328,25 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                 pass
 
     def _patch_assets_js(self) -> None:
-        """Serve Vanna JS with manager-report chat handling."""
+        """Serve Vanna JS/CSS plus the recommended-reports static assets."""
 
         @self.flask_app.route("/assets/<path:filename>")
         def proxy_assets_patched(filename: str):
+            static_dir = Path(__file__).resolve().parent / "static"
+            if filename in {"informes.js", "informes.css"}:
+                return send_from_directory(static_dir, filename, max_age=0)
+
             if self.assets_folder:
                 return send_from_directory(self.assets_folder, filename)
 
             from vanna.legacy.flask.assets import css_content
 
             if ".css" in filename:
-                return Response(css_content, mimetype="text/css")
+                # Vendor rules go in a lower cascade layer so informes.css can
+                # override Tailwind utilities without !important.
+                return Response(
+                    f"@layer vanna {{\n{css_content}\n}}", mimetype="text/css"
+                )
 
             if ".js" in filename:
                 return Response(patched_vanna_js_content(), mimetype="text/javascript")
@@ -310,6 +382,23 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                 return jsonify(manager_report_api_payload(report_result, cache_id))
 
             cache.set(id=cache_id, field="question", value=question)
+
+            # generate_sql() returns None when the model answers conversationally
+            # instead of producing SQL (e.g. "hello world"). Passing None into
+            # is_sql_valid() raises inside sqlparse and surfaces to the UI as a 500.
+            if not sql or not str(sql).strip():
+                return jsonify(
+                    {
+                        "type": "text",
+                        "id": cache_id,
+                        "text": (
+                            "No pude convertir esa pregunta en una consulta SQL. "
+                            "Intenta formularla sobre ventas, productos, clientes "
+                            "o inventario."
+                        ),
+                    }
+                )
+
             cache.set(id=cache_id, field="sql", value=sql)
 
             if vn.is_sql_valid(sql=sql):
@@ -388,8 +477,7 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                     {
                         "type": "error",
                         "error": (
-                            "Indica question («informe de mayo 2024») "
-                            "o year y month."
+                            "Indica question («informe de mayo 2024») o year y month."
                         ),
                     }
                 )
@@ -573,9 +661,95 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             cache.set(id=cache_id, field="cartera", value=result)
             return jsonify(cartera_api_payload(result, cache_id))
 
+        @requires_auth
+        def generate_tsol(user):
+            brand = flask.request.args.get("brand", "sika")
+            year = flask.request.args.get("year", type=int)
+            month = flask.request.args.get("month", type=int)
+            ytd = flask.request.args.get("ytd", "false")
+
+            if flask.request.method == "POST":
+                body = flask.request.get_json(silent=True) or {}
+                brand = body.get("brand", brand)
+                year = body.get("year", year)
+                month = body.get("month", month)
+                ytd = body.get("ytd", ytd)
+
+            ytd_flag = str(ytd).strip().lower() in ("1", "true", "yes", "y")
+            brand = str(brand or "sika").strip().lower()
+            start = end = None
+            if ytd_flag:
+                ytd_year = int(year) if year else date.today().year
+                start = date(ytd_year, 1, 1)
+                end = date.today()
+            elif not year or not month:
+                return jsonify(
+                    {
+                        "type": "error",
+                        "error": "Indica year y month, o ytd=true, para TSOL.",
+                    }
+                )
+
+            cache_id = cache.generate_id(
+                brand=brand,
+                year=year,
+                month=month,
+                ytd=ytd_flag,
+                start=str(start) if start else "",
+                end=str(end) if end else "",
+                report="tsol",
+            )
+            try:
+                from business_analyzer.reports.tsol_export import build_tsol_result
+
+                result = build_tsol_result(
+                    brand=brand,
+                    year=None if start else int(year),
+                    month=None if start else int(month),
+                    start=start,
+                    end=end,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "generate_tsol failed brand=%s ytd=%s", brand, ytd_flag
+                )
+                result = {
+                    "status": "error",
+                    "message": (
+                        "Error generando TSOL. Revise marca/periodo o los logs."
+                    ),
+                }
+
+            if result.get("status") == "error":
+                return jsonify(tsol_api_payload(result, cache_id))
+
+            cache.set(id=cache_id, field="tsol", value=result)
+            return jsonify(tsol_api_payload(result, cache_id))
+
         @self.flask_app.route("/api/v0/recommended_reports", methods=["GET"])
         def recommended_reports():
             return jsonify(recommended_reports_payload())
+
+        @self.flask_app.route("/api/v0/health", methods=["GET"])
+        def health_check():
+            import os
+            import shutil
+
+            report_provider = os.getenv("REPORT_AI_PROVIDER") or Config.AI_PROVIDER
+            return jsonify(
+                {
+                    "status": "ok",
+                    "sql_provider": Config.AI_PROVIDER,
+                    "report_provider": report_provider,
+                    "report_fallbacks": os.getenv("REPORT_AI_FALLBACK_PROVIDERS", ""),
+                    "commandcode_cli": os.getenv("COMMANDCODE_BIN")
+                    or shutil.which("commandcode"),
+                    "openrouter_key": bool(os.getenv("OPENROUTER_API_KEY")),
+                    "groq_key": bool(os.getenv("GROQ_API_KEY")),
+                    "report_cache": os.getenv("REPORT_AI_CACHE", "1") != "0",
+                    "output_dir": str(Config.ensure_output_dir()),
+                }
+            )
 
         @self.flask_app.route("/reports/<path:filename>")
         def serve_manager_report(filename: str):
@@ -613,6 +787,12 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             "/api/v0/generate_cartera",
             endpoint="smart_generate_cartera",
             view_func=generate_cartera,
+            methods=["GET", "POST"],
+        )
+        self.flask_app.add_url_rule(
+            "/api/v0/generate_tsol",
+            endpoint="smart_generate_tsol",
+            view_func=generate_tsol,
             methods=["GET", "POST"],
         )
         self._patch_assets_js()

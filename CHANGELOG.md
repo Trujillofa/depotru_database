@@ -7,7 +7,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Vanna web UI**: minimalist shell with one accent color and display font
+  scale (sidebar, header, suggestion chips, composer pinned to the viewport
+  bottom). The recommended-reports panel is now grouped (Gerencial, Sedes,
+  Operación, TSOL) and collapsible per report, with compact period controls
+  and a per-card status line. Report payloads use structured fields only
+  (no duplicated natural-language question), surface HTTP failures, and no
+  longer auto-open downloads (the "Abrir informe" link is kept). The panel
+  CSS/JS now ships as cached `/assets/informes.{css,js}` files; vendor CSS is
+  served in a lower cascade layer so overrides work without `!important`.
+  Dark mode also follows `prefers-color-scheme`; Plotly loads with `defer`.
+  Vanna's English chrome is localized ("Preguntas sugeridas", "Consola",
+  "Menú"). Catalog entries expose a `group` field, and the January default
+  now falls back to December of the previous year.
+
+### Fixed
+
+- **Vanna debug console / unknown API paths**: `SmartVannaFlaskApp` now defaults
+  to `debug=False` because Waitress cannot serve the `/api/v0/log` WebSocket
+  (the console failed on every page load). Unmatched `/api/v0/*` paths now
+  return `404` with a JSON error instead of Vanna's blanket `200` stub.
+
+- **Manager report rendering (HTML)**: AI narrative now renders Markdown
+  instead of literal `**`/`---`; narrative token budget raised so reports are
+  not cut mid-sentence; removed duplicate `$` in executive summary/opportunities;
+  Colombian comma decimals in vendor/marca/mix/ABC percentages and
+  `Prom./Mes`; full customer/product names (no mid-word cuts); empty
+  per-customer order groups dropped; `Stock` column hidden when J3 stock is
+  unavailable; singular/plural labels; KPI grid is 3x2 with fluid values so
+  consolidated amounts are no longer clipped.
+- **Manager report charts**: axis ticks no longer collapse to duplicate
+  `$2M`/`$4M` labels; vendor value+margin labels combined to stop overlap;
+  pie aggregates small categories into `Otros` with a legend; category bar
+  labels deduplicated; scatter annotations staggered and weighted average
+  margin; weekend shading uses real calendar dates; pie groups the long tail
+  as `Resto (N cat.)` and sorts slices/legend consistently.
+- **Cartera / Rotación / KPI / TSOL reports**:
+  - shared `reports/text.py` helpers (`decimal_es`, `percent_es`,
+    `money_compact`, `shorten`, `strip_markdown`) replace duplicated
+    formatters in HTML/PDF renderers, charts and the monthly CLI
+  - full client/product/seller names in HTML tables (word-boundary `…` only
+    where a column truly needs it); insight prose keeps full names
+  - KPI Control Board numbers localized (decimal comma, dotted thousands)
+  - manager PDF strips Markdown from the AI narrative and reuses compact
+    currency labels
+  - CLI text report: Spanish ABC labels, singular/plural (`1 proveedor`,
+    `1 unidad`), no `N/A` stock noise, localized record counts
+- **AI providers / SQL chat**: added `groq`, `openrouter` and `commandcode`
+  providers. `commandcode` wraps the local CLI as an OpenAI client, so Vanna
+  SQL works on the active subscription without token limits (verified: NL→SQL
+  in ~9 s). `AI_PROVIDER` is now `commandcode`; report narratives use the same
+  CLI with a configurable chain (`REPORT_AI_FALLBACK_PROVIDERS`) and a
+  content-addressed cache (`REPORT_AI_CACHE_DIR`).
+- **Health endpoint**: `/api/v0/health` reports SQL provider, report provider
+  and fallbacks, CLI path, keys present, cache state and output dir.
+- **TSOL quality gate**: `--strict` returns exit 2 when high-severity issues
+  exist (placeholder NIT, blank channel/seller, negative stock) and every run
+  writes a sibling `.calidad.json` with `issues`. Quality JSON now includes
+  `placeholder_nit` and `generic_customer`.
+- **KPI board guards**: missing budget and negative inventory coverage render
+  `—` with an explicit warning instead of `0,00%` / `-50,8 días`.
+- **Ticket KPI**: `Ticket Promedio` is now labelled **con IVA** and each report
+  shows the **sin IVA** value (HTML sub-label, PDF second line, CLI, prompt).
+- **PDF narrative**: keeps bold emphasis from Markdown instead of stripping it;
+  `_strip_html` moved to `reports/text.py`.
+- **Tests**: HTML contract test (no `**`, no `$$`, comma decimals, hidden empty
+  stock column, dual ticket) + text helper, fallback/cache and TSOL strict tests.
+- **Artifacts**: generated cartera/turnover HTML is now ignored under `reports/`.
+- **Vanna Waitress timeout**: `channel_timeout` default 600s (was Waitress 120s)
+  so sede manager reports can finish without the UI dropping the connection.
+  Override with `WAITRESS_CHANNEL_TIMEOUT`.
+- **Vanna systemd memory**: `MemoryHigh=2G` / `MemoryMax=3G` (was 768M / 1G)
+  so report generation is not forced into swap.
+
+### Changed
+
+- **AI provider DeepSeek**: set `AI_PROVIDER=deepseek` + `DEEPSEEK_API_KEY`
+  for Vanna SQL and manager-report narratives (OpenAI-compatible
+  `https://api.deepseek.com`, default model `deepseek-chat`).
+- **Contabilidad ERP — Balance y PyG (PUC)** is only in the consolidated
+  gerencial report. Sede reports (Calle 5 / Sika Center / Almacén Principal)
+  skip the J3 `ConMovimiento*` query and omit the HTML/PDF section.
+
 ### Added
+
+- **Report narratives via Command Code CLI** (`REPORT_AI_PROVIDER=commandcode`
+  or `--ai-provider commandcode`): uses the locally authenticated
+  `commandcode` subscription (`COMMANDCODE_MODEL`, default
+  `deepseek/deepseek-v4.1-flash`) for manager-report AI analysis, independent
+  of `AI_PROVIDER` used by Vanna SQL. The prompt forbids follow-up questions,
+  file-save offers and invented findings; agent chatter is stripped from the
+  output, and prompt currency values no longer duplicate the `$` sign. Reports also clarify that
+  `Ticket Promedio` is **con IVA** (it is `TotalMasIva / transacciones`).
+- **TSOL-GENERAL sell-out export** (`depotru-tsol-export`):
+  - Fills the manufacturer template (Ventas + Inventario) from `banco_datos`
+    plus J3 masters (`AdmTerceros`, `AdmCiudad`, `AdmVendedor`, stock)
+  - Brands: `sika` (default), `pintuco`, `all`; previous calendar month
+  - Dates as DDMMYYYY text; municipality as DIVIPOLA; NIT with DV
+  - CLI: `python scripts/analysis/run_tsol_export.py --brand sika --year 2026 --month 7`
+  - Pintuco grain vs J3 dump: SKU `009%`, electronic credit notes as
+    signed rows, **all bodegas** (txt `Ventas` is ALM-only; Excel is not)
+  - Date range / `--ytd` for 2026-to-date plantilla fills
+  - Vanna Informes recomendados: **TSOL Sika** and **TSOL Pintuco** (Excel)
 
 - **Hybrid stub-first LLM assistant** (`ASSISTANT_LLM=1`):
   - Confident stub paths (greetings, sedes, cart, guides, product search) skip LLM
