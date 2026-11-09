@@ -10,6 +10,62 @@
   let staticLabelsApplied = false;
   let polishScheduled = false;
 
+  const MONTHS_SHORT = [
+    "ene",
+    "feb",
+    "mar",
+    "abr",
+    "may",
+    "jun",
+    "jul",
+    "ago",
+    "sep",
+    "oct",
+    "nov",
+    "dic",
+  ];
+
+  function formatLongDate(value) {
+    const match = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(value || "");
+    if (!match) return "";
+    const date = new Date(
+      Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    );
+    return (
+      date.getUTCDate() +
+      " " +
+      MONTHS_SHORT[date.getUTCMonth()] +
+      " " +
+      date.getUTCFullYear()
+    );
+  }
+
+  function formatWeekLabel(year, week) {
+    const isoYear = Number(year);
+    const isoWeek = Number(week);
+    if (!isoYear || !isoWeek || isoWeek < 1 || isoWeek > 53) return "";
+    const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+    const weekday = jan4.getUTCDay() || 7;
+    const monday = new Date(jan4);
+    monday.setUTCDate(jan4.getUTCDate() - weekday + 1 + (isoWeek - 1) * 7);
+    const sunday = new Date(monday);
+    sunday.setUTCDate(monday.getUTCDate() + 6);
+
+    const startMonth = MONTHS_SHORT[monday.getUTCMonth()];
+    const endMonth = MONTHS_SHORT[sunday.getUTCMonth()];
+    const range =
+      startMonth === endMonth
+        ? monday.getUTCDate() + "–" + sunday.getUTCDate() + " " + endMonth
+        : monday.getUTCDate() +
+          " " +
+          startMonth +
+          "–" +
+          sunday.getUTCDate() +
+          " " +
+          endMonth;
+    return "Semana " + isoWeek + " · " + range;
+  }
+
   const REPORT_TYPES = {
     month: {
       endpoint: "/api/v0/generate_report",
@@ -95,6 +151,19 @@
     return input;
   }
 
+  function labeledNumberControl(name, value, min, max, className, label) {
+    const wrap = document.createElement("label");
+    wrap.className = "informe-field";
+    const caption = document.createElement("span");
+    caption.className = "informe-field-label";
+    caption.textContent = label;
+    wrap.appendChild(caption);
+    wrap.appendChild(
+      numberControl(name, value, min, max, className, label)
+    );
+    return wrap;
+  }
+
   function selectControl(name, value, options, className, label) {
     const select = document.createElement("select");
     select.name = name;
@@ -116,6 +185,7 @@
     input.name = "date";
     input.className = "informe-as-of";
     input.value = value || "";
+    input.lang = "es-CO";
     input.setAttribute("aria-label", "Fecha de referencia");
     return input;
   }
@@ -161,22 +231,22 @@
         "Formato del informe"
       ),
     isoYear: (ctx) =>
-      numberControl(
+      labeledNumberControl(
         "isoYear",
         ctx.defaults.isoYear,
         2015,
         2035,
         "informe-year",
-        "Año ISO del tablero"
+        "Año"
       ),
     isoWeek: (ctx) =>
-      numberControl(
+      labeledNumberControl(
         "isoWeek",
         ctx.defaults.isoWeek,
         1,
         ctx.defaults.maxIsoWeek,
         "informe-week",
-        "Semana ISO"
+        "Semana"
       ),
     date: (ctx) => dateControl(ctx.defaults.asOfDate),
     ytd: () => ytdControl(),
@@ -288,6 +358,7 @@
 
     const details = document.createElement("details");
     details.className = "informe-card";
+    details.name = "informes";
     details.dataset.reportId = report.id;
     details.dataset.type = type;
     details.setAttribute("role", "listitem");
@@ -313,15 +384,42 @@
     button.textContent = spec.button(report);
     period.appendChild(button);
 
+    let hintText = "";
+    if (type === "week") {
+      hintText = formatWeekLabel(cardCtx.defaults.isoYear, cardCtx.defaults.isoWeek);
+    } else if (type === "as_of_date") {
+      hintText = formatLongDate(cardCtx.defaults.asOfDate);
+    }
+    const hint = document.createElement("p");
+    hint.className = "informe-hint";
+    hint.textContent = hintText;
+    hint.hidden = !hintText;
+
     const status = document.createElement("p");
     status.className = "informe-status";
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
 
     form.appendChild(period);
+    form.appendChild(hint);
     form.appendChild(status);
     details.appendChild(form);
     return details;
+  }
+
+  function refreshHint(form) {
+    const details = form.closest("details");
+    const hint = form.querySelector(".informe-hint");
+    if (!details || !hint) return;
+    const values = Object.fromEntries(new FormData(form).entries());
+    let text = "";
+    if (details.dataset.type === "week") {
+      text = formatWeekLabel(values.isoYear, values.isoWeek);
+    } else if (details.dataset.type === "as_of_date") {
+      text = formatLongDate(values.date);
+    }
+    hint.textContent = text;
+    hint.hidden = !text;
   }
 
   function groupOrder(groups) {
@@ -381,6 +479,11 @@
     }
   }
 
+  listEl.addEventListener("input", (event) => {
+    const form = event.target.closest("form.informe-card-body");
+    if (form) refreshHint(form);
+  });
+
   listEl.addEventListener("submit", async (event) => {
     const form = event.target;
     if (!form.classList || !form.classList.contains("informe-card-body")) return;
@@ -439,9 +542,34 @@
     return date.getFullYear() + "-" + month + "-" + day;
   }
 
+  const MENU_LABELS = {
+    "Training Data": "Datos de entrenamiento",
+    "New question": "Nueva pregunta",
+    "Sign out": "Cerrar sesión",
+  };
+
+  function translateMenuLabels(root) {
+    if (!root) return;
+    root.querySelectorAll("button, a").forEach((element) => {
+      for (const node of element.childNodes) {
+        if (node.nodeType !== 3) continue;
+        const text = node.textContent.trim();
+        if (!MENU_LABELS[text]) continue;
+        node.textContent = node.textContent.replace(text, MENU_LABELS[text]);
+      }
+    });
+  }
+
   function polishStaticLabels() {
     if (staticLabelsApplied || !appEl) return;
+    translateMenuLabels(appEl.querySelector("#application-sidebar"));
+    translateMenuLabels(appEl.querySelector("footer"));
     appEl.querySelectorAll("footer button span").forEach((span) => {
+      if (span.textContent && span.textContent.trim() === "Sidebar") {
+        span.textContent = "Menú";
+      }
+    });
+    appEl.querySelectorAll("#application-sidebar button .sr-only").forEach((span) => {
       if (span.textContent && span.textContent.trim() === "Sidebar") {
         span.textContent = "Menú";
       }
@@ -452,6 +580,14 @@
   function polishShell() {
     if (!appEl) return;
     polishStaticLabels();
+
+    if (document.title !== "SmartBusiness BI") {
+      document.title = "SmartBusiness BI";
+    }
+    const logo = appEl.querySelector("#application-sidebar img");
+    if (logo && logo.alt !== "SmartBusiness") {
+      logo.alt = "SmartBusiness";
+    }
 
     const input = appEl.querySelector("footer input");
     if (input && input.placeholder !== "Pregunta sobre tus datos…") {

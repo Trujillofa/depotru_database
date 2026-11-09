@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Vanna UI polish**: SmartBusiness wordmark and favicon replace the Vanna
+  branding; menu labels are translated; empty-state suggestions are centered
+  in a 720px column; report cards use native exclusive accordion
+  (`details name="informes"`) and larger 14px/13px typography; KPI fields are
+  labeled "Año"/"Semana" with an ISO date-range hint; as-of cards show a
+  `8 nov 2026` hint under the date field; report descriptions are shortened
+  to fit two lines.
+
 - **Vanna web UI**: minimalist shell with one accent color and display font
   scale (sidebar, header, suggestion chips, composer pinned to the viewport
   bottom). The recommended-reports panel is now grouped (Gerencial, Sedes,

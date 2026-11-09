@@ -91,88 +91,65 @@ def get_recommended_report_templates() -> List[Dict[str, Any]]:
         {
             "id": "manager",
             "title": "Informe gerencial",
-            "description": (
-                "Ventas consolidadas con KPIs, gráficos y contabilidad ERP."
-            ),
+            "description": "Ventas consolidadas, KPIs y contabilidad ERP.",
             "template": {},
         },
         {
             "id": "manager-ai",
             "title": "Informe gerencial con IA",
-            "description": (
-                "Informe mensual con narrativa de insights generados por IA."
-            ),
+            "description": "Narrativa mensual generada por IA.",
             "template": {"with_ai": True},
         },
         {
             "id": "manager-sika-center",
             "title": "Informe Sika Center",
-            "description": (
-                "Ventas de la sede Sika Center (FEF) para el periodo elegido."
-            ),
+            "description": "Ventas de la sede Sika Center (FEF).",
             "template": {"branch": "sika_center"},
         },
         {
             "id": "manager-calle-5",
             "title": "Informe Calle 5",
-            "description": "Ventas de la sede Calle 5 (FET) para el periodo elegido.",
+            "description": "Ventas de la sede Calle 5 (FET).",
             "template": {"branch": "calle_5"},
         },
         {
             "id": "manager-almacen-principal",
             "title": "Informe Almacén Principal",
-            "description": (
-                "Ventas del almacén principal (FED) para el periodo elegido."
-            ),
+            "description": "Ventas del almacén principal (FED).",
             "template": {"branch": "almacen_principal"},
         },
         {
             "id": "kpi-control-board",
             "title": "KPI Control Board",
-            "description": (
-                "Tablero semanal (lun–dom): scorecard Q1–Q17, cartera, OTIF "
-                "y contabilidad ERP."
-            ),
+            "description": "Semanal: scorecard Q1–Q17, cartera, OTIF y ERP.",
             "period_type": "week",
             "template": {"report_kind": "kpi_control_board"},
         },
         {
             "id": "rotacion-existencias",
             "title": "Rotación de Existencias",
-            "description": (
-                "HTML/PDF con insights: quiebre, capital atrapado y traslados "
-                "(bodegas ALM/SUR/BD6/DIS/FLO; demanda por bodega)."
-            ),
+            "description": "Quiebre, capital atrapado y traslados por bodega.",
             "period_type": "as_of_date",
             "template": {"report_kind": "rotacion_existencias"},
         },
         {
             "id": "cartera-aging",
             "title": "Cartera / Aging",
-            "description": (
-                "HTML/PDF: cartera total, mora por buckets, top vencidos, "
-                "concentración, sobre cupo y plan de cobranza 7 días."
-            ),
+            "description": "Mora por buckets, top vencidos y plan de cobro.",
             "period_type": "as_of_date",
             "template": {"report_kind": "cartera_aging"},
         },
         {
             "id": "tsol-sika",
             "title": "TSOL Sika",
-            "description": (
-                "Excel plantilla mínima (Ventas + Inventario) para sell-out Sika. "
-                "Mes o año a la fecha; todas las bodegas."
-            ),
+            "description": "Excel Ventas + Inventario, mes o YTD.",
             "period_type": "tsol",
             "template": {"brand": "sika"},
         },
         {
             "id": "tsol-pintuco",
             "title": "TSOL Pintuco",
-            "description": (
-                "Excel plantilla mínima (Ventas + Inventario) línea 009. "
-                "Mes o año a la fecha; todas las bodegas."
-            ),
+            "description": "Excel línea 009, mes o YTD.",
             "period_type": "tsol",
             "template": {"brand": "pintuco"},
         },

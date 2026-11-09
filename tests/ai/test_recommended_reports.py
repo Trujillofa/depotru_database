@@ -202,6 +202,8 @@ class TestRecommendedReportsFlaskRoutes:
         assert "Informes recomendados" in body
         assert 'href="/assets/informes.css"' in body
         assert 'src="/assets/informes.js"' in body
+        assert 'href="/assets/smartbusiness-icon.svg"' in body
+        assert 'href="/vanna.svg"' not in body
         (tmp_path / "vanna-index.html").write_text(body, encoding="utf-8")
 
     def test_informes_assets_and_layered_vendor_css(self, report_client):
@@ -215,6 +217,10 @@ class TestRecommendedReportsFlaskRoutes:
         vendor = client.get("/assets/vendor.css")
         assert vendor.status_code == 200
         assert vendor.data.startswith(b"@layer vanna {")
+        for name in ("smartbusiness.svg", "smartbusiness-icon.svg"):
+            asset = client.get(f"/assets/{name}")
+            assert asset.status_code == 200
+            assert asset.mimetype == "image/svg+xml"
 
     def test_debug_stream_off_and_unknown_api_returns_404(self, report_client):
         client, _, _ = report_client

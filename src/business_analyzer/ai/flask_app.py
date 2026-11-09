@@ -305,6 +305,9 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                 'type="text/javascript"></script>',
                 '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" '
                 'type="text/javascript" defer></script>',
+            ).replace(
+                'href="/vanna.svg"',
+                'href="/assets/smartbusiness-icon.svg"',
             )
         )
 
@@ -333,7 +336,7 @@ class SmartVannaFlaskApp(VannaFlaskApp):
         @self.flask_app.route("/assets/<path:filename>")
         def proxy_assets_patched(filename: str):
             static_dir = Path(__file__).resolve().parent / "static"
-            if filename in {"informes.js", "informes.css"}:
+            if ".." not in Path(filename).parts and (static_dir / filename).is_file():
                 return send_from_directory(static_dir, filename, max_age=0)
 
             if self.assets_folder:
