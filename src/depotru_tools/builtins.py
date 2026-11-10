@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from decimal import Decimal
 from typing import Any, Mapping, Optional
 
@@ -282,10 +283,16 @@ def _tool_cross_sell_affinity(ctx: ToolContext, params: Mapping[str, Any]) -> di
     sku = str(params.get("sku") or "").strip()
     if not sku:
         return {"status": "error", "reason": "missing_sku", "products": []}
+    # `limit` inf (p. ej. el JSON 1e309) lanza OverflowError en int() y el
+    # worker responde 500 (hallazgo 8 de la firma). Rechaza el valor
+    # inválido en vez de caerse.
+    raw_limit = params.get("limit")
+    if isinstance(raw_limit, float) and not math.isfinite(raw_limit):
+        return {"status": "error", "reason": "invalid_limit", "products": []}
     try:
         limit = int(params.get("limit") or 5)
-    except (TypeError, ValueError):
-        limit = 5
+    except (TypeError, ValueError, OverflowError):
+        return {"status": "error", "reason": "invalid_limit", "products": []}
     result: dict[str, Any] = cross_sell_affinity(sku, limit)
     return result
 

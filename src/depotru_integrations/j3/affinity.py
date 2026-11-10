@@ -68,6 +68,23 @@ def _cached(sku: str, limit: int) -> tuple[tuple[str, str, int], ...]:
     return tuple(_fetch(sku, limit))
 
 
+MIN_BASKETS = 20
+
+
+def _in_contract(record: AffinityRecord) -> bool:
+    """El contrato que el SQL en vivo anuncia: complemento distinto del
+    ancla, >= 20 canastas y ventana de 12 meses. La tabla materializada
+    se escribe con SU propia configuración; si trae filas fuera del
+    contrato (stale, re-configurada), el lector no las publica."""
+    if not record.complement_sku or record.complement_sku == record.sku:
+        return False
+    if (record.baskets or 0) < MIN_BASKETS:
+        return False
+    if (record.window_months or WINDOW_MONTHS) > WINDOW_MONTHS:
+        return False
+    return True
+
+
 def _from_table(sku: str, limit: int) -> tuple[list[AffinityRecord] | None, str | None]:
     """Lee la tabla precalculada; ``(None, motivo)`` si no se puede usar."""
     try:
@@ -82,7 +99,13 @@ def _from_table(sku: str, limit: int) -> tuple[list[AffinityRecord] | None, str 
         return None, f"table_unavailable: {type(exc).__name__}"
     if not records:
         return None, "table_empty"
-    return list(records), None
+    in_contract = [record for record in records if _in_contract(record)]
+    if not in_contract:
+        # Todo lo que la tabla trae está fuera del contrato que el SQL
+        # anuncia: la tabla está stale/mal sembrada. Cae a J3 en vivo; se
+        # informa el motivo, no se publica la basura (hallazgo 6 firma).
+        return None, "table_out_of_contract"
+    return in_contract, None
 
 
 def cross_sell_affinity(sku: str, limit: int = 5) -> dict[str, Any]:

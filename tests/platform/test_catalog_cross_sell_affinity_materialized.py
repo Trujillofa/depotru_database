@@ -237,7 +237,34 @@ def test_cli_dry_run_says_so_and_leaves_table_untouched(source, target, capsys):
 def test_tool_reads_the_precomputed_table_without_touching_j3(
     source, target, monkeypatch
 ):
-    _run_apply(source, target)
+    # Sembrada DENTRO del contrato del lector (>= 20 canastas, ventana 12);
+    # el SQL en vivo anuncia el mismo contrato (hallazgo 6 de la firma).
+    SqliteAffinityStore(target).replace_all(
+        [
+            AffinityRecord(
+                sku="A",
+                complement_sku="B",
+                sku_name="Cemento Gris",
+                complement_name="Barra Corrugada",
+                baskets=25,
+                confidence=0.9,
+                lift=2.0,
+                window_months=12,
+            ),
+            AffinityRecord(
+                sku="A",
+                complement_sku="C",
+                sku_name="Cemento Gris",
+                complement_name="Malla Electrosoldada",
+                baskets=24,
+                confidence=0.8,
+                lift=1.6,
+                window_months=12,
+            ),
+        ],
+        window_months=12,
+        updated_at=datetime(2026, 11, 1, tzinfo=timezone.utc),
+    )
     monkeypatch.setenv(SQLITE_ENV, str(target))
     monkeypatch.delenv(DATABASE_URL_ENV, raising=False)
     monkeypatch.delenv(FALLBACK_DATABASE_URL_ENV, raising=False)
@@ -254,7 +281,7 @@ def test_tool_reads_the_precomputed_table_without_touching_j3(
     assert result["source"] == "precomputed"
     assert result["source_table"] == "advisor_cross_sell_affinity"
     assert [p["sku"] for p in result["products"]] == ["B", "C"]
-    assert result["products"][0]["baskets"] == 3
+    assert result["products"][0]["baskets"] == 25
     assert result["products"][0]["name"] == "Barra Corrugada"
     assert "table_status" not in result
 
@@ -311,6 +338,90 @@ def test_unreadable_table_falls_back_to_live_j3(tmp_path, monkeypatch):
     assert result["source"] == "j3_baskets"
     assert result["table_status"].startswith("table_unavailable:")
     assert result["products"][0]["sku"] == "Z"
+
+
+@pytest.mark.unit
+def test_reader_rejects_rows_outside_the_contract(tmp_path, monkeypatch):
+    """Hallazgo 6 de la firma: la tabla materializada se escribe con su propia
+    configuración (min baskets, ventana); el lector NO puede publicar filas
+    fuera del contrato que el SQL en vivo anuncia (>= 20 canastas, ventana de
+    12 meses, complemento distinto del ancla). Con filas basura, la lectura
+    cae al J3 en vivo, nunca publica la basura."""
+    import sqlite3
+    from datetime import datetime, timezone
+
+    from depotru_integrations.affinity import store as affinity_store
+
+    dirty = tmp_path / "dirty.sqlite3"
+    conn = sqlite3.connect(dirty)
+    try:
+        conn.execute(affinity_store._SQLITE_DDL)
+        # complemento IGUAL al ancla: debe caer.
+        conn.execute(
+            affinity_store._SQLITE_INSERT,
+            ("A", "A", "Ancla", "Ancla", 60, 1.0, 1.0, 12, "2026-01-01"),
+        )
+        # 1 sola canasta (menor que las 20 anunciadas): debe caer.
+        conn.execute(
+            affinity_store._SQLITE_INSERT,
+            ("A", "B", "Otro", "Bajo", 1, 1.0, 1.0, 12, "2026-01-01"),
+        )
+        # ventana de 60 meses (stale): debe caer.
+        conn.execute(
+            affinity_store._SQLITE_INSERT,
+            ("A", "C", "Otro", "Viejo", 500, 1.0, 1.0, 60, "2026-01-01"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    monkeypatch.setenv(SQLITE_ENV, str(dirty))
+    monkeypatch.delenv(DATABASE_URL_ENV, raising=False)
+    monkeypatch.delenv(FALLBACK_DATABASE_URL_ENV, raising=False)
+    affinity_module._cached.cache_clear()
+    monkeypatch.setattr(
+        affinity_module,
+        "_fetch",
+        lambda sku, limit: [("Z", "Producto en vivo", 25)],
+    )
+
+    result = _tool_cross_sell_affinity(CTX, {"sku": "A", "limit": 5})
+
+    assert result["source"] == "j3_baskets", result
+    assert result["table_status"] == "table_out_of_contract"
+    assert [p["sku"] for p in result["products"]] == ["Z"]
+
+    # Pero si hay AL MENOS una fila sana, sobrevive sola (sin basura).
+    healthy = tmp_path / "healthy.sqlite3"
+    conn = sqlite3.connect(healthy)
+    try:
+        conn.execute(affinity_store._SQLITE_DDL)
+        conn.execute(
+            affinity_store._SQLITE_INSERT,
+            ("A", "B", "Otro", "Bajo", 1, 1.0, 1.0, 12, "2026-01-01"),
+        )
+        conn.execute(
+            affinity_store._SQLITE_INSERT,
+            ("A", "D", "Otro", "Sano", 250, 1.0, 1.0, 12, "2026-01-01"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    monkeypatch.setenv(SQLITE_ENV, str(healthy))
+    affinity_module._cached.cache_clear()
+    result = _tool_cross_sell_affinity(CTX, {"sku": "A", "limit": 5})
+    assert result["source"] == "precomputed"
+    assert [p["sku"] for p in result["products"]] == ["D"]
+
+
+@pytest.mark.unit
+def test_tool_never_crash_with_an_infinite_limit(monkeypatch):
+    """Hallazgo 8 de la firma: `limit` 1e309 llega como float inf y
+    `int(inf)` lanza OverflowError (500 del worker) antes de llegar al
+    clamping del rango. Rechaza el entero inválido sin caerse."""
+    result = _tool_cross_sell_affinity(CTX, {"sku": "A", "limit": 1e309})
+    assert result["status"] == "error"
+    assert result["reason"] == "invalid_limit"
+    assert result["products"] == []
 
 
 @pytest.mark.unit
