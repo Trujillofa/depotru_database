@@ -11,6 +11,7 @@ nombres que engañan (AdmDocumentos = tipos de documento).
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any
 
@@ -69,18 +70,31 @@ def _cached(sku: str, limit: int) -> tuple[tuple[str, str, int], ...]:
 
 
 MIN_BASKETS = 20
+# El job corre a diario a las 02:30; el sello de la tabla no puede llevar
+# más de 5 noches perdidas sin caer al J3 en vivo.
+MAX_TABLE_AGE_DAYS = 35
+
+
+def _staleness_floor() -> str:
+    now = datetime.now(timezone.utc) - timedelta(days=MAX_TABLE_AGE_DAYS)
+    return now.date().isoformat()
 
 
 def _in_contract(record: AffinityRecord) -> bool:
     """El contrato que el SQL en vivo anuncia: complemento distinto del
-    ancla, >= 20 canastas y ventana de 12 meses. La tabla materializada
-    se escribe con SU propia configuración; si trae filas fuera del
-    contrato (stale, re-configurada), el lector no las publica."""
+    ancla, >= 20 canastas, ventana de 12 meses y sello de escritura
+    reciente. La tabla materializada se escribe con SU propia
+    configuración; si trae filas fuera del contrato (stale,
+    re-configurada, ventana absurda o congelada), el lector no las
+    publica."""
     if not record.complement_sku or record.complement_sku == record.sku:
         return False
     if (record.baskets or 0) < MIN_BASKETS:
         return False
-    if (record.window_months or WINDOW_MONTHS) > WINDOW_MONTHS:
+    window = record.window_months
+    if window is None or window < 1 or window > WINDOW_MONTHS:
+        return False
+    if (record.stored_at or "")[:10] < _staleness_floor():
         return False
     return True
 

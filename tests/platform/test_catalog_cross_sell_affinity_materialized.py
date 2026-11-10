@@ -189,7 +189,7 @@ def test_dry_run_never_writes(source, target):
             )
         ],
         window_months=12,
-        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 11, 8, tzinfo=timezone.utc),
     )
 
     result = job.run_job(
@@ -212,7 +212,7 @@ def test_cli_dry_run_says_so_and_leaves_table_untouched(source, target, capsys):
     store.replace_all(
         [],
         window_months=12,
-        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 11, 8, tzinfo=timezone.utc),
     )
 
     code = job.main(
@@ -291,7 +291,7 @@ def test_empty_table_falls_back_to_live_j3(target, monkeypatch):
     SqliteAffinityStore(target).replace_all(
         [],
         window_months=12,
-        updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2026, 11, 8, tzinfo=timezone.utc),
     )
     monkeypatch.setenv(SQLITE_ENV, str(target))
     monkeypatch.delenv(DATABASE_URL_ENV, raising=False)
@@ -359,17 +359,27 @@ def test_reader_rejects_rows_outside_the_contract(tmp_path, monkeypatch):
         # complemento IGUAL al ancla: debe caer.
         conn.execute(
             affinity_store._SQLITE_INSERT,
-            ("A", "A", "Ancla", "Ancla", 60, 1.0, 1.0, 12, "2026-01-01"),
+            ("A", "A", "Ancla", "Ancla", 60, 1.0, 1.0, 12, "2026-11-08"),
         )
         # 1 sola canasta (menor que las 20 anunciadas): debe caer.
         conn.execute(
             affinity_store._SQLITE_INSERT,
-            ("A", "B", "Otro", "Bajo", 1, 1.0, 1.0, 12, "2026-01-01"),
+            ("A", "B", "Otro", "Bajo", 1, 1.0, 1.0, 12, "2026-11-08"),
         )
         # ventana de 60 meses (stale): debe caer.
         conn.execute(
             affinity_store._SQLITE_INSERT,
-            ("A", "C", "Otro", "Viejo", 500, 1.0, 1.0, 60, "2026-01-01"),
+            ("A", "C", "Otro", "Viejo", 500, 1.0, 1.0, 60, "2026-11-08"),
+        )
+        # ventana absurda (negativa): debe caer.
+        conn.execute(
+            affinity_store._SQLITE_INSERT,
+            ("A", "E", "Otro", "Raro", 30, 1.0, 1.0, -1, "2026-11-09"),
+        )
+        # sello de escritura 2020: tabla nunca refrescada, debe caer.
+        conn.execute(
+            affinity_store._SQLITE_INSERT,
+            ("A", "F", "Otro", "Congelado", 30, 1.0, 1.0, 12, "2020-01-01"),
         )
         conn.commit()
     finally:
@@ -397,11 +407,11 @@ def test_reader_rejects_rows_outside_the_contract(tmp_path, monkeypatch):
         conn.execute(affinity_store._SQLITE_DDL)
         conn.execute(
             affinity_store._SQLITE_INSERT,
-            ("A", "B", "Otro", "Bajo", 1, 1.0, 1.0, 12, "2026-01-01"),
+            ("A", "B", "Otro", "Bajo", 1, 1.0, 1.0, 12, "2026-11-08"),
         )
         conn.execute(
             affinity_store._SQLITE_INSERT,
-            ("A", "D", "Otro", "Sano", 250, 1.0, 1.0, 12, "2026-01-01"),
+            ("A", "D", "Otro", "Sano", 250, 1.0, 1.0, 12, "2026-11-08"),
         )
         conn.commit()
     finally:

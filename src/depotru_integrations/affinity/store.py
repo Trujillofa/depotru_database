@@ -54,7 +54,8 @@ INSERT INTO {TABLE} (
 
 _SQLITE_SELECT = f"""
 SELECT sku, sku_name, complement_sku, complement_name,
-       baskets, confidence, lift, window_months
+       baskets, confidence, lift, window_months,
+       updated_at AS stored_at
 FROM {TABLE}
 WHERE sku = ?
 ORDER BY baskets DESC, lift DESC, complement_sku
@@ -78,6 +79,9 @@ class AffinityRecord:
     confidence: float
     lift: float
     window_months: int = 12
+    # Sello de escritura de la fila (ISO; el lector valida frescura contra
+    # el contrato de la firma; las filas de demo no lo llevan).
+    stored_at: str = ""
 
 
 class AffinityStore(Protocol):
@@ -104,15 +108,17 @@ def _as_record(row: Mapping[str, object], window_months: int) -> AffinityRecord:
         stored_window = int(str(row["window_months"] or window_months))
     except (KeyError, IndexError):
         stored_window = window_months
+    mapping = dict(row)
     return AffinityRecord(
-        sku=str(row["sku"] or "").strip(),
-        complement_sku=str(row["complement_sku"] or "").strip(),
-        sku_name=str(row["sku_name"] or "").strip(),
-        complement_name=str(row["complement_name"] or "").strip(),
-        baskets=int(str(row["baskets"])),
-        confidence=float(str(row["confidence"])),
-        lift=float(str(row["lift"])),
+        sku=str(mapping.get("sku") or "").strip(),
+        complement_sku=str(mapping.get("complement_sku") or "").strip(),
+        sku_name=str(mapping.get("sku_name") or "").strip(),
+        complement_name=str(mapping.get("complement_name") or "").strip(),
+        baskets=int(str(mapping["baskets"])),
+        confidence=float(str(mapping["confidence"])),
+        lift=float(str(mapping["lift"])),
         window_months=stored_window,
+        stored_at=str(mapping.get("stored_at") or ""),
     )
 
 
