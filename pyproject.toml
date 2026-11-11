@@ -106,7 +106,7 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "black==23.12.1",
     "flake8>=4.0.0",
-    "mypy>=0.950",
+    "mypy>=1.8,<2",
     "isort>=5.12.0",
     "pre-commit>=2.20.0",
 ]
@@ -134,7 +134,7 @@ all = [
     "pytest-cov>=4.0.0",
     "black==23.12.1",
     "flake8>=4.0.0",
-    "mypy>=0.950",
+    "mypy>=1.8,<2",
     "isort>=5.12.0",
     "pre-commit>=2.20.0",
     "jupyter>=1.0.0",
@@ -157,6 +157,7 @@ depotru-monday-cash = "business_analyzer.jobs.monday_cash_pack:main"
 depotru-akzonobel-core-lines = "business_analyzer.jobs.akzonobel_core_lines:main"
 depotru-mine-chat-guides = "business_analyzer.jobs.chat_log_guides:main"
 depotru-cross-sell-affinity = "business_analyzer.jobs.cross_sell_affinity:main"
+depotru-tsol-export = "business_analyzer.reports.tsol_export:main"
 
 [project.urls]
 Homepage = "https://github.com/Trujillofa/depotru_database"
@@ -195,37 +196,8 @@ exclude = ["tests*"]
 # Pytest Configuration
 # ============================================================================
 
-[tool.pytest.ini_options]
-# Test discovery patterns
-python_files = "test_*.py"
-python_classes = "Test*"
-python_functions = "test_*"
-
-# Test paths
-testpaths = ["tests"]
-pythonpath = ["src"]
-
-# Output options
-addopts = [
-    "-v",
-    "--tb=short",
-    "--strict-markers",
-    "--disable-warnings",
-]
-
-# Markers
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests requiring database",
-    "slow: Slow running tests",
-    "requires_db: Tests that require database connection",
-    "requires_api: Tests that require API keys",
-    "module_assistant: Assistant / storefront AI module",
-    "module_crm: CRM module",
-    "module_wms: WMS module",
-    "module_catalog: Catalog / affinity module",
-    "module_b2b: B2B BFF module (quotes/credit/orders)",
-]
+# Single source of truth: pytest.ini (asyncio_mode, norecursedirs, ignore list).
+# Do not duplicate [tool.pytest.ini_options] here; it is silently shadowed.
 
 # ============================================================================
 # Coverage Configuration
@@ -404,27 +376,8 @@ ignore_errors = true
 # Flake8 Configuration (via flake8-pyproject)
 # ============================================================================
 
-[tool.flake8]
-max-line-length = 88
-extend-ignore = [
-    "E203",  # Whitespace before ':' (conflicts with black)
-    "W503",  # Line break before binary operator (conflicts with black)
-]
-exclude = [
-    ".git",
-    "__pycache__",
-    "build",
-    "dist",
-    ".eggs",
-    ".tox",
-    ".venv",
-    "venv",
-    "env",
-]
-per-file-ignores = [
-    "__init__.py:F401",  # Allow unused imports in __init__.py
-]
-
+# Single source of truth: .flake8. The [tool.flake8] section only works with
+# older setuptools-flake8 plugins and is silently shadowed by the .flake8 file.
 # ============================================================================
 # Pre-commit Configuration
 # ============================================================================
