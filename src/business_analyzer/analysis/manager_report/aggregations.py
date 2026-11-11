@@ -30,6 +30,9 @@ def summary_from_sql(row: Dict[str, Any]) -> Dict[str, Any]:
         "total_quantity_sold": total_quantity,
         "order_count": order_count,
         "average_order_value": round(safe_divide(total_with_iva, order_count, 0.0), 2),
+        "average_order_value_without_iva": round(
+            safe_divide(total_without_iva, order_count, 0.0), 2
+        ),
         "average_order_profit": round(safe_divide(gross_profit, order_count, 0.0), 2),
     }
 
@@ -63,6 +66,9 @@ def summary_from_rows(sales_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         "total_quantity_sold": total_quantity,
         "order_count": order_count,
         "average_order_value": round(safe_divide(total_with_iva, order_count, 0.0), 2),
+        "average_order_value_without_iva": round(
+            safe_divide(total_without_iva, order_count, 0.0), 2
+        ),
         "average_order_profit": round(safe_divide(gross_profit, order_count, 0.0), 2),
     }
 

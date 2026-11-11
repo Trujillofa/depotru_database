@@ -383,6 +383,21 @@ class SmartVannaFlaskApp(VannaFlaskApp):
                 return jsonify(manager_report_api_payload(report_result, cache_id))
 
             cache.set(id=cache_id, field="question", value=question)
+            # generate_sql() returns None when the model answers conversationally
+            # instead of producing SQL (e.g. "hello world"). Passing None into
+            # is_sql_valid() raises inside sqlparse and surfaces to the UI as a 500.
+            if not sql or not str(sql).strip():
+                return jsonify(
+                    {
+                        "type": "text",
+                        "id": cache_id,
+                        "text": (
+                            "No pude convertir esa pregunta en una consulta SQL. "
+                            "Intenta formularla sobre ventas, productos, clientes "
+                            "o inventario."
+                        ),
+                    }
+                )
             cache.set(id=cache_id, field="sql", value=sql)
 
             if vn.is_sql_valid(sql=sql):

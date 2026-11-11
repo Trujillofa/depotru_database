@@ -6,23 +6,10 @@ from datetime import datetime
 from html import escape
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from .text import decimal_es as _f
+from .text import shorten as _short
+
 # escape is used throughout build_insights / render_html
-
-
-def _f(value: Any, decimals: int = 0) -> str:
-    try:
-        n = float(value)
-    except (TypeError, ValueError):
-        return "—"
-    if decimals == 0:
-        return f"{n:,.0f}".replace(",", ".")
-    t = f"{n:,.{decimals}f}"
-    return t.replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-def _short(text: Any, n: int = 48) -> str:
-    s = str(text or "")
-    return s if len(s) <= n else s[: n - 1] + "…"
 
 
 def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
@@ -134,7 +121,7 @@ def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
             bits = []
             for c in top_muerto:
                 bits.append(
-                    f"<em>{escape(_short(c.get('Producto'), 40))}</em> "
+                    f"<em>{escape(_short(c.get('Producto'), 90))}</em> "
                     f"({escape(str(c.get('AlmacenCodigo')))}, "
                     f"{_f(c.get('Stock'))} uds)"
                 )
@@ -176,7 +163,7 @@ def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
             cov = row.get("Dias_Cobertura_Comercial")
             cov_txt = _f(cov, 1) if cov is not None else "—"
             lines.append(
-                f"<li><strong>{escape(_short(row.get('Producto'), 55))}</strong> "
+                f"<li><strong>{escape(_short(row.get('Producto'), 90))}</strong> "
                 f"(SKU <code>{escape(str(row.get('SKU')))}</code>) · "
                 f"bodega <strong>{escape(str(row.get('AlmacenCodigo')))}</strong> · "
                 f"stock {_f(row.get('Stock'))} · venta {_f(row.get('Venta_Comercial_Nd'))} · "
@@ -221,7 +208,7 @@ def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
                 f"<li>~<strong>{_f(t.get('Sugerido_Mover'), 1)}</strong> uds "
                 f"<strong>{escape(str(t.get('Desde')))}</strong> → "
                 f"<strong>{escape(str(t.get('Hacia')))}</strong> · "
-                f"<em>{escape(_short(t.get('Producto'), 45))}</em> "
+                f"<em>{escape(_short(t.get('Producto'), 90))}</em> "
                 f"(venta dest. {_f(t.get('Venta_Destino_Nd'))})</li>"
             )
         insights.append(
@@ -263,7 +250,7 @@ def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
         for w in sorted(by_wh, key=lambda x: -int(x.get("QUIEBRE") or 0))[:5]:
             wh_lines.append(
                 f"<li><strong>{escape(str(w.get('AlmacenCodigo')))}</strong> "
-                f"{escape(_short(w.get('AlmacenNombre'), 24))}: "
+                f"{escape(_short(w.get('AlmacenNombre'), 60))}: "
                 f"Q {_f(w.get('QUIEBRE'))} · M {_f(w.get('MUERTO'))} · "
                 f"S {_f(w.get('SOBRESTOCK'))} · stock {_f(w.get('Stock_Total'))} uds"
                 f"{' · cob. med. ' + _f(w.get('Mediana_Dias_Cobertura'), 1) + ' d' if w.get('Mediana_Dias_Cobertura') is not None else ''}"
@@ -301,7 +288,7 @@ def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
         if q_a:
             bits = [
                 f"<code>{escape(str(q.get('SKU')))}</code> "
-                f"{escape(_short(q.get('Producto'), 35))} "
+                f"{escape(_short(q.get('Producto'), 90))} "
                 f"({escape(str(q.get('AlmacenCodigo')))})"
                 for q in q_a
             ]
@@ -331,7 +318,7 @@ def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
         bits = []
         for c in top_cap:
             bits.append(
-                f"<li><strong>{escape(_short(c.get('Producto'), 50))}</strong> · "
+                f"<li><strong>{escape(_short(c.get('Producto'), 90))}</strong> · "
                 f"{escape(str(c.get('AlmacenCodigo')))} · "
                 f"bandera <code>{escape(str(c.get('Bandera')))}</code> · "
                 f"stock {_f(c.get('Stock'))} · venta {_f(c.get('Venta_Comercial_Nd'))} · "
@@ -493,7 +480,7 @@ def render_html(
 
     quiebre_cols = [
         ("SKU", lambda r: f"<code>{escape(str(r.get('SKU') or ''))}</code>", "left"),
-        ("Producto", lambda r: escape(_short(r.get("Producto"))), "left"),
+        ("Producto", lambda r: escape(str(r.get("Producto") or "")), "left"),
         (
             "Bodega",
             lambda r: f"<strong>{escape(str(r.get('AlmacenCodigo') or ''))}</strong>",
@@ -505,7 +492,7 @@ def render_html(
     ]
     capital_cols = [
         ("SKU", lambda r: f"<code>{escape(str(r.get('SKU') or ''))}</code>", "left"),
-        ("Producto", lambda r: escape(_short(r.get("Producto"))), "left"),
+        ("Producto", lambda r: escape(str(r.get("Producto") or "")), "left"),
         ("Bodega", lambda r: escape(str(r.get("AlmacenCodigo") or "")), "center"),
         ("Stock", lambda r: _f(r.get("Stock")), "num"),
         ("Venta", lambda r: _f(r.get("Venta_Comercial_Nd")), "num"),
@@ -514,7 +501,7 @@ def render_html(
     ]
     transfer_cols = [
         ("SKU", lambda r: f"<code>{escape(str(r.get('SKU') or ''))}</code>", "left"),
-        ("Producto", lambda r: escape(_short(r.get("Producto"), 40)), "left"),
+        ("Producto", lambda r: escape(str(r.get("Producto") or "")), "left"),
         ("Desde", lambda r: escape(str(r.get("Desde") or "")), "center"),
         ("Hacia", lambda r: escape(str(r.get("Hacia") or "")), "center"),
         ("Stock origen", lambda r: _f(r.get("Stock_Origen")), "num"),
@@ -529,7 +516,7 @@ def render_html(
             "center",
         ),
         ("SKU", lambda r: f"<code>{escape(str(r.get('SKU') or ''))}</code>", "left"),
-        ("Producto", lambda r: escape(_short(r.get("Producto"))), "left"),
+        ("Producto", lambda r: escape(str(r.get("Producto") or "")), "left"),
         ("Venta", lambda r: _f(r.get("Venta_Comercial_Nd")), "num"),
         ("Stock", lambda r: _f(r.get("Stock")), "num"),
         (

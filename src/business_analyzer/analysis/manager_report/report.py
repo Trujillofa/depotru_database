@@ -274,6 +274,19 @@ class ManagerSalesReport(ReportRecommendationsMixin):
         return budget_vs_actual_from_sql(payload)
 
     def _calculate_contabilidad(self) -> Dict[str, Any]:
+        if self.branch_document_code:
+            return {
+                "available": False,
+                "note": "Contabilidad ERP (Balance y PyG) solo se incluye en el "
+                "informe gerencial consolidado.",
+                "period": {"start": self.start_date, "end": self.end_date},
+                "summary": {},
+                "pyg_summary": {},
+                "conciliacion_ingresos": {},
+                "pyg_clase": [],
+                "gastos_centro": [],
+                "top_gastos": [],
+            }
         if not self.use_j3system:
             return {
                 "available": False,
