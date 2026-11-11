@@ -105,7 +105,7 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "black==23.12.1",
     "flake8>=4.0.0",
-    "mypy>=0.950",
+    "mypy>=1.8,<2",
     "isort>=5.12.0",
     "pre-commit>=2.20.0",
 ]
@@ -133,7 +133,7 @@ all = [
     "pytest-cov>=4.0.0",
     "black==23.12.1",
     "flake8>=4.0.0",
-    "mypy>=0.950",
+    "mypy>=1.8,<2",
     "isort>=5.12.0",
     "pre-commit>=2.20.0",
     "jupyter>=1.0.0",
@@ -188,37 +188,8 @@ exclude = ["tests*"]
 # ============================================================================
 # Pytest Configuration
 # ============================================================================
-
-[tool.pytest.ini_options]
-# Test discovery patterns
-python_files = "test_*.py"
-python_classes = "Test*"
-python_functions = "test_*"
-
-# Test paths
-testpaths = ["tests"]
-pythonpath = ["src"]
-
-# Output options
-addopts = [
-    "-v",
-    "--tb=short",
-    "--strict-markers",
-    "--disable-warnings",
-]
-
-# Markers
-markers = [
-    "unit: Unit tests",
-    "integration: Integration tests requiring database",
-    "slow: Slow running tests",
-    "requires_db: Tests that require database connection",
-    "requires_api: Tests that require API keys",
-    "module_assistant: Assistant / storefront AI module",
-    "module_crm: CRM module",
-    "module_wms: WMS module",
-    "module_catalog: Catalog / affinity module",
-]
+# Single source of truth: pytest.ini (asyncio_mode, norecursedirs, ignore list).
+# Do not duplicate [tool.pytest.ini_options] here; it is silently shadowed.
 
 # ============================================================================
 # Coverage Configuration
@@ -379,29 +350,10 @@ module = [
 ignore_errors = true
 
 # ============================================================================
-# Flake8 Configuration (via flake8-pyproject)
+# Flake8 Configuration
 # ============================================================================
-
-[tool.flake8]
-max-line-length = 88
-extend-ignore = [
-    "E203",  # Whitespace before ':' (conflicts with black)
-    "W503",  # Line break before binary operator (conflicts with black)
-]
-exclude = [
-    ".git",
-    "__pycache__",
-    "build",
-    "dist",
-    ".eggs",
-    ".tox",
-    ".venv",
-    "venv",
-    "env",
-]
-per-file-ignores = [
-    "__init__.py:F401",  # Allow unused imports in __init__.py
-]
+# Single source of truth: .flake8. The [tool.flake8] section only works with
+# flake8-pyproject, which is not installed, so a duplicate here is misleading.
 
 # ============================================================================
 # Pre-commit Configuration

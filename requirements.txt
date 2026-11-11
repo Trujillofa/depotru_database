@@ -49,7 +49,7 @@ pytest>=7.0.0               # Testing framework
 pytest-cov>=4.0.0           # Test coverage
 black>=22.0.0               # Code formatting
 flake8>=4.0.0               # Linting
-mypy>=0.950                 # Type checking
+mypy>=1.8,<2               # Type checking
 isort>=5.12.0               # Import sorting
 
 # Jupyter (Optional - for notebooks)
