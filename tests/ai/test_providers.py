@@ -76,7 +76,8 @@ class TestDeepSeekProvider:
         assert DeepSeekProvider.BASE_URL == "https://api.deepseek.com"
 
     def test_validate_api_key(self):
-        assert DeepSeekProvider.validate_api_key("configured-key") is True
+        assert DeepSeekProvider.validate_api_key("sk-configured-key") is True
+        assert DeepSeekProvider.validate_api_key("xai-abc") is False
         assert DeepSeekProvider.validate_api_key("") is False
 
 

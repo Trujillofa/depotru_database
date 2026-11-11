@@ -69,8 +69,8 @@ def create_ai_client(provider: str = None):
     Create AI client based on provider selection.
 
     Args:
-        provider: AI provider name (grok, openai, anthropic, ollama)
-                 Defaults to Config.AI_PROVIDER
+        provider: AI provider name (grok, openai, deepseek, anthropic, ollama,
+                 openrouter, groq, commandcode)
 
     Returns:
         Tuple of (client, config_dict, provider_type) for Vanna initialization
@@ -101,6 +101,34 @@ def create_ai_client(provider: str = None):
             "base_url": Config.DEEPSEEK_BASE_URL,
         }
         return client, config, "openai"
+
+    elif provider == "groq":
+        client = OpenAI(
+            api_key=Config.GROQ_API_KEY,
+            base_url=Config.GROQ_BASE_URL,
+        )
+        config = {
+            "model": Config.GROQ_MODEL,
+            "base_url": Config.GROQ_BASE_URL,
+        }
+        return client, config, "openai"
+
+    elif provider == "openrouter":
+        client = OpenAI(
+            api_key=Config.OPENROUTER_API_KEY,
+            base_url=Config.OPENROUTER_BASE_URL,
+        )
+        config = {
+            "model": Config.OPENROUTER_MODEL,
+            "base_url": Config.OPENROUTER_BASE_URL,
+        }
+        return client, config, "openai"
+
+    elif provider == "commandcode":
+        from business_analyzer.ai.commandcode_client import CommandCodeClient
+
+        model = os.getenv("COMMANDCODE_MODEL", "deepseek/deepseek-v4.1-flash")
+        return CommandCodeClient(model=model), {"model": model}, "openai"
 
     elif provider == "anthropic":
         config = {

@@ -33,7 +33,7 @@ class DeepSeekProvider:
 
     @staticmethod
     def validate_api_key(api_key: str) -> bool:
-        return bool(api_key and api_key.strip())
+        return bool(api_key) and api_key.startswith("sk-")
 
 
 def create_deepseek_client() -> Tuple[OpenAI, dict, str]:

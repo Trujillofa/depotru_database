@@ -2,7 +2,7 @@
 AI package for Business Analyzer.
 
 Multi-provider AI support for natural language to SQL conversion.
-Supports: Grok (xAI), OpenAI, Anthropic Claude, Ollama (local)
+Supports: Grok (xAI), OpenAI, DeepSeek, Anthropic Claude, Ollama (local)
 
 Usage:
     from business_analyzer.ai import AIVanna, create_vanna_instance
@@ -14,9 +14,10 @@ Usage:
     vn = create_vanna_instance(provider="openai")
 
 Environment Variables:
-    AI_PROVIDER: Provider selection (grok, openai, anthropic, ollama)
+    AI_PROVIDER: Provider selection (grok, openai, deepseek, anthropic, ollama)
     GROK_API_KEY: xAI Grok API key
     OPENAI_API_KEY: OpenAI API key
+    DEEPSEEK_API_KEY: DeepSeek API key
     ANTHROPIC_API_KEY: Anthropic API key
     OLLAMA_HOST: Ollama server URL (default: http://localhost:11434)
     OLLAMA_MODEL: Ollama model name (default: mistral)
@@ -49,7 +50,13 @@ from .formatting import (
 from .insights import generate_insights
 
 # Provider modules
-from .providers import AnthropicProvider, GrokProvider, OllamaProvider, OpenAIProvider
+from .providers import (
+    AnthropicProvider,
+    DeepSeekProvider,
+    GrokProvider,
+    OllamaProvider,
+    OpenAIProvider,
+)
 
 # Training utilities
 from .training import (
@@ -91,6 +98,7 @@ __all__ = [
     # Providers
     "GrokProvider",
     "OpenAIProvider",
+    "DeepSeekProvider",
     "AnthropicProvider",
     "OllamaProvider",
     # Factory
@@ -103,7 +111,7 @@ def create_vanna_instance(provider: str = None) -> AIVanna:
     Factory function to create a Vanna AI instance.
 
     Args:
-        provider: AI provider name (grok, openai, anthropic, ollama).
+        provider: AI provider name (grok, openai, deepseek, anthropic, ollama).
                 If None, uses AI_PROVIDER environment variable.
 
     Returns:
