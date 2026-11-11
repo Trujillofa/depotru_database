@@ -19,12 +19,14 @@ import sys
 from typing import Any, Dict
 
 try:
+    from ..ai.formatting import format_integer
     from ..analysis.manager_report import ManagerSalesReport
     from ..core.database import ConnectionType
     from .ai_insights import ReportAIInsights
     from .html_generator import HTMLReportGenerator
     from .matplotlib_charts import ReportChartGenerator
     from .pdf_generator import PDFReportGenerator
+    from .text import percent_es, shorten, strip_markdown
 except ImportError:
     import sys
     from pathlib import Path
@@ -32,12 +34,14 @@ except ImportError:
     src_path = Path(__file__).parent.parent.parent
     if str(src_path) not in sys.path:
         sys.path.insert(0, str(src_path))
+    from business_analyzer.ai.formatting import format_integer
     from business_analyzer.analysis.manager_report import ManagerSalesReport
     from business_analyzer.core.database import ConnectionType
     from business_analyzer.reports.ai_insights import ReportAIInsights
     from business_analyzer.reports.html_generator import HTMLReportGenerator
     from business_analyzer.reports.matplotlib_charts import ReportChartGenerator
     from business_analyzer.reports.pdf_generator import PDFReportGenerator
+    from business_analyzer.reports.text import percent_es, shorten, strip_markdown
 
 
 def _print_summary(report: Dict[str, Any]) -> None:
@@ -57,7 +61,7 @@ def _print_summary(report: Dict[str, Any]) -> None:
     print(f"  Alcance:      {scope}")
     print("=" * 60)
     print(f"  Período:      {meta.get('start_date', '')} a {meta.get('end_date', '')}")
-    print(f"  Registros:    {meta.get('record_count', 0):,}")
+    print(f"  Registros:    {format_integer(meta.get('record_count', 0))}")
     print("-" * 60)
 
     if not summary:
@@ -76,13 +80,19 @@ def _print_summary(report: Dict[str, Any]) -> None:
     print("-" * 60)
     print(f"  Unidades Vendidas:        {formatted.get('total_quantity_sold', '0')}")
     print(f"  N° de Transacciones:      {formatted.get('order_count', '0')}")
-    print(f"  Ticket Promedio:          {formatted.get('average_order_value', '$0')}")
+    print(f"  Ticket Promedio (IVA):    {formatted.get('average_order_value', '$0')}")
+    print(
+        f"  Ticket Promedio (sin IVA):"
+        f" {formatted.get('average_order_value_without_iva', '$0')}"
+    )
     print(f"  Ganancia por Pedido:      {formatted.get('average_order_profit', '$0')}")
     print("=" * 60)
 
 
 def _print_ai_insights(ai_data: Dict[str, Any]) -> None:
-    narrative = ai_data.get("ai_analysis_text")
+    narrative = strip_markdown(ai_data.get("ai_analysis_text"))
+    if not narrative:
+        narrative = ai_data.get("ai_analysis_text")
     if narrative:
         print("\n  🤖 ANÁLISIS INTELIGENTE")
         print("-" * 60)
@@ -126,7 +136,7 @@ def _print_top_products(report: Dict[str, Any]) -> None:
     print(f"  {'#':<4} {'Producto':<30} {'Revenue':<14} {'Qty':<8} {'Margen':<10}")
     print("-" * 80)
     for i, p in enumerate(products, 1):
-        name = p["product_name"][:28]
+        name = shorten(p["product_name"], 28)
         print(
             f"  {i:<4} {name:<30} {p['total_revenue']:<14} {p['total_quantity']:<8} {p['profit_margin_pct']:<10}"
         )
@@ -145,7 +155,7 @@ def _print_top_customers(report: Dict[str, Any]) -> None:
     )
     print("-" * 90)
     for i, c in enumerate(customers, 1):
-        name = c["customer_name"][:28]
+        name = shorten(c["customer_name"], 28)
         print(
             f"  {i:<4} {name:<30} {c['total_revenue']:<14} {c.get('profit','0'):<14} {c.get('profit_margin_pct','0'):<8} {c['total_orders']:<8}"
         )
@@ -162,7 +172,7 @@ def _print_category_breakdown(report: Dict[str, Any]) -> None:
     print(f"  {'Categoría':<40} {'Revenue':<14} {'Margen':<10}")
     print("-" * 80)
     for c in categories[:10]:
-        path = c["category_path"][:38]
+        path = shorten(c["category_path"], 38)
         print(f"  {path:<40} {c['total_revenue']:<14} {c['profit_margin_pct']:<10}")
     print("-" * 80)
 
@@ -185,7 +195,7 @@ def _print_inventory_insights(report: Dict[str, Any]) -> None:
                 if item["current_stock"] is not None
                 else "N/A"
             )
-            name = item["product_name"][:30]
+            name = shorten(item["product_name"], 30)
             print(
                 f"      {name:<32} Vendido: {item['quantity_sold']:<6} Stock: {stock}"
             )
@@ -195,7 +205,7 @@ def _print_inventory_insights(report: Dict[str, Any]) -> None:
     if fast_movers:
         print("\n  🔥 Productos Más Vendidos del Mes:")
         for item in fast_movers[:5]:
-            name = item["product_name"][:30]
+            name = shorten(item["product_name"], 30)
             print(f"      {name:<32} Vendido: {item['quantity_sold']}")
     print("-" * 80)
 
@@ -212,7 +222,7 @@ def _print_vendor_sales(report: Dict[str, Any]) -> None:
     )
     print("-" * 80)
     for i, v in enumerate(vendors[:15], 1):
-        name = v["vendor_name"][:20]
+        name = shorten(v["vendor_name"], 20)
         print(
             f"  {i:<3} {name:<22} {v['total_revenue']:<14} {v['revenue_pct']:<8} {v['profit_margin_pct']:<10} {v['transactions']:<8}"
         )
@@ -231,7 +241,7 @@ def _print_marca_sales(report: Dict[str, Any]) -> None:
     )
     print("-" * 80)
     for i, m in enumerate(marcas[:15], 1):
-        name = m["marca_name"][:20]
+        name = shorten(m["marca_name"], 20)
         print(
             f"  {i:<3} {name:<22} {m['total_revenue']:<14} {m['revenue_pct']:<8} {m['profit_margin_pct']:<10} {m['transactions']:<8}"
         )
@@ -246,19 +256,25 @@ def _print_suggested_orders(report: Dict[str, Any]) -> None:
     print("\n  📋 PEDIDOS SUGERIDOS POR CLIENTE")
     print("-" * 110)
     for s in suggestions[:5]:
-        print(f"  🏪 {s['customer_name'][:35]}")
-        print(f"     Total sugerido: {s['total_suggested']} unidades")
+        total = _as_int(s.get("total_suggested", 0))
+        print(f"  🏪 {s['customer_name']}")
+        print(
+            f"     Total sugerido: {s['total_suggested']} "
+            f"{_plural(total, 'unidad', 'unidades')}"
+        )
         for i in s.get("suggested_items", [])[:5]:
-            stock = i.get("current_stock", "N/A")
+            stock = str(i.get("current_stock") or "").strip()
             vendor = i.get("primary_vendor", "") or ""
             marca = i.get("marca", "") or ""
-            print(f"     ▶ {i['product_name'][:35]}")
+            print(f"     ▶ {i['product_name']}")
             if marca:
-                print(f"       Marca: {marca[:20]}")
+                print(f"       Marca: {marca}")
             if vendor:
-                print(f"       Proveedor: {vendor[:20]}")
+                print(f"       Proveedor: {vendor}")
+            stock_txt = "" if stock in ("", "N/A", "None") else f"Stock: {stock:<6} "
             print(
-                f"       Stock: {stock:<6} Promedio/mes: {i['avg_monthly']:<8} Sugerido: {i['suggested_order']}"
+                f"       {stock_txt}Promedio/mes: {i['avg_monthly']:<8} "
+                f"Sugerido: {i['suggested_order']}"
             )
         print("-" * 110)
 
@@ -272,10 +288,8 @@ def _print_cross_sell(report: Dict[str, Any]) -> None:
         print("\n  🔗 RECOMENDACIONES DE COMPRA CRUZADA")
         print("-" * 80)
         for r in cross_sell[:5]:
-            with_recom = [
-                cr["product_name"][:25] for cr in r.get("recommended_with", [])
-            ]
-            print(f"  📦 {r['product_name'][:30]}")
+            with_recom = [cr["product_name"] for cr in r.get("recommended_with", [])]
+            print(f"  📦 {r['product_name']}")
             print(f"     Los compradores también llevan: {', '.join(with_recom)}")
         print("-" * 80)
 
@@ -285,66 +299,80 @@ def _print_cross_sell(report: Dict[str, Any]) -> None:
         print(f"  {'Producto':<35} {'Margen':<10} {'Vendidos':<10}")
         print("-" * 80)
         for p in high_margin[:8]:
-            name = p["product_name"][:33]
+            name = shorten(p["product_name"], 33)
             print(f"  {name:<35} {p['margin_pct']:<10} {p['quantity_sold']:<10}")
         print("-" * 80)
 
 
 def _print_customer_vendor_mix(report: Dict[str, Any]) -> None:
-    mix = report.get("customer_vendor_mix", [])
+    mix = report.get("formatted", {}).get("customer_vendor_mix", [])
     if not mix:
         return
     print("\n  🔗 MIX CLIENTES-PROVEEDORES (Top)")
     print("-" * 80)
     for m in mix[:5]:
+        vendor_count = _as_int(m.get("vendor_count", 0))
         print(
-            f"  🏪 {m['customer_name'][:30]} — {m['vendor_count']} proveedores, ${m['total_revenue']:,.0f}".replace(
-                ",", "."
-            )
+            f"  🏪 {m['customer_name']} — {m['vendor_count']} "
+            f"{_plural(vendor_count, 'proveedor', 'proveedores')}, "
+            f"{m['total_revenue']}"
         )
         tops = ", ".join(
-            [
-                f"{v['vendor_name'][:12]}({v['pct']:.0f}%)"
-                for v in m.get("top_vendors", [])[:3]
-            ]
+            f"{v['vendor_name']} ({v['pct']})" for v in m.get("top_vendors", [])[:3]
         )
         print(f"     Principales: {tops}")
     print("-" * 80)
 
 
 def _print_procurement_plan(report: Dict[str, Any]) -> None:
-    plan = report.get("procurement_plan", [])
+    plan = report.get("formatted", {}).get("procurement_plan", [])
     if not plan:
         return
     print("\n  🛒 PLAN DE COMPRAS / ABASTECIMIENTO POR PROVEEDOR")
     print("-" * 90)
     for p in plan[:6]:
         print(
-            f"  🏭 {p['vendor_name'][:28]} | Unidades sugeridas: {p['total_suggested_units']} | Clientes afectados: {p['affected_customers']}"
+            f"  🏭 {p['vendor_name']} | Unidades: {p['total_suggested_units']} "
+            f"| Clientes: {p['affected_customers']}"
         )
         for kp in p.get("key_products", [])[:3]:
+            affected = _as_int(kp.get("affected_customers", 0))
             print(
-                f"     • {kp['product_name'][:30]}: {kp['suggested_order']} uds (de {kp['affected_customers']} clientes)"
+                f"     • {kp['product_name']}: {kp['suggested_order']} uds "
+                f"(de {kp['affected_customers']} "
+                f"{_plural(affected, 'cliente', 'clientes')})"
             )
     print("-" * 90)
 
 
 def _print_abc_analysis(report: Dict[str, Any]) -> None:
-    abc = report.get("abc_analysis", {})
+    abc = report.get("formatted", {}).get("abc_analysis") or report.get(
+        "abc_analysis", {}
+    )
     if not abc:
         return
+    labels = {
+        "products": "PRODUCTOS",
+        "customers": "CLIENTES",
+        "vendors": "PROVEEDORES",
+    }
     print("\n  📊 ANÁLISIS ABC (80/15/5)")
     print("-" * 80)
-    for dim in ["products", "customers", "vendors"]:
+    for dim, label in labels.items():
         d = abc.get(dim, {})
         if not d:
             continue
-        print(f"  {dim.upper()}:")
-        for k in ["a", "b", "c"]:
-            if k in d:
-                print(
-                    f"    {k.upper()}: {d[k].get('count',0)} items, {d[k].get('revenue_pct',0)}% revenue"
-                )
+        print(f"  {label}:")
+        for k in ("a", "b", "c"):
+            bucket = d.get(k)
+            if not bucket:
+                continue
+            pct = bucket.get("revenue_pct", 0)
+            pct_txt = pct if isinstance(pct, str) else percent_es(pct, 1)
+            print(
+                f"    {k.upper()}: {format_integer(bucket.get('count', 0))} ítems, "
+                f"{pct_txt} de facturación"
+            )
     print("-" * 80)
 
 
@@ -408,18 +436,34 @@ def _print_contabilidad(report: Dict[str, Any]) -> None:
 
 
 def _print_stock_replenishment(report: Dict[str, Any]) -> None:
-    repl = report.get("stock_replenishment_suggestions", []) or report.get(
-        "formatted", {}
-    ).get("stock_replenishment_suggestions", [])
+    repl = report.get("formatted", {}).get("stock_replenishment_suggestions")
+    if not repl:
+        repl = report.get("stock_replenishment_suggestions", [])
     if not repl:
         return
     print("\n  🛒 SUGERENCIAS DE REABASTECIMIENTO (STOCK BAJO - J3)")
     print("-" * 80)
     for s in repl[:6]:
+        marca = s.get("marca") or s.get("proveedor") or "—"
+        stock = s.get("current_stock")
+        stock_txt = "—" if stock in (None, "") else stock
         print(
-            f"  • {s.get('product_name','')[:35]} | Marca: {s.get('marca','')[:12]} | Prov: {s.get('proveedor','')[:12]} | Stock: {s.get('current_stock')} | Vend: {s.get('recent_sold')}"
+            f"  • {s.get('product_name', '')} | Marca: {marca} | "
+            f"Stock: {stock_txt} | Vend: {s.get('recent_sold')}"
         )
     print("-" * 80)
+
+
+def _as_int(value: Any) -> int:
+    """Parse an already-formatted count (``"1.234"``) back to int."""
+    try:
+        return int(str(value).replace(".", "").replace(",", ""))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _plural(count: int, singular: str, plural: str) -> str:
+    return singular if count == 1 else plural
 
 
 def _print_text_report(report: Dict[str, Any], ai_data: Dict[str, Any]) -> None:

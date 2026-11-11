@@ -14,12 +14,16 @@ Usage:
 """
 
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+
+from .text import decimal_es as _decimal_es
+from .text import shorten as _shorten
 
 # Use non-interactive backend for server environments
 matplotlib.use("Agg")
@@ -42,25 +46,41 @@ MONTH_NAMES_ES = {
 
 
 def _format_currency_axis(value: float, _pos: int) -> str:
-    """Format y-axis ticks as Colombian currency (billions/millions)."""
+    """Format axis ticks as Colombian currency without duplicate labels."""
     if value >= 1_000_000_000:
-        return f"${value / 1_000_000_000:.1f}M".replace(".", ",")
+        return f"${_decimal_es(value / 1_000_000_000, 1)}MM"
     if value >= 1_000_000:
-        return f"${value / 1_000_000:.0f}M".replace(".", ",")
+        millions = value / 1_000_000
+        decimals = 0 if abs(millions - round(millions)) < 1e-9 else 1
+        return f"${_decimal_es(millions, decimals)}M"
     if value >= 1_000:
-        return f"${value / 1_000:.0f}K".replace(".", ",")
-    return f"${value:,.0f}".replace(",", ".")
+        return f"${_decimal_es(value / 1_000, 0)}K"
+    return f"${_decimal_es(value, 0)}"
 
 
 def _format_currency_compact(value: float) -> str:
     """Compact currency for chart labels."""
     if value >= 1_000_000_000:
-        return f"${value / 1_000_000_000:.1f}MM".replace(".", ",")
+        return f"${_decimal_es(value / 1_000_000_000, 1)}MM"
     if value >= 1_000_000:
-        return f"${value / 1_000_000:.1f}M".replace(".", ",")
+        return f"${_decimal_es(value / 1_000_000, 1)}M"
     if value >= 1_000:
-        return f"${value / 1_000:.0f}K".replace(".", ",")
-    return f"${value:,.0f}".replace(",", ".")
+        return f"${_decimal_es(value / 1_000, 0)}K"
+    return f"${_decimal_es(value, 0)}"
+
+
+def _format_percent_compact(value: float) -> str:
+    return f"{_decimal_es(value, 1)}%"
+
+
+def _category_label(path: Any, limit: int = 26) -> str:
+    """Build a compact category label, collapsing duplicated path segments."""
+    parts = [part.strip() for part in str(path).split(">") if part.strip()]
+    deduped: List[str] = []
+    for part in parts:
+        if not deduped or deduped[-1].lower() != part.lower():
+            deduped.append(part)
+    return _shorten(" > ".join(deduped) if deduped else str(path), limit)
 
 
 class ReportChartGenerator:
@@ -149,10 +169,14 @@ class ReportChartGenerator:
         ax.fill_between(x, profit, alpha=0.15, color="#16a34a")
         ax.fill_between(x, revenue, alpha=0.08, color="#2563eb")
 
-        # Highlight weekends (every 6th and 7th day approx)
-        for i in range(len(x)):
-            if i % 7 in (5, 6):
-                ax.axvspan(i - 0.4, i + 0.4, alpha=0.06, color="red")
+        # Highlight weekends using the real calendar dates
+        for i, day_row in enumerate(trend):
+            try:
+                day = datetime.strptime(str(day_row["date"])[:10], "%Y-%m-%d")
+            except (KeyError, ValueError):
+                continue
+            if day.weekday() >= 5:
+                ax.axvspan(i - 0.4, i + 0.4, alpha=0.08, color="red")
 
         ax.set_xlabel("Día del Mes")
         ax.set_ylabel("Valor ($)")
@@ -178,7 +202,7 @@ class ReportChartGenerator:
             return None
 
         top = products[:10]
-        names = [p["product_name"][:35] for p in reversed(top)]
+        names = [_shorten(p["product_name"], 38) for p in reversed(top)]
         revenue = [p["total_revenue"] for p in reversed(top)]
         margins = [p["profit_margin_pct"] for p in reversed(top)]
 
@@ -195,16 +219,19 @@ class ReportChartGenerator:
         ax1.xaxis.set_major_formatter(plt.FuncFormatter(_format_currency_axis))
         ax1.set_title("Top 10 Productos por Facturación", fontweight="bold", pad=15)
 
-        # Add value labels on bars
+        # Add value labels in a right-hand column so the margin line cannot cover them
+        max_revenue = max(revenue) if revenue else 0
+        label_x = max_revenue * 1.02
         for bar, val in zip(bars, revenue):
             ax1.text(
-                bar.get_width() + max(revenue) * 0.01,
+                label_x,
                 bar.get_y() + bar.get_height() / 2,
                 _format_currency_compact(val),
                 va="center",
                 fontsize=8,
                 color="#1e3a5f",
             )
+        ax1.set_xlim(0, max_revenue * 1.14 if max_revenue else 1)
 
         # Margin line on secondary axis
         ax2 = ax1.twiny()
@@ -241,14 +268,21 @@ class ReportChartGenerator:
             return None
 
         top = customers[:10]
-        names = [c["customer_name"][:30] for c in reversed(top)]
+        names = [_shorten(c["customer_name"], 40) for c in reversed(top)]
         revenue = [c["total_revenue"] for c in reversed(top)]
         orders = [c["total_orders"] for c in reversed(top)]
 
         fig, ax1 = plt.subplots(figsize=(11, 6))
         y = np.arange(len(names))
 
-        bars = ax1.barh(y, revenue, color="#8b5cf6", alpha=0.85, height=0.6)
+        bars = ax1.barh(
+            y,
+            revenue,
+            color="#8b5cf6",
+            alpha=0.85,
+            height=0.6,
+            label="Facturación",
+        )
         ax1.set_yticks(y)
         ax1.set_yticklabels(names, fontsize=9)
         ax1.set_xlabel("Facturación ($)")
@@ -263,6 +297,12 @@ class ReportChartGenerator:
                 va="center",
                 fontsize=8,
                 color="#4c1d95",
+                bbox=dict(
+                    boxstyle="round,pad=0.15",
+                    facecolor="white",
+                    alpha=0.8,
+                    edgecolor="none",
+                ),
             )
 
         ax2 = ax1.twiny()
@@ -296,7 +336,7 @@ class ReportChartGenerator:
         if not vendors:
             return None
         top = vendors[:10]
-        names = [v["vendor_name"][:22] for v in reversed(top)]
+        names = [_shorten(v["vendor_name"], 24) for v in reversed(top)]
         revenue = [v["total_revenue"] for v in reversed(top)]
         margins = [v.get("profit_margin_pct", 0) for v in reversed(top)]
 
@@ -309,39 +349,16 @@ class ReportChartGenerator:
         ax.xaxis.set_major_formatter(plt.FuncFormatter(_format_currency_axis))
         ax.set_title("Top Proveedores por Facturación", fontweight="bold", pad=12)
 
-        for bar, val in zip(bars, revenue):
+        pad = max(revenue) * 0.015 if max(revenue) > 0 else 0
+        for bar, val, margin in zip(bars, revenue, margins):
             ax.text(
-                bar.get_width() + max(revenue) * 0.015 if max(revenue) > 0 else 0,
+                bar.get_width() + pad,
                 bar.get_y() + bar.get_height() / 2,
-                _format_currency_compact(val),
+                f"{_format_currency_compact(val)} · {_format_percent_compact(margin)}",
                 va="center",
                 fontsize=8,
                 color="#0369a1",
             )
-
-        # annotate margin on right
-        for i, (bar, m) in enumerate(zip(bars, margins)):
-            ax.text(
-                bar.get_width() * 0.02,
-                bar.get_y() + bar.get_height() / 2,
-                f"{m:.1f}%",
-                va="center",
-                fontsize=7,
-                color="#166534",
-                fontweight="bold",
-            )
-
-        ax.text(
-            0.99,
-            0.02,
-            "etiqueta = margen %",
-            transform=ax.transAxes,
-            ha="right",
-            va="bottom",
-            fontsize=7,
-            color="#166534",
-            alpha=0.7,
-        )
 
         plt.tight_layout()
         path = str(self.output_dir / "vendor_sales.png")
@@ -363,33 +380,52 @@ class ReportChartGenerator:
             cat_revenue[top_cat] = cat_revenue.get(top_cat, 0.0) + c["total_revenue"]
 
         sorted_cats = sorted(cat_revenue.items(), key=lambda x: x[1], reverse=True)
-        top = sorted_cats[:8]
-        others_sum = sum(v for _, v in sorted_cats[8:])
-        if others_sum > 0:
-            top.append(("Otros", others_sum))
+        total_rev = sum(v for _, v in sorted_cats) or 1.0
+        grouped: List[tuple] = []
+        minor_total = 0.0
+        for name, value in sorted_cats:
+            if grouped and value / total_rev < 0.02:
+                minor_total += value
+            else:
+                grouped.append((name, value))
+        if minor_total > 0:
+            grouped.append(
+                (f"Resto ({len(sorted_cats) - len(grouped)} cat.)", minor_total)
+            )
+        grouped.sort(key=lambda item: item[1], reverse=True)
 
-        labels = [k[:20] for k, _ in top]
-        values = [v for _, v in top]
+        labels = [_shorten(k, 28) for k, _ in grouped]
+        values = [v for _, v in grouped]
         colors = plt.cm.Set3(np.linspace(0, 1, len(labels)))
 
-        fig, ax = plt.subplots(figsize=(9, 9))
-        wedges, texts, autotexts = ax.pie(
+        fig, ax = plt.subplots(figsize=(9, 7))
+        wedges, _texts, autotexts = ax.pie(
             values,
-            labels=labels,
             colors=colors,
-            autopct="%1.1f%%",
+            autopct=lambda pct: _format_percent_compact(pct) if pct >= 3 else "",
             startangle=90,
-            pctdistance=0.8,
+            pctdistance=0.75,
             wedgeprops={"edgecolor": "white", "linewidth": 2},
         )
         for autotext in autotexts:
             autotext.set_color("white")
             autotext.set_fontweight("bold")
             autotext.set_fontsize(9)
-        for text in texts:
-            text.set_fontsize(10)
 
-        ax.set_title("Distribución de Ventas por Categoría", fontweight="bold", pad=20)
+        legend_labels = [
+            f"{label} — {_format_percent_compact(value / total_rev * 100)}"
+            for label, value in zip(labels, values)
+        ]
+        ax.legend(
+            wedges,
+            legend_labels,
+            loc="center left",
+            bbox_to_anchor=(1.0, 0.5),
+            frameon=False,
+            fontsize=10,
+        )
+
+        ax.set_title("Distribución de Ventas por Categoría", fontweight="bold", pad=18)
         plt.tight_layout()
         path = str(self.output_dir / "category_pie.png")
         fig.savefig(path, dpi=self.dpi, bbox_inches="tight")
@@ -403,7 +439,7 @@ class ReportChartGenerator:
             return None
 
         top = categories[:10]
-        names = [c["category_path"].replace(" > ", "\n")[:25] for c in top]
+        names = [_category_label(c["category_path"]) for c in top]
         revenue = [c["total_revenue"] for c in top]
         margins = [c["profit_margin_pct"] for c in top]
 
@@ -468,7 +504,7 @@ class ReportChartGenerator:
         revenue = [p["total_revenue"] for p in products]
         margins = [p["profit_margin_pct"] for p in products]
         quantities = [p["total_quantity"] for p in products]
-        names = [p["product_name"][:20] for p in products]
+        names = [_shorten(p["product_name"], 30) for p in products]
 
         fig, ax = plt.subplots(figsize=(11, 7))
 
@@ -486,15 +522,27 @@ class ReportChartGenerator:
             linewidth=1.5,
         )
 
-        # Annotate top 5
+        # Annotate top 5, alternating sides so labels do not collide
+        offsets = [(10, 18), (-10, 18), (10, -22), (-10, -22), (10, 40)]
+        max_rev = max(revenue) if revenue else 0
         for i in range(min(5, len(names))):
+            dx, dy = offsets[i % len(offsets)]
+            if revenue[i] == max_rev:
+                dx, dy = -12, 22
             ax.annotate(
                 names[i],
                 (revenue[i], margins[i]),
                 fontsize=8,
-                xytext=(8, 5),
+                xytext=(dx, dy),
+                ha="right" if dx < 0 else "left",
+                va="top" if dy < 0 else "bottom",
                 textcoords="offset points",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.3),
+                bbox=dict(
+                    boxstyle="round,pad=0.3",
+                    facecolor="yellow",
+                    alpha=0.35,
+                    edgecolor="none",
+                ),
                 arrowprops=dict(arrowstyle="->", color="gray", lw=0.5),
             )
 
@@ -506,12 +554,19 @@ class ReportChartGenerator:
             fontweight="bold",
             pad=15,
         )
+        total_revenue = sum(revenue) or 1.0
+        if all("profit" in p for p in products):
+            avg_margin = sum(p["profit"] for p in products) / total_revenue * 100
+            avg_label = "Margen promedio ponderado (top productos)"
+        else:
+            avg_margin = float(np.mean(margins))
+            avg_label = "Margen promedio"
         ax.axhline(
-            y=np.mean(margins),
+            y=avg_margin,
             color="red",
             linestyle="--",
             alpha=0.5,
-            label=f"Margen Promedio: {np.mean(margins):.1f}%",
+            label=f"{avg_label}: {_format_percent_compact(avg_margin)}",
         )
         ax.legend(loc="lower left", framealpha=0.9)
 
@@ -545,7 +600,11 @@ class ReportChartGenerator:
             ),
             ("Costo Total", summary.get("total_cost", 0), "#dc2626"),
             ("Ganancia Bruta", summary.get("gross_profit", 0), "#16a34a"),
-            ("Ticket Promedio", summary.get("average_order_value", 0), "#8b5cf6"),
+            (
+                "Ticket Promedio\n(con IVA)",
+                summary.get("average_order_value", 0),
+                "#8b5cf6",
+            ),
             ("Unidades\nVendidas", summary.get("total_quantity_sold", 0), "#f59e0b"),
         ]
 

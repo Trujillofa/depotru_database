@@ -146,6 +146,10 @@ query_sika.py
 chroma.sqlite3
 [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]/
 
+# Generated cartera / turnover HTML artifacts (served from business_reports/)
+reports/CARTERA_AGING_*.html
+reports/ROTACION_EXISTENCIAS_*.html
+
 # Keep recent KPI reports for documentation (last 4 weeks)
 reports/KPI_CONTROL_BOARD_*.md
 !reports/KPI_CONTROL_BOARD_TEMPLATE.md

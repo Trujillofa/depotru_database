@@ -135,9 +135,43 @@ def test_html_includes_budget_and_marca_real_sections(tmp_path):
     html = out.read_text(encoding="utf-8")
     assert "Presupuesto vs Real" in html
     assert "Ventas por Marca Real" in html
-    assert "Balance y PyG" in html
+    assert "Contabilidad ERP — Balance y PyG (PUC)" in html
     assert "Estado de situación financiera" in html
     assert "Activo (clase 1)" in html
     assert "SALA PRINCIPAL" in html
     assert "SIKA" in html
     assert "Vendedor A" in html
+
+
+def test_html_omits_contabilidad_when_unavailable(tmp_path):
+    data = {
+        "metadata": {"year": 2024, "month_name": "Mayo", "branch_name": "Calle 5"},
+        "summary": {"gross_margin_pct": 13.0},
+        "formatted": {
+            "summary": {
+                "total_revenue_with_iva": "$1",
+                "total_revenue_without_iva": "$1",
+                "gross_profit": "$1",
+                "gross_margin_pct": "13,0%",
+                "total_quantity_sold": "1",
+                "order_count": "1",
+                "average_order_value": "$1",
+                "average_order_profit": "$1",
+            },
+            "contabilidad": {
+                "available": False,
+                "note": (
+                    "Contabilidad ERP (Balance y PyG) solo se incluye en el "
+                    "informe gerencial consolidado."
+                ),
+            },
+            "budget_vs_actual": {"available": False},
+            "marca_sales": [],
+        },
+    }
+    gen = HTMLReportGenerator(data, chart_paths={})
+    out = tmp_path / "report-calle-5.html"
+    gen.generate(str(out))
+    html = out.read_text(encoding="utf-8")
+    assert "Contabilidad ERP — Balance y PyG (PUC)" not in html
+    assert "Estado de situación financiera" not in html

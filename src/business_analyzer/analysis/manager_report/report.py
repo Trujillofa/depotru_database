@@ -274,34 +274,34 @@ class ManagerSalesReport(ReportRecommendationsMixin):
         return budget_vs_actual_from_sql(payload)
 
     def _calculate_contabilidad(self) -> Dict[str, Any]:
+        empty = {
+            "available": False,
+            "period": {"start": self.start_date, "end": self.end_date},
+            "summary": {},
+            "pyg_summary": {},
+            "conciliacion_ingresos": {},
+            "pyg_clase": [],
+            "gastos_centro": [],
+            "top_gastos": [],
+        }
+        if self.branch_document_code:
+            empty["note"] = (
+                "Contabilidad ERP (Balance y PyG) solo se incluye en el "
+                "informe gerencial consolidado."
+            )
+            return empty
         if not self.use_j3system:
-            return {
-                "available": False,
-                "note": "J3System deshabilitado; contabilidad ERP no consultada.",
-                "period": {"start": self.start_date, "end": self.end_date},
-                "summary": {},
-                "pyg_summary": {},
-                "conciliacion_ingresos": {},
-                "pyg_clase": [],
-                "gastos_centro": [],
-                "top_gastos": [],
-            }
+            empty["note"] = "J3System deshabilitado; contabilidad ERP no consultada."
+            return empty
         try:
             runner = ContabilidadRunner(Database())
             raw = runner.build_report(self.start_date, self.end_date)
             return contabilidad_from_runner_report(raw)
         except Exception:
-            return {
-                "available": False,
-                "note": "No fue posible consultar contabilidad ERP (ConMovimiento*).",
-                "period": {"start": self.start_date, "end": self.end_date},
-                "summary": {},
-                "pyg_summary": {},
-                "conciliacion_ingresos": {},
-                "pyg_clase": [],
-                "gastos_centro": [],
-                "top_gastos": [],
-            }
+            empty[
+                "note"
+            ] = "No fue posible consultar contabilidad ERP (ConMovimiento*)."
+            return empty
 
     def generate(self) -> Dict[str, Any]:
         """Generate the complete manager sales report with all sections."""

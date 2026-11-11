@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .text import markdown_to_reportlab, money_compact, shorten, strip_emoji
+
 try:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
@@ -44,17 +46,6 @@ except ImportError:
     getSampleStyleSheet = ParagraphStyle = None  # type: ignore
     cm = mm = 1  # type: ignore
     Image = PageBreak = Paragraph = SimpleDocTemplate = Spacer = Table = TableStyle = None  # type: ignore
-
-
-def _format_currency_label(value: float) -> str:
-    """Compact currency for PDF labels."""
-    if value >= 1_000_000_000:
-        return f"${value / 1_000_000_000:.1f}MM".replace(".", ",")
-    if value >= 1_000_000:
-        return f"${value / 1_000_000:.0f}M".replace(".", ",")
-    if value >= 1_000:
-        return f"${value / 1_000:.0f}K".replace(".", ",")
-    return f"${value:,.0f}".replace(",", ".")
 
 
 class PDFReportGenerator:
@@ -288,13 +279,17 @@ class PDFReportGenerator:
                 ),
                 Paragraph(formatted.get("order_count", "0"), self.styles["KPIValue"]),
                 Paragraph(
-                    formatted.get("average_order_value", "$0"), self.styles["KPIValue"]
+                    f'{formatted.get("average_order_value", "$0")}'
+                    f'<br/><font size="8">Sin IVA: '
+                    f'{formatted.get("average_order_value_without_iva", "$0")}'
+                    f"</font>",
+                    self.styles["KPIValue"],
                 ),
             ],
             [
                 Paragraph("MARGEN BRUTO", self.styles["KPILabel"]),
                 Paragraph("TRANSACCIONES", self.styles["KPILabel"]),
-                Paragraph("TICKET PROMEDIO", self.styles["KPILabel"]),
+                Paragraph("TICKET PROMEDIO (IVA)", self.styles["KPILabel"]),
             ],
         ]
 
@@ -326,8 +321,10 @@ class PDFReportGenerator:
 
     def _add_ai_analysis(self, story: List[Any]) -> None:
         """Add AI-generated narrative."""
-        story.append(Paragraph("🤖 Análisis Inteligente", self.styles["SectionTitle"]))
-        text = self.ai_insights.get("ai_analysis_text", "")
+        story.append(Paragraph("Análisis Inteligente", self.styles["SectionTitle"]))
+        text = markdown_to_reportlab(
+            strip_emoji(self.ai_insights.get("ai_analysis_text", ""))
+        )
         # Split into paragraphs for better rendering
         for para in text.split("\n\n"):
             if para.strip():
@@ -340,9 +337,11 @@ class PDFReportGenerator:
 
     def _add_executive_summary(self, story: List[Any]) -> None:
         """Add executive summary bullets."""
-        story.append(Paragraph("📋 Resumen Ejecutivo", self.styles["SectionTitle"]))
+        story.append(Paragraph("Resumen Ejecutivo", self.styles["SectionTitle"]))
         for item in self.ai_insights.get("executive_summary", []):
-            story.append(Paragraph(f"• {item}", self.styles["InsightBullet"]))
+            story.append(
+                Paragraph(f"• {strip_emoji(item)}", self.styles["InsightBullet"])
+            )
         story.append(Spacer(1, 4 * mm))
 
     def _add_chart_section(self, story: List[Any], title: str, chart_key: str) -> None:
@@ -380,11 +379,11 @@ class PDFReportGenerator:
             data.append(
                 [
                     str(i),
-                    p["product_name"][:35],
+                    shorten(p["product_name"], 35),
                     p["sku"],
-                    _format_currency_label(p["total_revenue"]),
+                    money_compact(p["total_revenue"]),
                     str(p["total_quantity"]),
-                    f"{p['profit_margin_pct']:.1f}%",
+                    f"{p['profit_margin_pct']:.1f}%".replace(".", ","),
                 ]
             )
 
@@ -407,9 +406,9 @@ class PDFReportGenerator:
                 [
                     str(i),
                     c["customer_name"][:35],
-                    _format_currency_label(c["total_revenue"]),
+                    money_compact(c["total_revenue"]),
                     str(c["total_orders"]),
-                    _format_currency_label(c["average_order_value"]),
+                    money_compact(c["average_order_value"]),
                 ]
             )
 
@@ -470,7 +469,7 @@ class PDFReportGenerator:
 
         story.append(
             Paragraph(
-                "📒 Contabilidad ERP — Balance y PyG (PUC)",
+                "Contabilidad ERP — Balance y PyG (PUC)",
                 self.styles["SectionTitle"],
             )
         )
@@ -586,9 +585,7 @@ class PDFReportGenerator:
             return
 
         story.append(
-            Paragraph(
-                "⚠️ Alertas de Inventario (Stock Bajo)", self.styles["SectionTitle"]
-            )
+            Paragraph("Alertas de Inventario (Stock Bajo)", self.styles["SectionTitle"])
         )
         data = [["SKU", "Producto", "Vendido", "Stock Actual"]]
         for item in low_stock[:15]:
@@ -625,7 +622,7 @@ class PDFReportGenerator:
             return
         story.append(
             Paragraph(
-                "🛒 Plan de Compras Sugerido (por Proveedor)",
+                "Plan de Compras Sugerido (por Proveedor)",
                 self.styles["SectionTitle"],
             )
         )
@@ -674,7 +671,7 @@ class PDFReportGenerator:
         if not mix:
             return
         story.append(
-            Paragraph("🔗 Mix Clientes-Proveedores (Top 5)", self.styles["SectionTitle"])
+            Paragraph("Mix Clientes-Proveedores (Top 5)", self.styles["SectionTitle"])
         )
         for m in mix[:5]:
             tops = ", ".join(
@@ -695,7 +692,7 @@ class PDFReportGenerator:
 
     def _add_recommendations(self, story: List[Any]) -> None:
         """Add recommendations section."""
-        story.append(Paragraph("💡 Recomendaciones", self.styles["SectionTitle"]))
+        story.append(Paragraph("Recomendaciones", self.styles["SectionTitle"]))
         for rec in self.ai_insights.get("recommendations", []):
             badge_color = {
                 "Alta": "#dc2626",
@@ -708,7 +705,7 @@ class PDFReportGenerator:
 
     def _add_risks(self, story: List[Any]) -> None:
         """Add risks section."""
-        story.append(Paragraph("⚠️ Riesgos Identificados", self.styles["SectionTitle"]))
+        story.append(Paragraph("Riesgos Identificados", self.styles["SectionTitle"]))
         for risk in self.ai_insights.get("risks", []):
             style_name = {
                 "Alto": "RiskHigh",
@@ -720,7 +717,7 @@ class PDFReportGenerator:
 
     def _add_opportunities(self, story: List[Any]) -> None:
         """Add opportunities section."""
-        story.append(Paragraph("🚀 Oportunidades", self.styles["SectionTitle"]))
+        story.append(Paragraph("Oportunidades", self.styles["SectionTitle"]))
         for opp in self.ai_insights.get("opportunities", []):
             text = f'<b>[{opp["impact"]}] {opp["type"]}</b> — {opp["description"]}'
             story.append(Paragraph(text, self.styles["Opportunity"]))

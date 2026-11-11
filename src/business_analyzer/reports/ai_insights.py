@@ -13,7 +13,10 @@ Usage:
     result = insights.generate()
 """
 
+import hashlib
+import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -68,13 +71,25 @@ class ReportAIInsights:
 
     def __init__(self, data: Dict[str, Any], provider: Optional[str] = None):
         self.data = data
-        self.provider = (provider or AIConfig.AI_PROVIDER).lower()
+        self.provider = (
+            provider or os.getenv("REPORT_AI_PROVIDER") or AIConfig.AI_PROVIDER
+        ).lower()
         self.ai_client = None
-        if self.provider in ("grok", "openai"):
+        self.ai_config: Dict[str, Any] = {}
+        self.use_cli = False
+        if self.provider == "commandcode":
+            # Local Command Code CLI subscription (no API key handling here).
+            self.use_cli = True
+            self.ai_config = {
+                "model": os.getenv("COMMANDCODE_MODEL", "deepseek/deepseek-v4.1-flash")
+            }
+        elif self.provider in ("grok", "openai", "deepseek", "openrouter", "groq"):
             try:
-                self.ai_client, _, _ = create_ai_client(self.provider)
+                self.ai_client, self.ai_config, _ = create_ai_client(self.provider)
             except Exception:
-                pass
+                logging.getLogger(__name__).exception(
+                    "Failed to create AI client for %s", self.provider
+                )
         elif self.provider == "anthropic":
             try:
                 from anthropic import Anthropic
@@ -82,6 +97,7 @@ class ReportAIInsights:
                 self.ai_client = Anthropic(api_key=AIConfig.ANTHROPIC_API_KEY)
             except Exception:
                 pass
+        self.backends = self._resolve_backends(self.provider)
 
     def generate(self) -> Dict[str, Any]:
         """
@@ -103,10 +119,13 @@ class ReportAIInsights:
             "ai_analysis_text": None,
         }
 
-        if self.ai_client:
+        if self.backends:
             try:
                 result["ai_analysis_text"] = self._generate_ai_narrative()
             except Exception:
+                logging.getLogger(__name__).exception(
+                    "AI narrative generation failed provider=%s", self.provider
+                )
                 result[
                     "ai_analysis_text"
                 ] = "⚠️ No se pudo generar el análisis con IA en este momento."
@@ -130,15 +149,15 @@ class ReportAIInsights:
         # Revenue level
         if revenue >= 5_000_000_000:
             insights.append(
-                f"💰 Mes excepcional con facturación superior a ${format_currency(revenue, 0)} sin IVA."
+                f"💰 Mes excepcional con facturación superior a {format_currency(revenue, 0)} sin IVA."
             )
         elif revenue >= 1_000_000_000:
             insights.append(
-                f"📈 Buen desempeño mensual con facturación de ${format_currency(revenue, 0)} sin IVA."
+                f"📈 Buen desempeño mensual con facturación de {format_currency(revenue, 0)} sin IVA."
             )
         elif revenue > 0:
             insights.append(
-                f"📊 Facturación del mes: ${format_currency(revenue, 0)} sin IVA."
+                f"📊 Facturación del mes: {format_currency(revenue, 0)} sin IVA."
             )
 
         # Margin health
@@ -178,7 +197,7 @@ class ReportAIInsights:
             )
             if top1_product_pct > 20:
                 insights.append(
-                    f"⚠️ Dependencia de producto: '{top_products[0]['product_name'][:30]}' representa el {format_percentage(top1_product_pct, 1)} de las ventas."
+                    f"⚠️ Dependencia de producto: '{top_products[0]['product_name']}' representa el {format_percentage(top1_product_pct, 1)} de las ventas."
                 )
 
         # Daily trend volatility
@@ -197,7 +216,7 @@ class ReportAIInsights:
         # Order count
         if orders > 0:
             insights.append(
-                f"🛒 {format_number(orders, 'order_count')} transacciones con ticket promedio de ${format_currency(aov, 0)}."
+                f"🛒 {format_number(orders, 'order_count')} transacciones con ticket promedio (con IVA) de {format_currency(aov, 0)}."
             )
 
         cont = self.data.get("contabilidad") or {}
@@ -256,7 +275,7 @@ class ReportAIInsights:
                 {
                     "priority": "Media",
                     "area": "Clientes",
-                    "action": f"Contactar a '{top_customers[0]['customer_name'][:25]}' para ofrecer descuentos por volumen y fidelización.",
+                    "action": f"Contactar a '{top_customers[0]['customer_name']}' para ofrecer descuentos por volumen y fidelización.",
                 }
             )
 
@@ -283,14 +302,14 @@ class ReportAIInsights:
                     {
                         "priority": "Media",
                         "area": "Proveedores",
-                        "action": f"'{vendor_sales[0]['vendor_name']}' representa {top_vendor_pct:.1f}% de las compras. Evaluar diversificación de proveedores.",
+                        "action": f"'{vendor_sales[0]['vendor_name']}' representa {format_percentage(top_vendor_pct, 1)} de las compras. Evaluar diversificación de proveedores.",
                     }
                 )
 
         # Suggested orders
         suggestions = self.data.get("customer_order_suggestions", [])
         if suggestions:
-            total = sum(s.get("total_suggested", 0) for s in suggestions[:5])
+            total = sum(s.get("total_suggested", 0) for s in suggestions)
             recs.append(
                 {
                     "priority": "Media",
@@ -307,7 +326,7 @@ class ReportAIInsights:
                 {
                     "priority": "Alta",
                     "area": "Abastecimiento",
-                    "action": f"Priorizar negociación con '{top_v['vendor_name'][:20]}' para ~{top_v.get('total_suggested_units',0)} unidades (afecta {top_v.get('affected_customers',0)} clientes top).",
+                    "action": f"Priorizar negociación con '{top_v['vendor_name']}' para ~{top_v.get('total_suggested_units',0)} unidades (afecta {top_v.get('affected_customers',0)} clientes top).",
                 }
             )
 
@@ -317,7 +336,7 @@ class ReportAIInsights:
                 {
                     "priority": "Baja",
                     "area": "Ventas",
-                    "action": f"Crear bundles con '{top_products[0]['product_name'][:25]}' para aumentar ticket promedio.",
+                    "action": f"Crear bundles con '{top_products[0]['product_name']}' para aumentar ticket promedio.",
                 }
             )
 
@@ -379,7 +398,7 @@ class ReportAIInsights:
                     {
                         "level": "Alto",
                         "type": "Dependencia de Proveedores",
-                        "description": f"{vendor_sales[0]['vendor_name']} concentra el {top_v_pct:.1f}% de las ventas. Riesgo de desabastecimiento o aumento de precios.",
+                        "description": f"{vendor_sales[0]['vendor_name']} concentra el {format_percentage(top_v_pct, 1)} de las ventas. Riesgo de desabastecimiento o aumento de precios.",
                     }
                 )
 
@@ -422,7 +441,7 @@ class ReportAIInsights:
                 {
                     "impact": "Alto",
                     "type": "Optimización de Margen",
-                    "description": f"Subir el margen de {format_percentage(margin, 1)} a 20% aumentaría la ganancia bruta en aprox. ${format_currency(summary.get('gross_profit', 0) * (20 / max(margin, 1) - 1), 0)}.",
+                    "description": f"Subir el margen de {format_percentage(margin, 1)} a 20% aumentaría la ganancia bruta en aprox. {format_currency(summary.get('gross_profit', 0) * (20 / max(margin, 1) - 1), 0)}.",
                 }
             )
 
@@ -443,7 +462,7 @@ class ReportAIInsights:
                 {
                     "impact": "Medio",
                     "type": "Ticket Promedio",
-                    "description": f"Implementar venta cruzada para elevar el ticket de ${format_currency(aov, 0)} a $300.000.",
+                    "description": f"Implementar venta cruzada para elevar el ticket promedio (con IVA) de {format_currency(aov, 0)} a $300.000.",
                 }
             )
 
@@ -488,11 +507,85 @@ class ReportAIInsights:
             contabilidad,
         )
 
-        if self.provider in ("grok", "openai"):
-            return self._call_openai(prompt)
-        elif self.provider == "anthropic":
-            return self._call_anthropic(prompt)
-        return "⚠️ Proveedor no soportado para análisis narrativo."
+        cache_file = None
+        if os.getenv("REPORT_AI_CACHE", "1") != "0":
+            try:
+                cache_file = self._narrative_cache_file(prompt)
+                if cache_file.exists():
+                    cached = cache_file.read_text(encoding="utf-8").strip()
+                    if self._narrative_is_valid(cached):
+                        return cached
+            except OSError:
+                cache_file = None
+
+        errors: List[str] = []
+        for provider in self.backends:
+            try:
+                text = self._call_provider(provider, prompt)
+                text = self._strip_cli_trailing_offer(text).strip()
+                if not self._narrative_is_valid(text):
+                    raise RuntimeError(f"narrativa incompleta ({len(text)} caracteres)")
+                if cache_file is not None:
+                    try:
+                        cache_file.write_text(text, encoding="utf-8")
+                    except OSError:
+                        pass
+                return text
+            except Exception as exc:  # noqa: BLE001 - try the next backend
+                logging.getLogger(__name__).warning(
+                    "Narrative backend %s failed: %s", provider, exc
+                )
+                errors.append(f"{provider}: {exc}")
+        raise RuntimeError(
+            "Ningún proveedor de narrativa respondió: " + "; ".join(errors)
+        )
+
+    @staticmethod
+    def _resolve_backends(primary: str) -> List[str]:
+        raw = os.getenv("REPORT_AI_FALLBACK_PROVIDERS", "openrouter")
+        chain = [primary]
+        for item in raw.split(","):
+            name = item.strip().lower()
+            if name and name not in chain:
+                chain.append(name)
+        return chain
+
+    def _call_provider(self, provider: str, prompt: str) -> str:
+        if provider == "commandcode":
+            return self._call_commandcode(
+                prompt,
+                model=os.getenv("COMMANDCODE_MODEL", "deepseek/deepseek-v4.1-flash"),
+            )
+        if provider == "anthropic":
+            if self.provider == "anthropic" and self.ai_client is not None:
+                return self._call_anthropic(prompt)
+            from anthropic import Anthropic
+
+            client = Anthropic(api_key=AIConfig.ANTHROPIC_API_KEY)
+            return self._call_anthropic(prompt, client=client)
+        if provider in ("grok", "openai", "deepseek", "openrouter", "groq"):
+            if self.provider == provider and self.ai_client is not None:
+                return self._call_openai(prompt)
+            client, config, _ = create_ai_client(provider)
+            return self._call_openai(prompt, client=client, config=config)
+        raise ValueError(f"Proveedor no soportado para narrativa: {provider}")
+
+    @staticmethod
+    def _narrative_cache_file(prompt: str) -> Path:
+        root = Path(
+            os.getenv("REPORT_AI_CACHE_DIR", "~/.cache/depotru-report-narratives")
+        ).expanduser()
+        root.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        return root / f"{digest}.md"
+
+    @staticmethod
+    def _narrative_is_valid(text: str) -> bool:
+        if not text or len(text) < 1200:
+            return False
+        lowered = text.lower()
+        signals = ("análisis", "insight", "recomend", "cierre", "riesgo")
+        return sum(1 for word in signals if word in lowered) >= 2
 
     def _build_prompt(
         self,
@@ -516,24 +609,27 @@ class ReportAIInsights:
         margin = format_percentage(summary.get("gross_margin_pct", 0), 1)
         orders = format_number(summary.get("order_count", 0), "order_count")
         aov = format_currency(summary.get("average_order_value", 0), 0)
+        aov_sin_iva = format_currency(
+            summary.get("average_order_value_without_iva", 0), 0
+        )
 
         products_text = "\n".join(
             [
-                f"  {i+1}. {p['product_name'][:40]} — Rev: ${format_currency(p['total_revenue'], 0)}, Margen: {format_percentage(p['profit_margin_pct'], 1)}"
+                f"  {i+1}. {p['product_name'][:40]} — Rev: {format_currency(p['total_revenue'], 0)}, Margen: {format_percentage(p['profit_margin_pct'], 1)}"
                 for i, p in enumerate(top_products)
             ]
         )
 
         customers_text = "\n".join(
             [
-                f"  {i+1}. {c['customer_name'][:35]} — ${format_currency(c['total_revenue'], 0)} ({c['total_orders']} pedidos)"
+                f"  {i+1}. {c['customer_name'][:35]} — {format_currency(c['total_revenue'], 0)} ({c['total_orders']} pedidos)"
                 for i, c in enumerate(top_customers)
             ]
         )
 
         categories_text = "\n".join(
             [
-                f"  {i+1}. {c['category_path'][:40]} — ${format_currency(c['total_revenue'], 0)}, Margen: {format_percentage(c['profit_margin_pct'], 1)}"
+                f"  {i+1}. {c['category_path'][:40]} — {format_currency(c['total_revenue'], 0)}, Margen: {format_percentage(c['profit_margin_pct'], 1)}"
                 for i, c in enumerate(categories)
             ]
         )
@@ -542,7 +638,7 @@ class ReportAIInsights:
         if vendor_sales:
             vendors_text = "\n" + "\n".join(
                 [
-                    f"  {i+1}. {v['vendor_name'][:25]} — ${format_currency(v['total_revenue'], 0)}, Margen: {format_percentage(v['profit_margin_pct'], 1)}, {v['revenue_pct']:.1f}% de participación"
+                    f"  {i+1}. {v['vendor_name'][:25]} — {format_currency(v['total_revenue'], 0)}, Margen: {format_percentage(v['profit_margin_pct'], 1)}, {format_percentage(v['revenue_pct'], 1)} de participación"
                     for i, v in enumerate(vendor_sales)
                 ]
             )
@@ -586,8 +682,8 @@ class ReportAIInsights:
             conc = contabilidad.get("conciliacion_ingresos") or {}
             contabilidad_text = (
                 f"\nCONTABILIDAD ERP (ConMovimiento / PUC):\n"
-                f"  • Ingresos clase 4: ${format_currency(pyg.get('ingresos_creditos', 0), 0)}\n"
-                f"  • Margen bruto contable: ${format_currency(pyg.get('margen_bruto_contable', 0), 0)} "
+                f"  • Ingresos clase 4: {format_currency(pyg.get('ingresos_creditos', 0), 0)}\n"
+                f"  • Margen bruto contable: {format_currency(pyg.get('margen_bruto_contable', 0), 0)} "
                 f"({format_percentage(pyg.get('margen_contable_pct', 0), 1)})\n"
                 f"  • Conciliación ingresos 41 vs BI: {format_percentage(conc.get('conciliacion_pct', 0), 1)}"
             )
@@ -600,7 +696,8 @@ RESUMEN FINANCIERO:
   • Ganancia Bruta: {profit}
   • Margen Bruto: {margin}
   • Transacciones: {orders}
-  • Ticket Promedio: {aov}
+  • Ticket Promedio (con IVA): {aov}
+  • Ticket Promedio (sin IVA): {aov_sin_iva}
 
 TOP 5 PRODUCTOS:
 {products_text}
@@ -628,12 +725,30 @@ INSTRUCCIONES:
 5. Termina con una frase de cierre motivacional para el equipo de ventas.
 
 Tono: profesional, directo, orientado a la acción. No uses tablas. Usa emojis ocasionalmente.
+Devuelve únicamente el informe final: sin preguntas de seguimiento, sin ofrecer guardar
+archivos y sin comentarios sobre el formato de salida. Usa solo los datos suministrados:
+no inventes hallazgos, problemas de calidad ni cifras que no aparezcan arriba.
 """
 
-    def _call_openai(self, prompt: str) -> str:
-        """Call OpenAI-compatible API."""
-        model = "grok-4-1-fast-non-reasoning" if self.provider == "grok" else "gpt-4"
-        response = self.ai_client.chat.completions.create(
+    def _call_openai(
+        self,
+        prompt: str,
+        *,
+        client: Any = None,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Call OpenAI-compatible API (Grok, OpenAI, DeepSeek, OpenRouter)."""
+        client = client or self.ai_client
+        config = config or self.ai_config
+        model = (config or {}).get("model")
+        if not model:
+            if self.provider == "grok":
+                model = "grok-4-1-fast-non-reasoning"
+            elif self.provider == "deepseek":
+                model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+            else:
+                model = "gpt-4"
+        response = client.chat.completions.create(
             model=model,
             messages=[
                 {
@@ -643,15 +758,69 @@ Tono: profesional, directo, orientado a la acción. No uses tablas. Usa emojis o
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=1200,
+            max_tokens=2500,
         )
         return response.choices[0].message.content.strip()
 
-    def _call_anthropic(self, prompt: str) -> str:
+    @staticmethod
+    def _strip_cli_trailing_offer(text: str) -> str:
+        """Drop agent-style closing offers/questions from headless CLI output."""
+        import re
+
+        offer = re.compile(
+            r"(¿\s*(quieres|deseas|prefieres|te\s+gustar[ií]a)|si\s+(quieres|deseas)|"
+            r"puedo\s+(dejarlo|generarlo|guardarlo|exportarlo)|d[eé]jame\s+saber|"
+            r"av[ií]same|quedo\s+atento)",
+            re.I,
+        )
+        paragraphs = [p.strip() for p in text.strip().split("\n\n") if p.strip()]
+        while paragraphs and offer.search(paragraphs[-1]):
+            paragraphs.pop()
+        return "\n\n".join(paragraphs).strip()
+
+    def _call_commandcode(self, prompt: str, *, model: str = "") -> str:
+        """Call the local Command Code CLI (subscription auth, headless)."""
+        import shutil
+        import subprocess
+
+        binary = os.getenv("COMMANDCODE_BIN") or shutil.which("commandcode")
+        if not binary:
+            raise RuntimeError(
+                "commandcode CLI no está instalado; use otro proveedor de IA"
+            )
+        model = (model or (self.ai_config or {}).get("model") or "").strip()
+        cmd = [
+            binary,
+            "-p",
+            prompt,
+            "--no-session",
+            "--output-format",
+            "text",
+            "--max-turns",
+            "3",
+        ]
+        if model:
+            cmd += ["-m", model]
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=int(os.getenv("COMMANDCODE_TIMEOUT", "420")),
+        )
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()[-400:]
+            raise RuntimeError(f"Command Code falló ({proc.returncode}): {detail}")
+        text = self._strip_cli_trailing_offer(proc.stdout.strip())
+        if not text:
+            raise RuntimeError("Command Code no devolvió texto")
+        return text
+
+    def _call_anthropic(self, prompt: str, *, client: Any = None) -> str:
         """Call Anthropic Claude API."""
-        response = self.ai_client.messages.create(
+        client = client or self.ai_client
+        response = client.messages.create(
             model="claude-3-sonnet-20240229",
-            max_tokens=1200,
+            max_tokens=2500,
             temperature=0.7,
             system="Eres un director de análisis de negocios experto en retail colombiano. Escribes informes ejecutivos concisos, profesionales y accionables.",
             messages=[{"role": "user", "content": prompt}],

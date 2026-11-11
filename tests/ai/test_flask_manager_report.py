@@ -147,6 +147,29 @@ class TestManagerReportFlaskRoutes:
         ]
         assert cache_entries
 
+    def test_generate_sql_handles_non_sql_answer(self, tmp_path, monkeypatch):
+        """A conversational answer (generate_sql -> None) must not 500."""
+        monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+        app = SmartVannaFlaskApp(_ReportStubVanna(None), chart=False)
+        app.flask_app.config["TESTING"] = True
+
+        # Mirror vanna's is_sql_valid(), which raises inside sqlparse on None.
+        def _strict_is_sql_valid(sql):
+            if sql is None:
+                raise TypeError("Expected text or file-like object, got NoneType")
+            return bool(sql)
+
+        app.vn.is_sql_valid = _strict_is_sql_valid
+
+        with app.flask_app.test_client() as client:
+            response = client.get("/api/v0/generate_sql?question=hello+world")
+
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["type"] == "text"
+        assert payload["id"]
+        assert "SQL" in payload["text"]
+
     def test_generate_report_endpoint_with_year_month(self, report_client):
         client, app, tmp_path, success = report_client
         response = client.get("/api/v0/generate_report?year=2024&month=5&format=html")
