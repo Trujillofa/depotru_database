@@ -58,7 +58,16 @@ from .circuit_breaker import CircuitBreakerError, with_circuit_breaker
 MAX_STACK_FRAME_DEPTH = 20
 
 # Supported AI providers
-SUPPORTED_PROVIDERS = ["grok", "openai", "anthropic", "ollama"]
+SUPPORTED_PROVIDERS = [
+    "grok",
+    "openai",
+    "deepseek",
+    "anthropic",
+    "ollama",
+    "openrouter",
+    "groq",
+    "commandcode",
+]
 DEFAULT_PROVIDER = "grok"
 
 
@@ -178,7 +187,7 @@ def get_env_or_test_default(
 class Config:
     """Configuration class for AI providers and database connections."""
 
-    # AI Provider selection (grok, openai, anthropic, ollama)
+    # AI Provider selection (grok, openai, deepseek, anthropic, ollama)
     AI_PROVIDER = os.getenv("AI_PROVIDER", DEFAULT_PROVIDER).lower()
 
     # Validate provider
@@ -190,6 +199,18 @@ class Config:
 
     # Provider-specific API keys (only required for chosen provider)
     # Only load the API key for the selected provider to avoid requiring all keys
+    GROK_API_KEY = None
+    OPENAI_API_KEY = None
+    ANTHROPIC_API_KEY = None
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+    OPENROUTER_BASE_URL = os.getenv(
+        "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+    )
+    OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4.1-flash")
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+    GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
     if AI_PROVIDER == "grok":
         GROK_API_KEY = get_env_or_test_default(
             "GROK_API_KEY",
@@ -198,8 +219,6 @@ class Config:
             error_msg="La clave de Grok debe comenzar con 'xai-'",
             warn_on_test_default=True,
         )
-        OPENAI_API_KEY = None
-        ANTHROPIC_API_KEY = None
     elif AI_PROVIDER == "openai":
         OPENAI_API_KEY = get_env_or_test_default(
             "OPENAI_API_KEY",
@@ -208,8 +227,30 @@ class Config:
             error_msg="La clave de OpenAI debe comenzar con 'sk-'",
             warn_on_test_default=True,
         )
-        GROK_API_KEY = None
-        ANTHROPIC_API_KEY = None
+    elif AI_PROVIDER == "deepseek":
+        DEEPSEEK_API_KEY = get_env_or_test_default(
+            "DEEPSEEK_API_KEY",
+            test_default="sk-test-deepseek-key-for-ci-only",
+            validation_func=lambda x: x.startswith("sk-"),
+            error_msg="La clave de DeepSeek debe comenzar con 'sk-'",
+            warn_on_test_default=True,
+        )
+    elif AI_PROVIDER == "groq":
+        GROQ_API_KEY = get_env_or_test_default(
+            "GROQ_API_KEY",
+            test_default="gsk_test_key_for_ci_only",
+            validation_func=lambda x: x.startswith("gsk_"),
+            error_msg="La clave de Groq debe comenzar con 'gsk_'",
+            warn_on_test_default=True,
+        )
+    elif AI_PROVIDER == "openrouter":
+        OPENROUTER_API_KEY = get_env_or_test_default(
+            "OPENROUTER_API_KEY",
+            test_default="sk-or-test-key-for-ci-only",
+            validation_func=lambda x: x.startswith("sk-or-"),
+            error_msg="La clave de OpenRouter debe comenzar con 'sk-or-'",
+            warn_on_test_default=True,
+        )
     elif AI_PROVIDER == "anthropic":
         ANTHROPIC_API_KEY = get_env_or_test_default(
             "ANTHROPIC_API_KEY",
@@ -218,12 +259,6 @@ class Config:
             error_msg="La clave de Anthropic debe comenzar con 'sk-ant-'",
             warn_on_test_default=True,
         )
-        GROK_API_KEY = None
-        OPENAI_API_KEY = None
-    else:  # ollama
-        GROK_API_KEY = None
-        OPENAI_API_KEY = None
-        ANTHROPIC_API_KEY = None
 
     # Ollama configuration (local, no API key needed)
     OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
@@ -307,7 +342,7 @@ def create_ai_client(provider: str = None):
     Create AI client based on provider selection.
 
     Args:
-        provider: AI provider name (grok, openai, anthropic, ollama)
+        provider: AI provider name (grok, openai, deepseek, anthropic, ollama, openrouter, groq)
                  Defaults to Config.AI_PROVIDER
 
     Returns:
@@ -315,6 +350,12 @@ def create_ai_client(provider: str = None):
     """
     if provider is None:
         provider = Config.AI_PROVIDER
+
+    if provider == "commandcode":
+        from business_analyzer.ai.commandcode_client import CommandCodeClient
+
+        model = os.getenv("COMMANDCODE_MODEL", "deepseek/deepseek-v4.1-flash")
+        return CommandCodeClient(model=model), {"model": model}, "openai"
 
     if provider == "grok":
         client = OpenAI(api_key=Config.GROK_API_KEY, base_url="https://api.x.ai/v1")
@@ -327,6 +368,32 @@ def create_ai_client(provider: str = None):
     elif provider == "openai":
         client = OpenAI(api_key=Config.OPENAI_API_KEY)
         config = {"model": "gpt-4", "api_key": Config.OPENAI_API_KEY}
+        return client, config, "openai"
+
+    elif provider == "deepseek":
+        api_key = Config.DEEPSEEK_API_KEY or os.getenv("DEEPSEEK_API_KEY")
+        model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        config = {
+            "model": model,
+            "base_url": "https://api.deepseek.com",
+        }
+        return client, config, "openai"
+
+    elif provider == "groq":
+        api_key = Config.GROQ_API_KEY or os.getenv("GROQ_API_KEY")
+        base_url = Config.GROQ_BASE_URL
+        model = Config.GROQ_MODEL
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        config = {"model": model, "base_url": base_url}
+        return client, config, "openai"
+
+    elif provider == "openrouter":
+        api_key = Config.OPENROUTER_API_KEY or os.getenv("OPENROUTER_API_KEY")
+        base_url = Config.OPENROUTER_BASE_URL
+        model = Config.OPENROUTER_MODEL
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        config = {"model": model, "base_url": base_url}
         return client, config, "openai"
 
     elif provider == "anthropic":
@@ -2093,7 +2160,10 @@ ORDER BY Dia_Orden
         ai_data: Dict[str, Any] = {}
         if Config.ENABLE_AI_INSIGHTS:
             try:
-                ai_data = ReportAIInsights(data, provider=self.provider).generate()
+                ai_data = ReportAIInsights(
+                    data,
+                    provider=os.getenv("REPORT_AI_PROVIDER") or self.provider,
+                ).generate()
             except Exception as exc:
                 ai_data = {
                     "ai_analysis_text": (

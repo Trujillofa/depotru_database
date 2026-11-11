@@ -1,0 +1,34 @@
+"""
+DeepSeek provider for AI package (OpenAI-compatible API).
+"""
+
+from typing import Tuple
+
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
+from ..base import Config
+
+
+class DeepSeekProvider:
+    """DeepSeek provider configuration."""
+
+    NAME = "deepseek"
+    DEFAULT_MODEL = "deepseek-chat"
+    BASE_URL = "https://api.deepseek.com"
+
+    @classmethod
+    def create_client(cls) -> Tuple[OpenAI, dict, str]:
+        client = OpenAI(api_key=Config.DEEPSEEK_API_KEY, base_url=cls.BASE_URL)
+        config = {"model": cls.DEFAULT_MODEL, "base_url": cls.BASE_URL}
+        return client, config, "openai"
+
+    @classmethod
+    def validate_api_key(cls, api_key: str) -> bool:
+        return bool(api_key) and api_key.startswith("sk-")
+
+
+def create_deepseek_client() -> Tuple[OpenAI, dict, str]:
+    return DeepSeekProvider.create_client()
