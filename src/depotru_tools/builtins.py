@@ -574,6 +574,56 @@ def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     }
 
 
+def _tool_quote_for_customer(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Customer list price before IVA and per-warehouse stock. Fails closed.
+
+    Does not write prices, stock, or cartera. A missing ERP answer is an
+    error, never an empty catalog and never the mostrador price.
+    """
+    del ctx  # audience is enforced by the registry before this handler runs
+    from business_analyzer.core.j3system_customer_quote import (
+        fetch_customer_quote,
+        parse_quote_request,
+    )
+
+    request, error = parse_quote_request(params)
+    if error is not None:
+        return error
+    try:
+        from business_analyzer.core.database import Database
+
+        with Database() as db:
+            return fetch_customer_quote(db, request)
+    except Exception:  # noqa: BLE001 — fail closed; do not leak the driver message
+        return {
+            "status": "error",
+            "reason": "erp_unavailable",
+            "price_includes_iva": False,
+            "lines": [],
+            "terceros_id": request.terceros_id,
+            "site": request.site,
+        }
+
+
+def _tool_resolve_customer_phone(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """One usable price list for a phone, or a reason. Does not quote or write."""
+    del ctx  # audience is enforced by the registry before this handler runs
+    from business_analyzer.core.j3system_customer_phone import (
+        fetch_customer_by_phone,
+        phone_keys,
+    )
+
+    if isinstance(phone_keys(params.get("phone")), str):
+        return fetch_customer_by_phone(None, params.get("phone"))
+    try:
+        from business_analyzer.core.database import Database
+
+        with Database() as db:
+            return fetch_customer_by_phone(db, params.get("phone"))
+    except Exception:  # noqa: BLE001 — fail closed; do not leak the driver message
+        return {"status": "error", "reason": "erp_unavailable"}
+
+
 def _tool_sellable_qty_stub(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     """Customer-facing sellable qty via Magento MSI when configured.
 
@@ -890,6 +940,41 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
                 "query": "product name or SKU fragment",
                 "limit": "max results (default 6)",
             },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.quote_for_customer",
+            description=(
+                "Customer quote: AdmPrecios net (before IVA) for a resolved "
+                "TercerosID, unit UND, and per-warehouse stock at neiva "
+                "(ALM, BD6, SUR, DIS, BOD) or florencia (FLO). Fails closed. "
+                "Does not write."
+            ),
+            scope=ToolScope.SALES_PORTFOLIO,
+            handler=_tool_quote_for_customer,
+            public_safe=False,
+            parameters_schema={
+                "terceros_id": "AdmTerceros.TercerosID already resolved",
+                "site": "neiva or florencia",
+                "skus": "list of ArticulosCodigo, max 20",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.resolve_customer_phone",
+            description=(
+                "Resolve a phone to one TercerosID when exactly one matched "
+                "tercero has a usable tariff (not null, not 0, not 006 AL "
+                "COSTO). Otherwise fail closed. Reads TercerosCelular, "
+                "TercerosCelular2, and TelefonoContacto. Does not return the "
+                "phone or the customer name, and does not write."
+            ),
+            scope=ToolScope.SALES_PORTFOLIO,
+            handler=_tool_resolve_customer_phone,
+            public_safe=False,
+            parameters_schema={"phone": "customer phone, digits or formatted"},
         )
     )
     registry.register(
