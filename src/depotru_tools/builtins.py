@@ -315,6 +315,185 @@ def _tool_search_products(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     }
 
 
+def _quote_search_j3(query: str, limit: int = 6) -> list[dict]:
+    """Live J3 list price + website-allowlist stock. Never returns cost."""
+    q = (query or "").strip()
+    if not q or len(q) < 2:
+        return []
+    try:
+        from business_analyzer.core.database import Database
+        from business_analyzer.core.j3system_website_stock import build_quote_search_sql
+
+        sql = build_quote_search_sql(limit=limit)
+        pattern = f"%{q}%"
+        with Database() as db:
+            rows = db.execute_query(sql, (pattern, pattern))
+        if not isinstance(rows, list):
+            return []
+        out: list[dict] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            sku = str(row.get("sku") or "")
+            if not sku:
+                continue
+            try:
+                price = (
+                    float(row.get("price")) if row.get("price") is not None else None
+                )
+            except (TypeError, ValueError):
+                price = None
+            try:
+                website_qty = (
+                    float(row.get("website_qty"))
+                    if row.get("website_qty") is not None
+                    else 0.0
+                )
+            except (TypeError, ValueError):
+                website_qty = 0.0
+            out.append(
+                {
+                    "sku": sku,
+                    "name": str(row.get("name") or ""),
+                    "price": price,
+                    "website_qty": website_qty,
+                    "in_stock": website_qty > 0,
+                    "source": "j3",
+                }
+            )
+        return out
+    except Exception:  # noqa: BLE001 — tool must never crash the inbox
+        return []
+
+
+def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Agent quote: J3 price/stock plus Magento PDP URL when configured."""
+    query = str(params.get("query") or params.get("q") or "").strip()
+    limit = max(1, min(int(params.get("limit") or 6), 10))
+    search_url = _storefront_search_url(query)
+    if len(query) < 2:
+        return {
+            "query": query,
+            "products": [],
+            "count": 0,
+            "source": "none",
+            "search_url": search_url,
+            "status": "error",
+            "reason": "query_required",
+        }
+
+    magento_by_sku: dict[str, dict] = {}
+    magento_search: dict = {"products": [], "source": "none"}
+    try:
+        from depotru_integrations.magento.client import MagentoConfig
+
+        if MagentoConfig.from_env() is not None:
+            magento_search = _tool_search_products(
+                ctx, {"query": query, "limit": limit}
+            )
+    except Exception:  # noqa: BLE001
+        magento_search = {"products": [], "source": "none"}
+    for item in magento_search.get("products") or []:
+        if not isinstance(item, dict):
+            continue
+        sku = str(item.get("sku") or "")
+        if sku:
+            magento_by_sku[sku] = item
+
+    j3_products = _quote_search_j3(query, limit=limit)
+    products: list[dict] = []
+    seen: set[str] = set()
+    for row in j3_products:
+        sku = row["sku"]
+        seen.add(sku)
+        mag = magento_by_sku.get(sku) or {}
+        mag_price = mag.get("price")
+        products.append(
+            {
+                "sku": sku,
+                "name": str(mag.get("name") or row.get("name") or ""),
+                "price": mag_price if mag_price is not None else row.get("price"),
+                "website_qty": row.get("website_qty"),
+                "in_stock": bool(row.get("in_stock")),
+                "product_url": str(mag.get("product_url") or ""),
+                "source": "j3+magento" if mag else "j3",
+            }
+        )
+
+    if not products:
+        for sku, mag in magento_by_sku.items():
+            products.append(
+                {
+                    "sku": sku,
+                    "name": str(mag.get("name") or ""),
+                    "price": mag.get("price"),
+                    "website_qty": None,
+                    "in_stock": None,
+                    "product_url": str(mag.get("product_url") or ""),
+                    "source": str(magento_search.get("source") or "magento"),
+                }
+            )
+
+    return {
+        "query": query,
+        "products": products,
+        "count": len(products),
+        "source": "j3" if j3_products else magento_search.get("source") or "none",
+        "search_url": search_url,
+        "status": "ok" if products else "empty",
+    }
+
+
+def _tool_quote_for_customer(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Customer list price before IVA and per-warehouse stock. Fails closed.
+
+    Does not write prices, stock, or cartera. A missing ERP answer is an
+    error, never an empty catalog and never the mostrador price.
+    """
+    del ctx  # audience is enforced by the registry before this handler runs
+    from business_analyzer.core.j3system_customer_quote import (
+        fetch_customer_quote,
+        parse_quote_request,
+    )
+
+    request, error = parse_quote_request(params)
+    if error is not None:
+        return error
+    try:
+        from business_analyzer.core.database import Database
+
+        with Database() as db:
+            return fetch_customer_quote(db, request)
+    except Exception:  # noqa: BLE001 — fail closed; do not leak the driver message
+        return {
+            "status": "error",
+            "reason": "erp_unavailable",
+            "price_includes_iva": False,
+            "lines": [],
+            "terceros_id": request.terceros_id,
+            "site": request.site,
+        }
+
+
+def _tool_resolve_customer_phone(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """One usable price list for a phone, or a reason. Does not quote or write."""
+    del ctx  # audience is enforced by the registry before this handler runs
+    from business_analyzer.core.j3system_customer_phone import (
+        fetch_customer_by_phone,
+        phone_keys,
+    )
+
+    if isinstance(phone_keys(params.get("phone")), str):
+        return fetch_customer_by_phone(None, params.get("phone"))
+    try:
+        from business_analyzer.core.database import Database
+
+        with Database() as db:
+            return fetch_customer_by_phone(db, params.get("phone"))
+    except Exception:  # noqa: BLE001 — fail closed; do not leak the driver message
+        return {"status": "error", "reason": "erp_unavailable"}
+
+
 def _tool_sellable_qty_stub(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     """Customer-facing sellable qty via Magento MSI when configured.
 
@@ -432,5 +611,56 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
                 "query": "product name fragment, e.g. cemento",
                 "limit": "max results (default 5)",
             },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.quote_search",
+            description=(
+                "Agent quote search: J3 list price + website-allowlist stock, "
+                "Magento PDP URL when configured"
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_quote_search,
+            public_safe=True,
+            parameters_schema={
+                "query": "product name or SKU fragment",
+                "limit": "max results (default 6)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.quote_for_customer",
+            description=(
+                "Customer quote: AdmPrecios net (before IVA) for a resolved "
+                "TercerosID, unit UND, and per-warehouse stock at neiva "
+                "(ALM, BD6, SUR, DIS, BOD) or florencia (FLO). Fails closed. "
+                "Does not write."
+            ),
+            scope=ToolScope.SALES_PORTFOLIO,
+            handler=_tool_quote_for_customer,
+            public_safe=False,
+            parameters_schema={
+                "terceros_id": "AdmTerceros.TercerosID already resolved",
+                "site": "neiva or florencia",
+                "skus": "list of ArticulosCodigo, max 20",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.resolve_customer_phone",
+            description=(
+                "Resolve a phone to one TercerosID when exactly one matched "
+                "tercero has a usable tariff (not null, not 0, not 006 AL "
+                "COSTO). Otherwise fail closed. Reads TercerosCelular, "
+                "TercerosCelular2, and TelefonoContacto. Does not return the "
+                "phone or the customer name, and does not write."
+            ),
+            scope=ToolScope.SALES_PORTFOLIO,
+            handler=_tool_resolve_customer_phone,
+            public_safe=False,
+            parameters_schema={"phone": "customer phone, digits or formatted"},
         )
     )

@@ -47,6 +47,9 @@ Or systemd: `depotru-bff.service`
 | `POST /v1/tools/call` | Invoke a tool |
 | `POST /v1/assistant/chat` | Storefront assistant BFF (tool stub) |
 | `GET /v1/affinity/contract` | Versioned Magento CSV contract |
+| `POST /v1/tools/call` `catalog.quote_search` | Agent quote: J3 list price + website-allowlist stock + storefront URL |
+| `POST /v1/tools/call` `catalog.quote_for_customer` | Sales only. Net `AdmPrecios` before IVA, unit UND, stock per site warehouse (Neiva: ALM, BD6, SUR, DIS, BOD; Florencia: FLO). Fails closed. No writes. |
+| `POST /v1/tools/call` `catalog.resolve_customer_phone` | Sales only. One usable tariff for that phone becomes the `TercerosID`. Several usable tariffs, a junk phone, or no list fails closed. No price and no writes. |
 
 ### Auth
 

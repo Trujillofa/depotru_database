@@ -122,6 +122,43 @@ WHERE {year_filter}
 """.strip()
 
 
+def build_quote_search_sql(*, limit: int = 6) -> str:
+    """Name/SKU search with allowlisted website qty and list price.
+
+    Price is ``AdmArticulos.ArticulosVenta`` (mostrador). Never select cost.
+    Stock is J3 ``InvDetalleExistencias.SaldoActual`` on the website allowlist.
+    """
+    limit_n = max(1, min(int(limit), 10))
+    allow_sql = sql_in_list(website_warehouse_allowlist())
+    articulos = qualified_j3_table("AdmArticulos")
+    detalle = qualified_j3_table("InvDetalleExistencias")
+    existencias = qualified_j3_table("InvExistencias")
+    almacen = qualified_j3_table("AdmAlmacen")
+    return f"""
+SELECT TOP {limit_n}
+    a.ArticulosCodigo AS sku,
+    a.ArticulosNombre AS name,
+    CAST(a.ArticulosVenta AS DECIMAL(18, 2)) AS price,
+    CAST(ISNULL(s.website_qty, 0) AS DECIMAL(18, 4)) AS website_qty
+FROM {articulos} a
+LEFT JOIN (
+    SELECT
+        e.ArticulosID,
+        SUM(CASE WHEN al.AlmacenCodigo IN ({allow_sql})
+            THEN CAST(d.SaldoActual AS DECIMAL(18, 4)) ELSE 0 END) AS website_qty
+    FROM {detalle} d
+    JOIN {existencias} e ON e.ExistenciasID = d.ExistenciasID
+    JOIN {almacen} al ON al.AlmacenID = d.AlmacenID
+    WHERE d.Ano = (SELECT MAX(Ano) FROM {detalle})
+      AND CAST(d.SaldoActual AS DECIMAL(18, 4)) >= 0
+    GROUP BY e.ArticulosID
+) s ON s.ArticulosID = a.ArticulosID
+WHERE (a.ArticulosNombre LIKE %s OR a.ArticulosCodigo LIKE %s)
+ORDER BY CASE WHEN ISNULL(s.website_qty, 0) > 0 THEN 0 ELSE 1 END,
+         a.ArticulosNombre
+""".strip()
+
+
 class WebsiteStockRunner:
     """Execute website stock queries against J3System."""
 

@@ -82,6 +82,23 @@ class MagentoRestClient:
         return {}
 
     @staticmethod
+    def _as_float(value: Any) -> Optional[float]:
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _prices(self, item: Dict[str, Any]) -> tuple[Optional[float], Optional[float]]:
+        """Return (effective, list). special_price wins when > 0."""
+        list_price = self._as_float(item.get("price"))
+        special = self._as_float(self._custom_attr(item, "special_price"))
+        if special is not None and special > 0:
+            return special, list_price
+        return list_price, list_price
+
+    @staticmethod
     def _custom_attr(item: Dict[str, Any], code: str) -> str:
         attrs = item.get("custom_attributes") or []
         if not isinstance(attrs, list):
@@ -142,12 +159,15 @@ class MagentoRestClient:
                 continue
             url_key = self._custom_attr(item, "url_key")
             product_url = self.product_url_for_key(url_key) if url_key else ""
+            price, list_price = self._prices(item)
             out.append(
                 {
                     "sku": str(item.get("sku") or ""),
                     "name": str(item.get("name") or ""),
                     "url_key": url_key,
                     "product_url": product_url,
+                    "price": price,
+                    "list_price": list_price,
                     "status": item.get("status"),
                     "type_id": item.get("type_id"),
                 }
