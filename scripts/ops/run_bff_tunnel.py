@@ -21,6 +21,7 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -45,10 +46,23 @@ def cloudflared_bin() -> str:
     raise SystemExit("cloudflared not found — install to .tools/cloudflared")
 
 
-def sync_magento_base_url(url: str) -> None:
-    """Push quick-tunnel URL into Magento dt_assistant/general/base_url over SSH."""
+def _magento_roots(primary: str) -> list[str]:
+    """Production root plus sibling staging/ when present on the same host."""
+    roots = [primary.rstrip("/")]
+    staging = roots[0] + "/staging"
+    if staging not in roots:
+        roots.append(staging)
+    return roots
+
+
+def sync_magento_base_url(url: str) -> bool:
+    """Push quick-tunnel URL into Magento dt_assistant/general/base_url over SSH.
+
+    Returns True when every reachable Magento root accepted the update.
+    """
     if os.getenv("BFF_SYNC_MAGENTO", "0").strip() not in ("1", "true", "yes"):
-        return
+        log("BFF_SYNC_MAGENTO disabled — Magento base_url not updated")
+        return False
 
     # Reuse shared Magento SSH config (password via MAGENTO_SSH_PASSWORD or
     # sibling depositotrujillo.co/config/env.php; key optional with passphrase).
@@ -63,7 +77,7 @@ def sync_magento_base_url(url: str) -> None:
         )
     except ImportError as exc:
         log(f"Magento SSH helpers unavailable — skip base_url sync: {exc}")
-        return
+        return False
 
     cfg = MagentoSshConfig.from_env()
     if not cfg:
@@ -72,34 +86,55 @@ def sync_magento_base_url(url: str) -> None:
             "(set MAGENTO_SSH_PASSWORD or MAGENTO_ENV_PHP / config/env.php) "
             "— skip base_url sync"
         )
-        return
+        return False
 
     # Basic URL safety: only allow https quick/named hostnames we control.
     if not url.startswith("https://") or any(c in url for c in " \t\n\r'\";&|"):
         log(f"Refusing to sync unsafe tunnel URL: {url!r}")
-        return
+        return False
 
-    remote = cfg.magento_root
+    ok_all = True
     try:
         client = _ssh_connect(cfg)
         cmds = [
             f"php bin/magento config:set dt_assistant/general/base_url '{url}'",
             "php bin/magento config:set dt_assistant/general/enabled 1",
+            # Targeted clean only — never cache:flush.
             "php bin/magento cache:clean config full_page",
         ]
-        for cmd in cmds:
-            _out, err, code = _ssh_exec(client, cmd, working_dir=remote, timeout=120)
-            if code != 0:
-                log(f"Magento cmd failed ({code}): {err[-300:]}")
-            else:
-                label = (
-                    cmd.split("config:set")[-1][:60] if "config:set" in cmd else "cache"
+        for remote in _magento_roots(cfg.magento_root):
+            # Staging may not exist / may lack Assistant module — skip quietly.
+            probe = (
+                f"test -f {remote}/bin/magento && "
+                f"test -d {remote}/app/code/DepositoTrujillo/Assistant"
+            )
+            _ls, _err, ls_code = _ssh_exec(client, probe, working_dir="/", timeout=30)
+            if ls_code != 0:
+                log(f"Skip Magento root (no Assistant module): {remote}")
+                continue
+            root_ok = True
+            for cmd in cmds:
+                _out, err, code = _ssh_exec(
+                    client, cmd, working_dir=remote, timeout=120
                 )
-                log(f"Magento OK: {label}")
+                if code != 0:
+                    root_ok = False
+                    ok_all = False
+                    log(f"Magento cmd failed on {remote} ({code}): {err[-300:]}")
+                else:
+                    label = (
+                        cmd.split("config:set")[-1][:60]
+                        if "config:set" in cmd
+                        else "cache"
+                    )
+                    log(f"Magento OK ({remote}): {label}")
+            if root_ok:
+                log(f"Synced Magento base_url on {remote} → {url}")
         client.close()
-        log(f"Synced Magento base_url → {url}")
     except Exception as exc:  # noqa: BLE001
         log(f"Magento sync failed: {exc}")
+        return False
+    return ok_all
 
 
 def run_named(token: str) -> int:
@@ -136,6 +171,28 @@ def run_quick(port: int) -> int:
         bufsize=1,
     )
     last_url: str | None = None
+    sync_ok = False
+    last_sync_attempt = 0.0
+    sync_retry_s = float(os.getenv("BFF_SYNC_RETRY_SECONDS") or "60")
+    sync_lock = threading.Lock()
+    sync_thread: threading.Thread | None = None
+
+    def _run_sync(url: str, reason: str) -> None:
+        nonlocal sync_ok, last_sync_attempt
+        log(f"Magento sync ({reason}) → {url}")
+        ok = sync_magento_base_url(url)
+        with sync_lock:
+            # Ignore stale completions after a newer URL was published.
+            if last_url == url:
+                sync_ok = ok
+                last_sync_attempt = time.time()
+
+    def _start_sync(url: str, reason: str) -> None:
+        nonlocal sync_thread
+        # Never block the cloudflared stdout reader on Magento SSH.
+        t = threading.Thread(target=_run_sync, args=(url, reason), daemon=True)
+        sync_thread = t
+        t.start()
 
     def _stop(signum, frame):  # noqa: ARG001
         proc.terminate()
@@ -152,12 +209,27 @@ def run_quick(port: int) -> int:
             url = m.group(0)
             if url != last_url:
                 last_url = url
+                with sync_lock:
+                    sync_ok = False
+                    last_sync_attempt = time.time()
                 log(f"Public URL: {url}")
                 # persist for operators
                 out = REPO / "deploy" / "bff" / "last_tunnel_url.txt"
                 out.parent.mkdir(parents=True, exist_ok=True)
                 out.write_text(url + "\n")
-                sync_magento_base_url(url)
+                _start_sync(url, "url-change")
+        # Retry Magento sync if the URL is known but prior sync failed
+        # (SSH blip / Magento busy). Avoids permanent FAB 502 drift.
+        with sync_lock:
+            need_retry = (
+                bool(last_url)
+                and not sync_ok
+                and (time.time() - last_sync_attempt) >= sync_retry_s
+                and not (sync_thread and sync_thread.is_alive())
+            )
+            retry_url = last_url
+        if need_retry and retry_url:
+            _start_sync(retry_url, "retry")
 
     return proc.wait()
 

@@ -134,3 +134,13 @@ systemctl --user disable --now depotru-bff-tunnel depotru-bff
 - Do not commit `deploy/bff/env.bff` or tunnel tokens.
 - Use `PLATFORM_API_KEYS=…:public` for Magento only.
 - Named tunnel + HTTPS hostname is production-grade; quick tunnel is for ops/dev continuity.
+
+## Magento reachability note (2026-11-06)
+
+Shared Magento hosting (`174.142.205.80`) **cannot** reach Tailscale Funnel
+(`*.ts.net`) — TCP times out. Funnel is fine for ops/browsers on the open
+internet, but **`dt_assistant/general/base_url` must stay on a hostname the
+Magento host can dial**: Cloudflare quick/named tunnel, or another public edge.
+
+Attempted `https://omarchy.tail65d80f.ts.net:8444` → Magento curl timeout →
+reverted to the active trycloudflare URL.
