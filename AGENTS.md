@@ -184,6 +184,10 @@ format_number(45.6, "Margen")             # → "45,6%"
 - **User-facing text**: Spanish (Colombian)
 - **Database content**: Spanish field names (`TercerosNombres`, `ArticulosNombre`)
 
+### 4. Sika impact vs visit planner are different jobs
+- **Sika** (`depotru-sika-impact` → `reports/sika_impact_*.xlsx`): contact list for Sika Center (FEF). Purpose is WhatsApp / email / phone. A street visit is **not** required and this file is **not** a visit plan.
+- **Visitas** (`depotru-visitas` → `reports/VISITAS ARMANDO *.xlsx`): field routing and CONTROL DE VISITAS for **recurrent** Florencia clients (purchase history). Do not turn the Sika call list into a visit calendar, or the visit book into an impact report.
+
 ---
 
 ## Database Schema (banco_datos)
