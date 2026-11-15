@@ -255,7 +255,9 @@ class TestScheduler:
             (
                 SEGMENT_RIESGO
                 if row["nit"].startswith("R")
-                else SEGMENT_INACTIVO if row["nit"].startswith("I") else SEGMENT_ACTIVO
+                else SEGMENT_INACTIVO
+                if row["nit"].startswith("I")
+                else SEGMENT_ACTIVO
             )
             for row in program
         ]

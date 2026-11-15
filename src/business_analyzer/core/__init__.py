@@ -4,7 +4,14 @@ Business Analyzer Core Module
 Core functionality for database connections and business logic.
 """
 
+from typing import TYPE_CHECKING
+
 from . import paths
+
+if TYPE_CHECKING:
+    # Expose the lazy exports to static analyzers without triggering the
+    # config -> paths -> database -> config import cycle at runtime.
+    from .database import ConnectionType, Database, DatabaseError
 
 __all__ = ["Database", "DatabaseError", "ConnectionType", "paths"]
 
