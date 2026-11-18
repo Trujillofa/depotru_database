@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import re
 import sys
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -29,6 +30,12 @@ except ImportError:  # pragma: no cover - direct module execution
 
 from business_analyzer.core.database import Database
 from business_analyzer.core.db_factory import get_database
+from business_analyzer.core.inventory_warehouse_policy import (
+    turnover_sku_denylist_sql_not_like,
+    turnover_warehouse_sql_in_list,
+)
+
+logger = logging.getLogger(__name__)
 
 REPORT_PREFIX = "INFORME_MARCA"
 SUPPORTED_FORMATS = ("html", "json")
@@ -143,6 +150,8 @@ def resolve_brand_period_range(
 
     prior_start = _same_day_prior_year(actual_start)
     prior_end = _same_day_prior_year(actual_end)
+    if actual_end == _month_end(actual_end.year, actual_end.month):
+        prior_end = _month_end(prior_end.year, prior_end.month)
     days = (actual_end - actual_start).days + 1
     prior_days = (prior_end - prior_start).days + 1
     full_year = (
@@ -293,6 +302,8 @@ class BrandReportBuilder:
             f"SELECT MAX(bd.Fecha) AS max_date FROM {self.base}"
         )
         value = rows[0].get("max_date") if rows else None
+        if isinstance(value, datetime):
+            return value.date()
         if isinstance(value, date):
             return value
         if value:
@@ -410,7 +421,7 @@ class BrandReportBuilder:
                     "invoices": _to_int(row.get("invoices")),
                     "skus": _to_int(row.get("skus")),
                     "partial": _to_int(row.get("year")) == self.year
-                    and self.period["partial"],
+                    and self.period["end"] < date(self.year, 12, 31),
                 }
             )
         return rows
@@ -760,6 +771,7 @@ class BrandReportBuilder:
         if not self.include_inventory:
             return {"available": False, "message": "Inventario no solicitado."}
         conn = None
+        inventory_year: Optional[int] = None
         try:
             j3 = self.db.get_j3system_connection()
             conn = j3
@@ -767,16 +779,33 @@ class BrandReportBuilder:
             j3_db = Database.validate_sql_identifier(
                 Config.DB_NAME_J3SYSTEM, "j3 database"
             )
+            cursor.execute(
+                f"SELECT MAX(Ano) AS max_year FROM [{j3_db}].dbo.InvDetalleExistencias"
+            )
+            max_row = cursor.fetchone() or {}
+            max_year = _to_int(max_row.get("max_year"))
+            if max_year <= 0:
+                return {
+                    "available": False,
+                    "message": "Sin años de inventario en J3System.",
+                }
+            year_value = int(min(self.year, max_year))
+            inventory_year = year_value
+            wh_in = turnover_warehouse_sql_in_list()
+            sku_deny = turnover_sku_denylist_sql_not_like()
             name_filter = ""
             params: List[Any] = [
-                self.year,
-                self.year - 1,
-                self.year,
-                self.year - 1,
+                year_value,
+                year_value - 1,
+                year_value,
+                year_value - 1,
                 self.brand_upper,
             ]
             if len(self.brand_upper) >= _NAME_FALLBACK_MIN_LEN:
-                name_filter = " OR UPPER(a.ArticulosNombre) LIKE %s"
+                name_filter = (
+                    " OR (NULLIF(LTRIM(RTRIM(a.ArticulosMarca)), '') IS NULL "
+                    "AND UPPER(a.ArticulosNombre) LIKE %s)"
+                )
                 params.append(f"%{self.brand_upper}%")
             sql = f"""
                 SELECT LTRIM(RTRIM(a.ArticulosCodigo)) AS code,
@@ -788,14 +817,21 @@ class BrandReportBuilder:
                 JOIN [{j3_db}].dbo.InvExistencias e ON e.ArticulosID = a.ArticulosID
                 JOIN [{j3_db}].dbo.InvDetalleExistencias d
                     ON d.ExistenciasID = e.ExistenciasID AND d.Ano IN (%s, %s)
-                WHERE (UPPER(LTRIM(RTRIM(a.ArticulosMarca))) = %s{name_filter})
+                JOIN [{j3_db}].dbo.AdmAlmacen al ON al.AlmacenID = d.AlmacenID
+                WHERE al.AlmacenCodigo IN ({wh_in})
+                  AND NOT ({sku_deny})
+                  AND (UPPER(LTRIM(RTRIM(a.ArticulosMarca))) = %s{name_filter})
                 GROUP BY LTRIM(RTRIM(a.ArticulosCodigo))
             """
             cursor.execute(sql, tuple(params))
             rows = list(cursor)
             cursor.close()
-        except Exception as exc:  # noqa: BLE001 - inventory is optional
-            return {"available": False, "message": f"Inventario no disponible: {exc}"}
+        except Exception:  # noqa: BLE001 - inventory is optional
+            logger.exception("brand report inventory failed brand=%s", self.brand)
+            return {
+                "available": False,
+                "message": "Inventario no disponible para la marca.",
+            }
         finally:
             if conn is not None:
                 try:
@@ -811,7 +847,7 @@ class BrandReportBuilder:
         sales_by_sku = {
             str(row.get("sku")).strip(): _to_float(row.get("qty")) for row in products
         }
-        months = max(1.0, self.period["days"] / 30.4375)
+        months = max(self.period["days"] / 30.4375, 1 / 30.4375)
         items: List[Dict[str, Any]] = []
         for row in rows:
             code = str(row.get("code") or "").strip()
@@ -883,6 +919,7 @@ class BrandReportBuilder:
         days = _safe_div(avg_inventory, _safe_div(cogs, self.period["days"]))
         return {
             "available": True,
+            "year": inventory_year,
             "items": items,
             "total_value": total_value,
             "total_value_prior": total_value_prior,
@@ -1177,7 +1214,19 @@ class BrandReportBuilder:
                 }
             )
         margin_delta = current["margin_pct"] - prior["margin_pct"]
-        if abs(margin_delta) >= 0.3:
+        if prior["rev"] <= 0 and current["rev"] > 0:
+            findings.append(
+                {
+                    "title": "Marca nueva o sin base comparable",
+                    "evidence": (
+                        f"Ventas actuales {_fmt_money(current['rev'])} sin ventas "
+                        "en el mismo rango del año anterior."
+                    ),
+                    "risk": "El comparativo YoY no es representativo.",
+                    "priority": "Media",
+                }
+            )
+        elif abs(margin_delta) >= 0.3:
             findings.append(
                 {
                     "title": "El margen bruto se movió",
@@ -1458,10 +1507,22 @@ def build_brand_report_result(
         report = builder.build()
     except ValueError as exc:
         return {"status": "error", "message": str(exc)}
-    except Exception as exc:  # noqa: BLE001 - surface DB/query errors to UI
+    except Exception:  # noqa: BLE001 - surface DB/query errors to UI
+        logger.exception("brand report build failed brand=%s", brand_name)
         return {
             "status": "error",
-            "message": f"Error generando informe de marca: {exc}",
+            "message": "Error generando informe de marca. Revise los logs.",
+        }
+
+    current_kpi = report["kpis"]["current"]
+    prior_kpi = report["kpis"]["prior"]
+    if not current_kpi["lines"] and not prior_kpi["lines"]:
+        return {
+            "status": "error",
+            "message": (
+                f"Sin ventas para la marca {brand_name} en el rango solicitado "
+                "ni en el año anterior."
+            ),
         }
 
     period = report["period"]

@@ -467,7 +467,8 @@
   .informe-week,
   .informe-format,
   .informe-as-of,
-  .informe-date {
+  .informe-date,
+  .informe-brand {
     background: var(--ui-surface);
     border: 1px solid var(--ui-border);
     border-radius: 0.4rem;

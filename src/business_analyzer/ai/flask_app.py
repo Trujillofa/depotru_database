@@ -865,7 +865,6 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             if result.get("status") == "error":
                 return jsonify(brand_report_api_payload(result, cache_id))
 
-            cache.set(id=cache_id, field="brand_report", value=result)
             return jsonify(brand_report_api_payload(result, cache_id))
 
         @self.flask_app.route("/api/v0/health", methods=["GET"])

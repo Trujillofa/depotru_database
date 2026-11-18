@@ -1054,7 +1054,7 @@ def _methodology(report: Mapping[str, Any]) -> str:
         ),
         "Marca: coincidencia con la marca maestra de `productos_adicional`, categoría de marca o nombre del artículo cuando el maestro no tiene marca.",
         f"Documentos excluidos: {excluded}. Las devoluciones se incluyen y reducen las ventas netas.",
-        "Inventario: saldo actual de J3System valorado al último costo; la variación contra el cierre anterior es aproximada.",
+        "Inventario: saldo de J3System en bodegas comerciales (ALM, SUR, BD6, DIS, FLO), excluye servicios; corresponde al año de corte, no al saldo histórico a la fecha final.",
         "La proyección es un run-rate simple del período, no un presupuesto.",
     ]
     body = "<ul>" + "".join(f"<li>{_esc(item)}</li>" for item in items) + "</ul>"

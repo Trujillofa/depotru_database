@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -213,6 +213,82 @@ def _minimal_report() -> dict:
     }
 
 
+class _FakeDB:
+    """Minimal DB stub that answers KPI/max-date queries and records SQL."""
+
+    def __init__(self, max_date=None):
+        self.max_date = max_date or date(2026, 11, 17)
+        self.queries = []
+
+    def execute_query(self, sql, params=None):
+        self.queries.append((sql, tuple(params or ())))
+        if "MAX(bd.Fecha)" in sql:
+            return [{"max_date": self.max_date}]
+        if (
+            "COUNT(*) AS lines" in sql
+            and "SUM(bd.TotalSinIva) AS rev" in sql
+            and "SUM(bd.TotalMasIva) AS rev_iva" in sql
+        ):
+            return [
+                {
+                    "lines": 1,
+                    "skus": 1,
+                    "customers": 1,
+                    "invoices": 1,
+                    "rev": 100.0,
+                    "rev_iva": 119.0,
+                    "cost": 80.0,
+                    "qty": 10.0,
+                    "gross_rev": 100.0,
+                    "return_rev": 0.0,
+                    "return_lines": 0,
+                }
+            ]
+        return []
+
+    def get_j3system_connection(self):
+        raise RuntimeError("J3 unavailable in test")
+
+
+class _FakeCursor:
+    def __init__(self):
+        self.sql = ""
+        self.params = ()
+        self.closed = False
+
+    def execute(self, sql, params=None):
+        self.sql = sql
+        self.params = tuple(params or ())
+
+    def fetchone(self):
+        return {"max_year": 2026}
+
+    def __iter__(self):
+        return iter([])
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeJ3Connection:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def cursor(self, as_dict=True):
+        return self._cursor
+
+    def close(self):
+        pass
+
+
+class _FakeJ3DB:
+    def __init__(self, cursor):
+        self.cursor_obj = cursor
+
+    def get_j3system_connection(self):
+        return _FakeJ3Connection(self.cursor_obj)
+
+
 class TestBrandPeriods:
     def test_current_year_partial(self):
         period = resolve_brand_period(2026, max_date=date(2026, 11, 10))
@@ -339,6 +415,164 @@ class TestBrandReportBuild:
         payload = list_brands(db=FakeDB())
         assert payload["default_brand"] == "SIKA"
         assert [brand["value"] for brand in payload["brands"]] == ["SIKA", "PINTUCO"]
+
+    def test_build_smoke_uses_fake_db_and_parameter_counts(self):
+        db = _FakeDB()
+        builder = BrandReportBuilder(
+            "SIKA",
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 12, 31),
+            db=db,
+        )
+        report = builder.build()
+        assert report["status"] == "ok"
+        assert builder.period["end"] == date(2026, 11, 17)
+        assert builder.period["requested_end"] == date(2026, 12, 31)
+        assert db.queries
+        for sql, params in db.queries:
+            assert sql.count("%s") == len(params), (sql, params)
+        assert report["inventory"]["available"] is False
+
+    def test_finish_products_classifies_new_and_dropped(self):
+        builder = object.__new__(BrandReportBuilder)
+        builder.top_n = 15
+        current = [
+            {
+                "sku": "A",
+                "name": "A",
+                "rev": 100.0,
+                "cost": 80.0,
+                "qty": 1.0,
+                "missing_master": 0,
+            },
+        ]
+        prior = [
+            {
+                "sku": "A",
+                "name": "A",
+                "rev": 80.0,
+                "cost": 60.0,
+                "qty": 1.0,
+                "missing_master": 0,
+            },
+            {
+                "sku": "C",
+                "name": "C",
+                "rev": 40.0,
+                "cost": 30.0,
+                "qty": 1.0,
+                "missing_master": 0,
+            },
+        ]
+        result = builder._finish_products(current, prior)
+        assert result["top"][0]["prior_rev"] == 80.0
+        assert result["gains"][0]["sku"] == "A"
+        assert result["losses"][0]["sku"] == "C"
+        assert result["losses"][0]["current"] == 0.0
+
+    def test_finish_customers_classifies_new_lost_and_recurring(self):
+        builder = object.__new__(BrandReportBuilder)
+        builder.top_n = 15
+        current = [
+            {
+                "cid": 1,
+                "name": "Uno",
+                "rev": 100.0,
+                "cost": 80.0,
+                "qty": 1.0,
+                "invoices": 2,
+                "skus": 1,
+            },
+            {
+                "cid": 2,
+                "name": "Dos",
+                "rev": 50.0,
+                "cost": 40.0,
+                "qty": 1.0,
+                "invoices": 1,
+                "skus": 1,
+            },
+        ]
+        prior = [
+            {
+                "cid": 1,
+                "name": "Uno",
+                "rev": 80.0,
+                "cost": 60.0,
+                "qty": 1.0,
+                "invoices": 2,
+                "skus": 1,
+            },
+            {
+                "cid": 3,
+                "name": "Tres",
+                "rev": 40.0,
+                "cost": 30.0,
+                "qty": 1.0,
+                "invoices": 1,
+                "skus": 1,
+            },
+        ]
+        result = builder._finish_customers(current, prior)
+        stats = result["stats"]
+        assert stats["new"]["customers"] == 1
+        assert stats["lost"]["customers"] == 1
+        assert stats["recurring"]["customers"] == 1
+        assert stats["new"]["rev"] == 50.0
+        assert stats["lost"]["rev"] == 40.0
+
+    def test_inventory_query_uses_commercial_warehouses_and_brand_guard(
+        self, monkeypatch
+    ):
+        monkeypatch.setattr(
+            brand_report.Config, "DB_NAME_J3SYSTEM", "J3System", raising=False
+        )
+        cursor = _FakeCursor()
+        builder = object.__new__(BrandReportBuilder)
+        builder.brand = "SIKA"
+        builder.brand_upper = "SIKA"
+        builder.year = 2026
+        builder.include_inventory = True
+        builder.period = {"days": 314}
+        builder.db = _FakeJ3DB(cursor)
+        result = builder._inventory([], 1000.0)
+        assert result["available"] is False
+        assert "AdmAlmacen" in cursor.sql
+        for code in ("'ALM'", "'SUR'", "'BD6'", "'DIS'", "'FLO'"):
+            assert code in cursor.sql
+        assert "LIKE %s" in cursor.sql
+        assert "NULLIF(LTRIM(RTRIM(a.ArticulosMarca)), '') IS NULL" in cursor.sql
+        assert 2026 in cursor.params and 2025 in cursor.params
+
+    def test_unknown_brand_returns_error(self, tmp_path, monkeypatch):
+        zero = _minimal_report()
+        zero["kpis"]["current"]["lines"] = 0
+        zero["kpis"]["prior"]["lines"] = 0
+
+        class FakeBuilder:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def build(self):
+                return zero
+
+        monkeypatch.setattr(brand_report, "BrandReportBuilder", FakeBuilder)
+        result = build_brand_report_result(
+            brand="NOEXISTE",
+            start_date="2026-01-01",
+            end_date="2026-12-31",
+            output_dir=tmp_path,
+        )
+        assert result["status"] == "error"
+        assert "Sin ventas" in result["message"]
+
+    def test_leap_year_prior_end_uses_month_end(self):
+        period = resolve_brand_period_range(
+            date(2025, 2, 1),
+            date(2025, 2, 28),
+            max_date=date(2026, 11, 17),
+        )
+        assert period["prior_end"] == date(2024, 2, 29)
 
 
 class TestBrandReportFlask:

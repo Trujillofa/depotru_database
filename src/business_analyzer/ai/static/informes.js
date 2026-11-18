@@ -729,10 +729,18 @@
       if (!brandOptions.some((brand) => brand.value === "SIKA")) {
         brandOptions.unshift({ value: "SIKA", label: "Sika" });
       }
-      const brandYear =
-        (brandData && brandData.year) ||
-        (data && data.default_brand_year) ||
-        new Date().getFullYear();
+      const brandMaxDate = (brandData && brandData.max_date) || "";
+      const brandYear = brandMaxDate
+        ? Number(String(brandMaxDate).slice(0, 4))
+        : (brandData && brandData.year) ||
+          (data && data.default_brand_year) ||
+          new Date().getFullYear();
+      const brandStartDefault = brandMaxDate
+        ? brandYear + "-01-01"
+        : (data && data.default_brand_start) || brandYear + "-01-01";
+      const brandEndDefault = brandMaxDate
+        ? brandYear + "-12-31"
+        : (data && data.default_brand_end) || brandYear + "-12-31";
       const defaults = {
         year:
           data && data.default_year != null ? data.default_year : fallbackMonth.year,
@@ -753,9 +761,8 @@
           (data && data.default_brand) ||
           "SIKA",
         brandYear: brandYear,
-        brandStart:
-          (data && data.default_brand_start) || brandYear + "-01-01",
-        brandEnd: (data && data.default_brand_end) || brandYear + "-12-31",
+        brandStart: brandStartDefault,
+        brandEnd: brandEndDefault,
       };
 
       reports.forEach((report) => reportById.set(String(report.id), report));
