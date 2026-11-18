@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-brand business report** (`depotru-brand-report` and Vanna
+  **Análisis de marca**): explicit start/end date range compared with the same
+  range last year, covering KPIs, company share, annual/monthly trend,
+  warehouses, products/promotions, rubros, customers/cohorts, vendors,
+  returns, J3 inventory, findings, and an action plan. Supports every brand in
+  `productos_adicional`; inventory uses the commercial warehouse allowlist and
+  SKU denylist.
 - **Hybrid stub-first LLM assistant** (`ASSISTANT_LLM=1`):
   - Confident stub paths (greetings, sedes, cart, guides, product search) skip LLM
   - Generic-help fallthrough uses Grok tool loop (`info.branches`, `catalog.search_products`)

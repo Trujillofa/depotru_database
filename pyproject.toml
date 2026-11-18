@@ -144,6 +144,7 @@ all = [
 [project.scripts]
 # CLI Entry Points
 depotru-report = "business_analyzer.reports.monthly:main"
+depotru-brand-report = "business_analyzer.reports.brand_report:main"
 vanna-grok = "vanna_grok:main"
 vanna-chat = "vanna_grok:main"
 depotru-db-mcp = "business_analyzer.mcp.database_server:main"
