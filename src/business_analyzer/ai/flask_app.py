@@ -216,6 +216,47 @@ def cartera_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]
     }
 
 
+def brand_report_status_text(result: Dict[str, Any]) -> str:
+    brand = result.get("brand") or "Marca"
+    start = result.get("start_date")
+    end = result.get("end_date")
+    data_end = result.get("data_end")
+    if start and end:
+        label = f"Informe de marca {brand} {start} a {end}"
+    else:
+        label = f"Informe de marca {brand} {result.get('year') or ''}".strip()
+    if data_end and end and data_end != end:
+        label += f" (datos al {data_end})"
+    filename = Path(result["path"]).name if result.get("path") else None
+    if filename:
+        return f"✓ {label} ({filename})"
+    return f"✓ {label}"
+
+
+def brand_report_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
+    if result.get("status") == "error":
+        return {
+            "type": "error",
+            "id": cache_id,
+            "error": result.get("message", "Error generando informe de marca"),
+        }
+    return {
+        "type": "brand_report",
+        "id": cache_id,
+        "text": result.get("message", ""),
+        "status_text": brand_report_status_text(result),
+        "download_url": manager_report_download_path(result.get("path")),
+        "format": result.get("format", "html"),
+        "brand": result.get("brand"),
+        "year": result.get("year"),
+        "start_date": result.get("start_date"),
+        "end_date": result.get("end_date"),
+        "data_start": result.get("data_start"),
+        "data_end": result.get("data_end"),
+        "as_of": result.get("as_of"),
+    }
+
+
 def manager_report_api_payload(result: Dict[str, Any], cache_id: str) -> Dict[str, Any]:
     """Serialize a manager report routing result for the Vanna web UI."""
     status = result.get("status")
@@ -733,6 +774,100 @@ class SmartVannaFlaskApp(VannaFlaskApp):
         def recommended_reports():
             return jsonify(recommended_reports_payload())
 
+        @self.flask_app.route("/api/v0/brands", methods=["GET"])
+        @requires_auth
+        def brands(user):
+            try:
+                from business_analyzer.reports.brand_report import list_brands
+
+                payload = list_brands(limit=200)
+            except Exception:
+                logging.getLogger(__name__).exception("brands list failed")
+                payload = {
+                    "brands": [
+                        {"value": "SIKA", "label": "Sika"},
+                        {"value": "PINTUCO", "label": "Pintuco"},
+                    ],
+                    "default_brand": "SIKA",
+                }
+            return jsonify(payload)
+
+        @requires_auth
+        def generate_brand_report(user):
+            brand = flask.request.args.get("brand")
+            year = flask.request.args.get("year", type=int)
+            as_of = flask.request.args.get("as_of")
+            start_date = flask.request.args.get("start_date")
+            end_date = flask.request.args.get("end_date")
+            fmt = flask.request.args.get("format", "html")
+
+            if flask.request.method == "POST":
+                body = flask.request.get_json(silent=True) or {}
+                brand = body.get("brand", brand)
+                year = body.get("year", year)
+                as_of = body.get("as_of", as_of)
+                start_date = body.get("start_date", start_date)
+                end_date = body.get("end_date", end_date)
+                fmt = body.get("format", fmt)
+
+            if not brand:
+                return jsonify(
+                    {
+                        "type": "error",
+                        "error": "Indica la marca para el informe de marca.",
+                    }
+                )
+
+            try:
+                year = int(year) if year not in (None, "") else None
+            except (TypeError, ValueError):
+                return jsonify({"type": "error", "error": "Año inválido."})
+
+            fmt = str(fmt or "html").strip().lower()
+            cache_id = cache.generate_id(
+                brand=str(brand),
+                year=year,
+                as_of=as_of,
+                start_date=start_date,
+                end_date=end_date,
+                format=fmt,
+                report="brand",
+            )
+            try:
+                from business_analyzer.reports.brand_report import (
+                    build_brand_report_result,
+                )
+
+                result = build_brand_report_result(
+                    brand=str(brand),
+                    year=year,
+                    as_of=str(as_of) if as_of else None,
+                    start_date=str(start_date) if start_date else None,
+                    end_date=str(end_date) if end_date else None,
+                    fmt=fmt,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "generate_brand_report failed brand=%s range=%s..%s year=%s",
+                    brand,
+                    start_date,
+                    end_date,
+                    year,
+                )
+                result = {
+                    "status": "error",
+                    "message": (
+                        "Error generando informe de marca. "
+                        "Revise la marca/periodo o los logs del servidor."
+                    ),
+                }
+
+            if result.get("status") == "error":
+                return jsonify(brand_report_api_payload(result, cache_id))
+
+            cache.set(id=cache_id, field="brand_report", value=result)
+            return jsonify(brand_report_api_payload(result, cache_id))
+
         @self.flask_app.route("/api/v0/health", methods=["GET"])
         def health_check():
             import os
@@ -796,6 +931,12 @@ class SmartVannaFlaskApp(VannaFlaskApp):
             "/api/v0/generate_tsol",
             endpoint="smart_generate_tsol",
             view_func=generate_tsol,
+            methods=["GET", "POST"],
+        )
+        self.flask_app.add_url_rule(
+            "/api/v0/generate_brand_report",
+            endpoint="smart_generate_brand_report",
+            view_func=generate_brand_report,
             methods=["GET", "POST"],
         )
         self._patch_assets_js()

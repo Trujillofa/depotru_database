@@ -137,6 +137,35 @@
           : null,
       button: () => "Generar Excel",
     },
+    brand: {
+      endpoint: "/api/v0/generate_brand_report",
+      fields: ["brand", "brandStart", "brandEnd", "format"],
+      formats: [
+        { value: "html", label: "HTML" },
+        { value: "json", label: "JSON" },
+      ],
+      payload: (values) => ({
+        brand: values.brand,
+        start_date: values.start_date,
+        end_date: values.end_date,
+        format: values.format,
+      }),
+      validate: (values) => {
+        const datePattern = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+        if (!values.brand) return "Selecciona una marca.";
+        if (!datePattern.test(values.start_date || "")) {
+          return "Indica una fecha inicial válida (AAAA-MM-DD).";
+        }
+        if (!datePattern.test(values.end_date || "")) {
+          return "Indica una fecha final válida (AAAA-MM-DD).";
+        }
+        if (values.start_date > values.end_date) {
+          return "La fecha inicial no puede ser posterior a la final.";
+        }
+        return null;
+      },
+      button: () => "Generar informe",
+    },
   };
 
   function numberControl(name, value, min, max, className, label) {
@@ -179,15 +208,35 @@
     return select;
   }
 
-  function dateControl(value) {
+  function dateControlNamed(name, value, className, label) {
     const input = document.createElement("input");
     input.type = "date";
-    input.name = "date";
-    input.className = "informe-as-of";
+    input.name = name;
+    input.className = className;
     input.value = value || "";
     input.lang = "es-CO";
-    input.setAttribute("aria-label", "Fecha de referencia");
+    input.setAttribute("aria-label", label);
     return input;
+  }
+
+  function dateControl(value) {
+    return dateControlNamed(
+      "date",
+      value,
+      "informe-as-of",
+      "Fecha de referencia"
+    );
+  }
+
+  function brandDateControl(name, value, label) {
+    const wrap = document.createElement("label");
+    wrap.className = "informe-field";
+    const caption = document.createElement("span");
+    caption.className = "informe-field-label";
+    caption.textContent = label;
+    wrap.appendChild(caption);
+    wrap.appendChild(dateControlNamed(name, value, "informe-date", label));
+    return wrap;
   }
 
   function ytdControl() {
@@ -249,6 +298,26 @@
         "Semana"
       ),
     date: (ctx) => dateControl(ctx.defaults.asOfDate),
+    brandStart: (ctx) =>
+      brandDateControl(
+        "start_date",
+        ctx.defaults.brandStart,
+        "Fecha inicial"
+      ),
+    brandEnd: (ctx) =>
+      brandDateControl(
+        "end_date",
+        ctx.defaults.brandEnd,
+        "Fecha final"
+      ),
+    brand: (ctx) =>
+      selectControl(
+        "brand",
+        ctx.defaults.brand,
+        ctx.brands || [],
+        "informe-brand",
+        "Marca"
+      ),
     ytd: () => ytdControl(),
   };
 
@@ -306,7 +375,7 @@
       return;
     }
     if (
-      ["manager_report", "kpi_board", "rotacion", "cartera", "tsol"].includes(
+      ["manager_report", "kpi_board", "rotacion", "cartera", "tsol", "brand_report"].includes(
         result.type
       )
     ) {
@@ -389,6 +458,10 @@
       hintText = formatWeekLabel(cardCtx.defaults.isoYear, cardCtx.defaults.isoWeek);
     } else if (type === "as_of_date") {
       hintText = formatLongDate(cardCtx.defaults.asOfDate);
+    } else if (type === "brand") {
+      const start = formatLongDate(cardCtx.defaults.brandStart);
+      const end = formatLongDate(cardCtx.defaults.brandEnd);
+      hintText = start && end ? start + " – " + end : "";
     }
     const hint = document.createElement("p");
     hint.className = "informe-hint";
@@ -417,13 +490,17 @@
       text = formatWeekLabel(values.isoYear, values.isoWeek);
     } else if (details.dataset.type === "as_of_date") {
       text = formatLongDate(values.date);
+    } else if (details.dataset.type === "brand") {
+      const start = formatLongDate(values.start_date);
+      const end = formatLongDate(values.end_date);
+      text = start && end ? start + " – " + end : "";
     }
     hint.textContent = text;
     hint.hidden = !text;
   }
 
   function groupOrder(groups) {
-    const preferred = ["Gerencial", "Sedes", "Operación", "TSOL"];
+    const preferred = ["Gerencial", "Sedes", "Operación", "TSOL", "Marcas"];
     return groups.slice().sort((a, b) => {
       const ia = preferred.indexOf(a);
       const ib = preferred.indexOf(b);
@@ -624,12 +701,16 @@
     });
   }
 
-  fetch("/api/v0/recommended_reports")
-    .then((response) => {
-      if (!response.ok) throw new Error("HTTP " + response.status);
-      return response.json();
-    })
-    .then((data) => {
+  const reportsPromise = fetch("/api/v0/recommended_reports").then((response) => {
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    return response.json();
+  });
+  const brandsPromise = fetch("/api/v0/brands")
+    .then((response) => (response.ok ? response.json() : null))
+    .catch(() => null);
+
+  Promise.all([reportsPromise, brandsPromise])
+    .then(([data, brandData]) => {
       const reports = (data && data.reports) || [];
       if (!reports.length) {
         setStatus("No hay informes recomendados configurados.", true);
@@ -642,6 +723,16 @@
         { value: "html", label: "HTML" },
         { value: "pdf", label: "PDF" },
       ];
+      const brandOptions = ((brandData && brandData.brands) || []).map(
+        (brand) => ({ value: brand.value, label: brand.label || brand.value })
+      );
+      if (!brandOptions.some((brand) => brand.value === "SIKA")) {
+        brandOptions.unshift({ value: "SIKA", label: "Sika" });
+      }
+      const brandYear =
+        (brandData && brandData.year) ||
+        (data && data.default_brand_year) ||
+        new Date().getFullYear();
       const defaults = {
         year:
           data && data.default_year != null ? data.default_year : fallbackMonth.year,
@@ -657,6 +748,14 @@
         isoWeek: (data && data.default_iso_week) || 1,
         maxIsoWeek: (data && data.max_iso_week) || 53,
         asOfDate: (data && data.default_as_of_date) || yesterdayISO(),
+        brand:
+          (brandData && brandData.default_brand) ||
+          (data && data.default_brand) ||
+          "SIKA",
+        brandYear: brandYear,
+        brandStart:
+          (data && data.default_brand_start) || brandYear + "-01-01",
+        brandEnd: (data && data.default_brand_end) || brandYear + "-12-31",
       };
 
       reports.forEach((report) => reportById.set(String(report.id), report));
@@ -664,6 +763,7 @@
         defaults: defaults,
         monthOptions: monthOptions(monthNames),
         formatOptions: formatOptions,
+        brands: brandOptions,
       });
     })
     .catch((error) => {

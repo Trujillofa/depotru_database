@@ -446,6 +446,12 @@
     gap: 0.15rem;
     min-width: 0;
   }
+  details[data-type="brand"] .informe-period {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 4.2rem;
+  }
+  details[data-type="brand"] .informe-brand {
+    grid-column: 1 / -1;
+  }
   .informe-field-label {
     color: var(--ui-muted);
     font-size: 0.62rem;
@@ -460,7 +466,8 @@
   .informe-year,
   .informe-week,
   .informe-format,
-  .informe-as-of {
+  .informe-as-of,
+  .informe-date {
     background: var(--ui-surface);
     border: 1px solid var(--ui-border);
     border-radius: 0.4rem;

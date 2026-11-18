@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Brand report (Vanna + CLI)**: new **Análisis de marca** card with a
+  brand dropdown loaded from `productos_adicional`, an explicit start/end
+  date range (for example 2026-01-01 to 2026-12-31), and HTML/JSON output.
+  The report compares the current range with the same range last year and
+  covers KPIs, company share, annual/monthly trend,
+  warehouses and branches, top products and promotions, rubros, customers
+  and cohorts, vendors, returns, J3 inventory coverage, and data-driven
+  findings. Added `depotru-brand-report` and
+  `/api/v0/generate_brand_report` + `/api/v0/brands`.
+
 ### Changed
 
 - **Vanna UI polish**: SmartBusiness wordmark and favicon replace the Vanna
@@ -20,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Vanna web UI**: minimalist shell with one accent color and display font
   scale (sidebar, header, suggestion chips, composer pinned to the viewport
   bottom). The recommended-reports panel is now grouped (Gerencial, Sedes,
-  Operación, TSOL) and collapsible per report, with compact period controls
+  Operación, TSOL, Marcas) and collapsible per report, with compact period controls
   and a per-card status line. Report payloads use structured fields only
   (no duplicated natural-language question), surface HTTP failures, and no
   longer auto-open downloads (the "Abrir informe" link is kept). The panel

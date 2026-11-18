@@ -80,7 +80,7 @@ class TestRecommendedReportsCatalog:
     def test_payload_includes_period_defaults_and_month_names(self):
         payload = recommended_reports_payload(today=date(2024, 12, 15))
         assert "reports" in payload
-        assert len(payload["reports"]) == 10
+        assert len(payload["reports"]) == 11
         assert payload["default_year"] == 2024
         assert payload["default_month"] == 11
         assert payload["month_names"]["12"] == "Diciembre"
@@ -90,6 +90,7 @@ class TestRecommendedReportsCatalog:
             "Sedes",
             "Operación",
             "TSOL",
+            "Marcas",
         }
 
     def test_build_manager_action_pdf_question(self):
