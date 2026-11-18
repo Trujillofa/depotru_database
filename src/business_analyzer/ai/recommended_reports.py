@@ -37,6 +37,7 @@ REPORT_GROUPS: Dict[str, str] = {
     "cartera-aging": "Operación",
     "tsol-sika": "TSOL",
     "tsol-pintuco": "TSOL",
+    "brand-report": "Marcas",
 }
 
 
@@ -153,11 +154,19 @@ def get_recommended_report_templates() -> List[Dict[str, Any]]:
             "period_type": "tsol",
             "template": {"brand": "pintuco"},
         },
+        {
+            "id": "brand-report",
+            "title": "Análisis de marca",
+            "description": "Informe completo por marca: ventas, margen, clientes, devoluciones e inventario vs. año anterior.",
+            "period_type": "brand",
+            "template": {"brand": "sika"},
+        },
     ]
 
 
 def get_recommended_reports(*, today: Optional[date] = None) -> List[Dict[str, Any]]:
     """Catalog entries with default-period actions for API consumers."""
+    reference = today or date.today()
     default_year, default_month = previous_calendar_month(today=today)
     reports: List[Dict[str, Any]] = []
     default_iso_year, default_iso_week = last_completed_iso_week(today=today)
@@ -206,6 +215,21 @@ def get_recommended_reports(*, today: Optional[date] = None) -> List[Dict[str, A
                 }
             )
             continue
+        if entry.get("period_type") == "brand":
+            brand = (entry.get("template") or {}).get("brand") or "sika"
+            reports.append(
+                {
+                    **entry,
+                    "action": {
+                        "type": "generate_brand_report",
+                        "brand": brand,
+                        "start_date": f"{reference.year}-01-01",
+                        "end_date": f"{reference.year}-12-31",
+                        "year": reference.year,
+                    },
+                }
+            )
+            continue
         template = entry["template"]
         action = build_manager_action(
             year=default_year,
@@ -231,6 +255,11 @@ def recommended_reports_payload(*, today: Optional[date] = None) -> Dict[str, An
         "default_iso_week": default_iso_week,
         "max_iso_week": iso_weeks_in_year(default_iso_year),
         "default_as_of_date": default_as_of_date(today=today),
+        "default_brand": "sika",
+        "default_brand_year": (today or date.today()).year,
+        "default_brand_start": f"{(today or date.today()).year}-01-01",
+        "default_brand_end": f"{(today or date.today()).year}-12-31",
+        "default_brand_as_of": default_as_of_date(today=today),
         "default_format": "html",
         "format_options": FORMAT_OPTIONS,
         "month_names": {str(k): v for k, v in MONTH_NAMES_ES.items()},
