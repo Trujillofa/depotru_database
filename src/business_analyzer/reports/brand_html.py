@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import html
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Iterable, List, Mapping, Optional, Sequence
 
 MONTH_NAMES_ES = {
     1: "Enero",
