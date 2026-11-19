@@ -13,8 +13,27 @@ set -u
 : "${AFF_REPO_DIR:=/home/yderf/Projects/depotru_database-wt/bff-clean-main}"
 : "${AFF_PY:=$AFF_REPO_DIR/.venv/bin/python}"
 : "${AFF_ENV_FILE:=/home/yderf/Projects/depotru-inbox-prod/.env.local}"
+# Credenciales J3 (DB_HOST/DB_USER/...). El worktree no tiene .env propio y
+# Database() no las encuentra: sin esto el job fallaba cada noche con
+# j3_unavailable: ConnectionError (5-18 nov 2026). Es el mismo archivo que
+# carga depotru-bff-clean.service.
+: "${AFF_J3_ENV:=/home/yderf/Projects/depotru_database/.env}"
 
 cd "$AFF_REPO_DIR" || exit 1
+
+if [ ! -f "$AFF_J3_ENV" ]; then
+  echo "$(date -Is) env J3 $AFF_J3_ENV no existe - ABORT sin --apply"
+  exit 1
+fi
+set -a
+# shellcheck disable=SC1090
+. "$AFF_J3_ENV"
+rc=$?
+set +a
+if [ "$rc" -ne 0 ] || [ -z "${DB_HOST:-}" ]; then
+  echo "$(date -Is) carga del env J3 falló (rc=${rc}) - ABORT sin --apply"
+  exit 1
+fi
 
 if [ ! -f "$AFF_INBOX_ENV" ]; then
   echo "$(date -Is) env $AFF_INBOX_ENV no existe - ABORT sin --apply"

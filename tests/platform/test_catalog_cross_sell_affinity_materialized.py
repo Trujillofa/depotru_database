@@ -549,6 +549,33 @@ def test_postgres_write_is_one_transaction_and_uses_stdin_copy(monkeypatch):
 
 
 @pytest.mark.unit
+def test_postgres_read_carries_the_freshness_stamp(monkeypatch):
+    """18 nov 2026: el SELECT de Postgres no traía updated_at, así que el
+    lector veía stored_at="" y marcaba cada fila table_out_of_contract;
+    la tabla materializada nunca se usaba en producción."""
+    from depotru_integrations.j3 import affinity as reader
+
+    store = PostgresAffinityStore(
+        "postgresql://user:secret@db.example/neondb?sslmode=require",
+        psql="/usr/bin/psql",
+    )
+    captured: dict[str, str] = {}
+    fresh = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.123456+00")
+
+    def fake_run(sql: str, **kwargs) -> str:
+        captured["sql"] = sql
+        return f"Cemento,B,Barra,30,0.5,1.7,12,{fresh}\n"
+
+    monkeypatch.setattr(store, "_run", fake_run)
+    records = store.top_for_sku("A", 5)
+
+    assert "updated_at" in captured["sql"]
+    assert len(records) == 1
+    assert records[0].stored_at == fresh
+    assert reader._in_contract(records[0])
+
+
+@pytest.mark.unit
 def test_postgres_password_never_goes_in_argv():
     store = PostgresAffinityStore(
         "postgresql://user:secret@db.example/neondb?sslmode=require",

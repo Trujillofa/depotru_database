@@ -10,6 +10,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parents[2] / "deploy" / "run_cross_sell_affinity.sh"
 
 
@@ -29,7 +31,9 @@ def _run(tmp_path: Path, env: dict[str, str]) -> tuple[int, int]:
     shim.chmod(0o755)
     import os
 
-    env = {**os.environ, **env}
+    j3 = tmp_path / "j3.env"
+    j3.write_text("DB_HOST=j3.test\n", encoding="utf-8")
+    env = {**os.environ, "AFF_J3_ENV": str(j3), **env}
     env["AFF_REPO_DIR"] = str(fake_repo)
     env["AFF_PY"] = str(shim)
     env["PATH"] = str(shim_dir) + ":" + os.environ.get("PATH", "")
@@ -79,3 +83,23 @@ def test_loaded_env_runs_apply_once(tmp_path, monkeypatch) -> None:
     rc, calls = _run(tmp_path, env={"AFF_INBOX_ENV": str(good)})
     assert rc == 0
     assert calls == 1
+
+
+# 5-18 nov 2026: sin las credenciales J3 el job fallaba cada noche con
+# j3_unavailable. Ahora el wrapper exige el env J3 antes de correr.
+@pytest.mark.parametrize("j3_content", [None, "OTRA=1\n"])
+def test_missing_j3_env_never_runs_the_apply(tmp_path, monkeypatch, j3_content) -> None:
+    good = tmp_path / "good.env"
+    good.write_text("export DATABASE_URL=postgresql://test/neondb\n", encoding="utf-8")
+    j3 = tmp_path / "j3_override.env"
+    if j3_content is not None:
+        j3.write_text(j3_content, encoding="utf-8")
+    monkeypatch.setenv("AFF_ATTEMPTS", "1")
+    monkeypatch.setenv("AFF_RETRY_SLEEP", "0")
+    monkeypatch.delenv("DB_HOST", raising=False)
+    rc, calls = _run(
+        tmp_path,
+        env={"AFF_INBOX_ENV": str(good), "AFF_J3_ENV": str(j3)},
+    )
+    assert rc == 1
+    assert calls == 0

@@ -304,7 +304,9 @@ class PostgresAffinityStore:
     def top_for_sku(self, sku: str, limit: int = 5) -> list[AffinityRecord]:
         sql = (
             "SELECT sku_name, complement_sku, complement_name, baskets, "
-            f"confidence, lift, window_months FROM {TABLE} "
+            # updated_at es el sello de frescura: sin él el lector marca
+            # toda fila como fuera de contrato y la tabla nunca se usa.
+            f"confidence, lift, window_months, updated_at FROM {TABLE} "
             "WHERE sku = :'sku' "
             "ORDER BY baskets DESC, lift DESC, complement_sku "
             f"LIMIT {max(1, int(limit))};\n"
@@ -322,11 +324,12 @@ class PostgresAffinityStore:
                     "confidence": row[4],
                     "lift": row[5],
                     "window_months": row[6],
+                    "stored_at": row[7],
                 },
                 12,
             )
             for row in rows
-            if len(row) >= 7
+            if len(row) >= 8
         ]
 
     def count(self) -> int:
