@@ -125,6 +125,7 @@ def test_valid_quote_response_shape():
     assert resp["site"] == "neiva"
     assert resp["currency"] == CURRENCY == "COP"
     assert resp["price_includes_iva"] is False  # R11: net before IVA
+    assert resp["retefuente_suggested"] is False  # informational; no effect on price
     assert resp["correlation_id"] == "corr-1"
     line = resp["lines"][0]
     assert line["sku"] == "CEMENTO-50"
@@ -138,6 +139,21 @@ def test_valid_quote_response_shape():
     exp = datetime.fromisoformat(resp["expires_at"])
     assert exp > ts
     assert exp - ts == _QUOTE_TTL
+
+
+@pytest.mark.unit
+def test_retefuente_suggested_does_not_change_net_price():
+    class SuggestedErp(FakeErp):
+        def customer_quote(self, site, terceros_id, skus):
+            rows = super().customer_quote(site, terceros_id, skus)
+            for row in rows:
+                row["retefuente_suggested"] = True
+            return rows
+
+    resp = request_quote(_request(), SuggestedErp(_GOOD_PRICES), now=_NOW)
+    assert resp["status"] == "ok"
+    assert resp["retefuente_suggested"] is True
+    assert resp["lines"][0]["unit_net_price"] == "38500.00"
 
 
 @pytest.mark.unit
