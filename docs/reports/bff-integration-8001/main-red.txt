@@ -1,0 +1,140 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.0.3, pluggy-1.6.0
+Business Data Analyzer Test Suite
+Python: 3.12.12 (main, Oct 31 2025, 23:02:31) [Clang 21.1.4 ]
+pymssql: ✓
+pandas: ✓
+matplotlib: ✓
+vanna: ✓
+rootdir: /home/yderf/Projects/depotru_database/.worktrees/t_1b2b9667/evidence/main
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: anyio-4.13.0, asyncio-1.4.0, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 20 items
+
+tests/platform/test_hybrid_red.py FFFFFFFF..FFF..FFFFF                   [100%]
+
+=================================== FAILURES ===================================
+_ test_hybrid_search_contract[precio sikafill 7 x gal\xf3n-products0-expected0] _
+tests/platform/test_hybrid_red.py:120: in test_hybrid_search_contract
+    assert run(query, products) == expected
+E   AssertionError: assert [] == ['A']
+E
+E     Right contains one more item: 'A'
+E     Use -v to get more diff
+_______ test_hybrid_search_contract[v\xe1lvula 3/8-products1-expected1] ________
+tests/platform/test_hybrid_red.py:120: in test_hybrid_search_contract
+    assert run(query, products) == expected
+E   AssertionError: assert [] == ['A']
+E
+E     Right contains one more item: 'A'
+E     Use -v to get more diff
+________ test_hybrid_search_contract[tubo pvc 1/2-products2-expected2] _________
+tests/platform/test_hybrid_red.py:120: in test_hybrid_search_contract
+    assert run(query, products) == expected
+E   AssertionError: assert ['A', 'D'] == ['A']
+E
+E     Left contains one more item: 'D'
+E     Use -v to get more diff
+_____________ test_hybrid_search_contract[pvc-products3-expected3] _____________
+tests/platform/test_hybrid_red.py:120: in test_hybrid_search_contract
+    assert run(query, products) == expected
+E   AssertionError: assert ['A', 'B'] == ['A']
+E
+E     Left contains one more item: 'B'
+E     Use -v to get more diff
+___________ test_hybrid_search_contract[tubo 7-products4-expected4] ____________
+tests/platform/test_hybrid_red.py:120: in test_hybrid_search_contract
+    assert run(query, products) == expected
+E   AssertionError: assert ['A', 'B'] == ['B']
+E
+E     At index 0 diff: 'A' != 'B'
+E     Left contains one more item: 'B'
+E     Use -v to get more diff
+_____________ test_hybrid_search_contract[1/2-products5-expected5] _____________
+tests/platform/test_hybrid_red.py:120: in test_hybrid_search_contract
+    assert run(query, products) == expected
+E   AssertionError: assert ['A', 'B', 'C'] == ['A']
+E
+E     Left contains 2 more items, first extra item: 'B'
+E     Use -v to get more diff
+_________ test_hybrid_search_contract[0020080005-products6-expected6] __________
+tests/platform/test_hybrid_red.py:120: in test_hybrid_search_contract
+    assert run(query, products) == expected
+E   AssertionError: assert ['0020080005', 'X0020080005'] == ['0020080005']
+E
+E     Left contains one more item: 'X0020080005'
+E     Use -v to get more diff
+_______ test_hybrid_search_contract[ABC-123 cemento-products7-expected7] _______
+tests/platform/test_hybrid_red.py:120: in test_hybrid_search_contract
+    assert run(query, products) == expected
+E   AssertionError: assert ['ABC-123', 'ABC-1234'] == ['ABC-123']
+E
+E     Left contains one more item: 'ABC-1234'
+E     Use -v to get more diff
+______ test_hybrid_search_contract[cemento gris 50-products10-expected10] ______
+tests/platform/test_hybrid_red.py:120: in test_hybrid_search_contract
+    assert run(query, products) == expected
+E   AssertionError: assert ['A', 'B', 'C', 'E'] == ['A', 'B']
+E
+E     Left contains 2 more items, first extra item: 'C'
+E     Use -v to get more diff
+____________ test_hybrid_search_contract[50%-products11-expected11] ____________
+tests/platform/test_hybrid_red.py:120: in test_hybrid_search_contract
+    assert run(query, products) == expected
+E   AssertionError: assert ['A', 'B'] == ['A']
+E
+E     Left contains one more item: 'B'
+E     Use -v to get more diff
+____________ test_hybrid_search_contract[a_b-products12-expected12] ____________
+tests/platform/test_hybrid_red.py:120: in test_hybrid_search_contract
+    assert run(query, products) == expected
+E   AssertionError: assert ['A', 'B'] == ['A']
+E
+E     Left contains one more item: 'B'
+E     Use -v to get more diff
+___________ test_phrase_first_is_useful_but_not_a_constraint_bypass ____________
+tests/platform/test_hybrid_red.py:125: in test_phrase_first_is_useful_but_not_a_constraint_bypass
+    assert run("tubo pvc 1/2", [("A", "TUBO PVC 1/256")]) == []
+E   AssertionError: assert ['A'] == []
+E
+E     Left contains one more item: 'A'
+E     Use -v to get more diff
+________________ test_no_token_truncation_or_sql_interpolation _________________
+tests/platform/test_hybrid_red.py:135: in test_no_token_truncation_or_sql_interpolation
+    assert run("a b c d e f pvc 1/2", [("A", "a b c d e f CPVC 1/256")]) == []
+E   AssertionError: assert ['A'] == []
+E
+E     Left contains one more item: 'A'
+E     Use -v to get more diff
+__________ test_sqlite_statement_executes_full_price_stock_projection __________
+tests/platform/test_hybrid_red.py:143: in test_sqlite_statement_executes_full_price_stock_projection
+    from depotru_tools.catalog_query import quote_search_statement
+E   ModuleNotFoundError: No module named 'depotru_tools.catalog_query'
+______________________ test_projection_drift_fails_closed ______________________
+tests/platform/test_hybrid_red.py:158: in test_projection_drift_fails_closed
+    from depotru_tools.catalog_query import quote_search_statement
+E   ModuleNotFoundError: No module named 'depotru_tools.catalog_query'
+_________________________ test_sql_limits_stay_bounded _________________________
+tests/platform/test_hybrid_red.py:169: in test_sql_limits_stay_bounded
+    assert "TOP 40" in build_quote_search_sql(limit=999)
+E   AssertionError: assert 'TOP 40' in 'SELECT TOP 10 \n    a.ArticulosCodigo AS sku,\n    a.ArticulosNombre AS name,\n    a.ArticulosVenta AS price,\n    l....ticulosCodigo LIKE %s)\nORDER BY CASE WHEN ISNULL(s.website_qty, 0) > 0 THEN 0 ELSE 1 END,\n         a.ArticulosNombre'
+E    +  where 'SELECT TOP 10 \n    a.ArticulosCodigo AS sku,\n    a.ArticulosNombre AS name,\n    a.ArticulosVenta AS price,\n    l....ticulosCodigo LIKE %s)\nORDER BY CASE WHEN ISNULL(s.website_qty, 0) > 0 THEN 0 ELSE 1 END,\n         a.ArticulosNombre' = build_quote_search_sql(limit=999)
+=========================== short test summary info ============================
+FAILED tests/platform/test_hybrid_red.py::test_hybrid_search_contract[precio sikafill 7 x gal\xf3n-products0-expected0]
+FAILED tests/platform/test_hybrid_red.py::test_hybrid_search_contract[v\xe1lvula 3/8-products1-expected1]
+FAILED tests/platform/test_hybrid_red.py::test_hybrid_search_contract[tubo pvc 1/2-products2-expected2]
+FAILED tests/platform/test_hybrid_red.py::test_hybrid_search_contract[pvc-products3-expected3]
+FAILED tests/platform/test_hybrid_red.py::test_hybrid_search_contract[tubo 7-products4-expected4]
+FAILED tests/platform/test_hybrid_red.py::test_hybrid_search_contract[1/2-products5-expected5]
+FAILED tests/platform/test_hybrid_red.py::test_hybrid_search_contract[0020080005-products6-expected6]
+FAILED tests/platform/test_hybrid_red.py::test_hybrid_search_contract[ABC-123 cemento-products7-expected7]
+FAILED tests/platform/test_hybrid_red.py::test_hybrid_search_contract[cemento gris 50-products10-expected10]
+FAILED tests/platform/test_hybrid_red.py::test_hybrid_search_contract[50%-products11-expected11]
+FAILED tests/platform/test_hybrid_red.py::test_hybrid_search_contract[a_b-products12-expected12]
+FAILED tests/platform/test_hybrid_red.py::test_phrase_first_is_useful_but_not_a_constraint_bypass
+FAILED tests/platform/test_hybrid_red.py::test_no_token_truncation_or_sql_interpolation
+FAILED tests/platform/test_hybrid_red.py::test_sqlite_statement_executes_full_price_stock_projection
+FAILED tests/platform/test_hybrid_red.py::test_projection_drift_fails_closed
+FAILED tests/platform/test_hybrid_red.py::test_sql_limits_stay_bounded - Asse...
+=================== 16 failed, 4 passed, 1 warning in 0.23s ====================

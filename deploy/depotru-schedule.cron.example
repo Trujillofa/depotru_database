@@ -10,6 +10,11 @@
 # Nightly affinity mart refresh — 02:00
 0 2 * * * cd /home/yderf/Projects/depotru_database && PYTHONPATH=src uv run python scripts/analysis/refresh_affinity_mart.py >> ~/business_reports/cron.log 2>&1
 
+# Advisor cross-sell affinity -> Neon (opt-in; writes only with --apply).
+# Requires ADVISOR_DATABASE_URL (or a demo ADVISOR_AFFINITY_SQLITE). Run after
+# the J3 mart refresh above; the new job reads banco_datos and never writes J3.
+# 30 2 * * * cd /home/yderf/Projects/depotru_database && set -a && . deploy/bff/env.bff && set +a && PYTHONPATH=src .venv/bin/python -m business_analyzer.jobs.cross_sell_affinity --apply >> ~/business_reports/cross_sell_affinity.log 2>&1
+
 # Monday cash pack — 08:45 America/Bogota (opt-in; draft only, never --send)
 # Prefer systemd: ./scripts/ops/install_monday_cash_pack_timer.sh  (does not enable)
 # CRON_TZ=America/Bogota

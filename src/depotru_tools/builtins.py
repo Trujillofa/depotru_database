@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 import re
+from decimal import Decimal
 from typing import Any, Mapping, Optional
 
 from depotru_kernel.attribution import resolve_seller
@@ -325,6 +327,49 @@ def _search_products_db(query: str, limit: int = 5) -> list[dict]:
         return []
 
 
+def _tool_cross_sell_affinity(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Complementos medidos en las facturas de J3 (afinidad de canasta)."""
+    from depotru_integrations.j3.affinity import cross_sell_affinity
+
+    sku = str(params.get("sku") or "").strip()
+    if not sku:
+        return {"status": "error", "reason": "missing_sku", "products": []}
+    # `limit` inf (p. ej. el JSON 1e309) lanza OverflowError en int() y el
+    # worker responde 500 (hallazgo 8 de la firma). Rechaza el valor
+    # inválido en vez de caerse.
+    raw_limit = params.get("limit")
+    if isinstance(raw_limit, float) and not math.isfinite(raw_limit):
+        return {"status": "error", "reason": "invalid_limit", "products": []}
+    try:
+        limit = int(params.get("limit") or 5)
+    except (TypeError, ValueError, OverflowError):
+        return {"status": "error", "reason": "invalid_limit", "products": []}
+    result: dict[str, Any] = cross_sell_affinity(sku, limit)
+    return result
+
+
+def _tool_cross_sell(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Lo que la tienda declara como complemento de un SKU (sin variantes)."""
+    sku = str(params.get("sku") or params.get("query") or "").strip()
+    limit = int(params.get("limit") or 5)
+    limit = max(1, min(limit, 10))
+    from depotru_integrations.magento.storefront import cross_sell_storefront
+
+    result: dict[str, Any] = cross_sell_storefront(sku, limit=limit)
+    return result
+
+
+def _tool_names_by_sku(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Nombre comercial de varios SKU en una sola consulta a la tienda."""
+    from depotru_integrations.magento.storefront import names_by_sku
+
+    raw = params.get("skus") or []
+    if isinstance(raw, str):
+        raw = [part for part in raw.split(",") if part.strip()]
+    result: dict[str, Any] = names_by_sku(list(raw))
+    return result
+
+
 def _tool_search_products(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     """Search catalog by free-text name (Magento REST and/or sales history)."""
     query = str(params.get("query") or params.get("q") or "").strip()
@@ -340,24 +385,34 @@ def _tool_search_products(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
 
     products: list[dict] = []
     source = "none"
+    reason = ""
 
+    # La tienda primero: nombra, describe y clasifica el producto como lo ve el
+    # cliente, y su índice busca también en categorías («revestimiento» es una
+    # categoría, no un artículo: el ERP no la dice nunca). Precio y cantidad no
+    # se leen aquí, son de J3.
     try:
-        from depotru_integrations.magento.client import MagentoConfig, MagentoRestClient
+        from depotru_integrations.magento.storefront import search_storefront
 
-        config = MagentoConfig.from_env()
-        if config is not None:
-            products = MagentoRestClient(config).search_products(query, page_size=limit)
-            if products:
-                source = "magento"
-    except Exception:  # noqa: BLE001
+        found = search_storefront(query, limit=limit)
+        if found.get("status") == "error":
+            reason = str(found.get("reason") or "storefront_error")
+        products = found.get("products") or []
+        total_count = int(found.get("total_count") or 0)
+        if products:
+            source = "ecommerce"
+    except Exception as exc:  # noqa: BLE001 — un fallo debe verse, no esconderse
         products = []
+        total_count = 0
+        reason = f"storefront_error: {str(exc)[:160]}"
 
     if not products:
+        total_count = 0
         products = _search_products_db(query, limit=limit)
         if products:
             source = "banco_datos"
 
-    return {
+    result = {
         "query": query,
         "products": products,
         "count": len(products),
@@ -365,6 +420,13 @@ def _tool_search_products(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
         "search_url": _storefront_search_url(query),
         "status": "ok" if products else "empty",
     }
+    if source == "ecommerce":
+        result["total_count"] = total_count
+    if reason:
+        # Sin esto, «la tienda no respondió» y «la tienda no tiene nada» se ven
+        # igual, que es el defecto que dejó esta herramienta mintiendo un año.
+        result["reason"] = reason
+    return result
 
 
 _QUOTE_SEARCH_REQUIRED_ALIASES = (
@@ -408,41 +470,21 @@ def _quote_search_j3(query: str, limit: int = 6) -> list[dict]:
     SKU); the caller maps that to the fixed ``catalog_unavailable`` tool error.
     Driver details are suppressed.
 
-    Multi-token queries use AND of (name OR sku) LIKE per token so
-    «sikafill 7 galon» matches «SIKAFILL 7 POWER BLANCO X GALON».
+    Phrase matches satisfy the same material/dimension guards as token matches.
+    Suggestions never enter this path or silently rewrite a quote.
     """
-    q = (query or "").strip()
-    tokens = _catalog_search_tokens(q)
-    if not q or (len(q) < 2 and not tokens):
-        return []
-    from business_analyzer.core.j3system_website_stock import build_quote_search_sql
+    from depotru_tools.catalog_query import query_tokens, quote_search_statement
 
-    # Contiguous phrase first (preserves exact SKU / short-name hits)
-    sql = build_quote_search_sql(limit=limit)
-    pattern = f"%{q}%"
-    rows = _quote_search_j3_rows(sql, (pattern, pattern), limit=limit)
-    if rows or len(tokens) < 2:
+    tokens = query_tokens(query or "")
+    if not tokens:
+        return []
+    if len(tokens) >= 2:
+        sql, params = quote_search_statement(query, limit=limit, phrase=True)
+        rows = _quote_search_j3_rows(sql, params, limit=limit)
         if rows:
             return rows
-        if len(tokens) == 1:
-            pat = f"%{tokens[0]}%"
-            return _quote_search_j3_rows(sql, (pat, pat), limit=limit)
-        return rows
-
-    # Token AND: each token must match name or sku
-    and_clause = " AND ".join(
-        ["(a.ArticulosNombre LIKE %s OR a.ArticulosCodigo LIKE %s)"] * len(tokens)
-    )
-    sql_multi = sql.replace(
-        "WHERE (a.ArticulosNombre LIKE %s OR a.ArticulosCodigo LIKE %s)",
-        f"WHERE {and_clause}",
-        1,
-    )
-    params: list[str] = []
-    for t in tokens:
-        pat = f"%{t}%"
-        params.extend([pat, pat])
-    return _quote_search_j3_rows(sql_multi, tuple(params), limit=limit)
+    sql, params = quote_search_statement(query, limit=limit)
+    return _quote_search_j3_rows(sql, params, limit=limit)
 
 
 def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
@@ -453,7 +495,7 @@ def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     if isinstance(raw_limit, bool):
         limit = 6
     elif isinstance(raw_limit, int):
-        limit = max(1, min(raw_limit, 10))
+        limit = max(1, min(raw_limit, 40))
     else:
         limit = 6
     search_url = _storefront_search_url(query)
@@ -564,14 +606,128 @@ def _tool_sellable_qty_stub(ctx: ToolContext, params: Mapping[str, Any]) -> dict
             "policy": "never invent stock; SafetyStock may reduce sellable below ERP",
         }
 
+    # Sin Magento: stock real del ERP. `catalog.stock` ya resuelve bodegas de
+    # venta web, año máximo, decimales exactos y distingue 0 de ausente.
+    try:
+        stock = catalog_stock(ctx, {"skus": [sku]})
+    except Exception:  # noqa: BLE001 — nunca inventar una cifra
+        return {
+            "sku": sku,
+            "sellable_qty": None,
+            "in_stock": None,
+            "status": "error",
+            "reason": "j3_request_failed",
+            "policy": "nunca inventar stock; sin dato si J3 no responde",
+        }
+
+    if not stock.get("ok"):
+        return {
+            "sku": sku,
+            "sellable_qty": None,
+            "in_stock": None,
+            "status": "error",
+            "reason": "j3_request_failed",
+            "policy": "nunca inventar stock; sin dato si J3 no responde",
+        }
+
+    row = stock["results"][0]
+    if row.get("status") != "ok":
+        return {
+            "sku": sku,
+            "sellable_qty": None,
+            "in_stock": None,
+            "status": "unknown",
+            "reason": row.get("status"),
+            "source": "j3",
+            "policy": "sin dato: el SKU no es publicable con certeza",
+        }
+
+    total = sum(
+        (Decimal(v) for v in row["sedes"].values() if v is not None),
+        Decimal(0),
+    )
+    qty = format(total, "f")
     return {
         "sku": sku,
-        "sellable_qty": None,
-        "status": "unavailable",
-        "reason": "magento_adapter_not_configured",
-        "hint": "Set MAGENTO_BASE_URL + MAGENTO_ACCESS_TOKEN for live MSI reads",
-        "policy": "never invent stock; SafetyStock may reduce sellable below ERP",
+        "sellable_qty": qty,
+        "website_qty": qty,  # alias para la normalización de lib/catalog.ts
+        "in_stock": total > 0,
+        "status": "ok",
+        "source": "j3_website_allowlist",
+        "policy": "on-hand ERP en bodegas de venta web; no descuenta reservas",
     }
+
+
+def _tool_brand_categories(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Categories and subcategories of a brand, from the Ecommerce storefront.
+
+    The J3 category columns are not customer-facing ("OTRAS" holds most of
+    Pintuco); the storefront taxonomy is what the customer sees. Read-only.
+    """
+    brand = str(params.get("brand") or params.get("marca") or "").strip()
+    try:
+        from depotru_integrations.magento.categories import brand_category_overview
+
+        return dict(brand_category_overview(brand))
+    except Exception as exc:  # noqa: BLE001 — a tool must never crash the inbox
+        return {
+            "brand": brand,
+            "status": "error",
+            "reason": "adapter_error",
+            "detail": str(exc)[:200],
+            "categories": [],
+        }
+
+
+def _tool_brand_suggest(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Storefront brands that look like the word the customer used.
+
+    A typo («accesco» for ACESCO) must not end the conversation: naming the
+    closest brand the storefront carries is a recommendation, not a guess —
+    the customer confirms it.
+    """
+    query = str(params.get("query") or params.get("brand") or "").strip()
+    try:
+        limit = int(params.get("limit") or 3)
+    except (TypeError, ValueError):
+        limit = 3
+    try:
+        from depotru_integrations.magento.categories import suggest_brands
+
+        return dict(suggest_brands(query, limit))
+    except Exception as exc:  # noqa: BLE001 — a tool must never crash the inbox
+        return {
+            "query": query,
+            "status": "error",
+            "reason": "adapter_error",
+            "detail": str(exc)[:200],
+            "suggestions": [],
+        }
+
+
+def _tool_term_suggest(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Catalogue words that look like the word the customer typed.
+
+    «semento»/«cemento», «blnaco»/«blanco»: the dictionary comes from the ERP
+    article names, so a suggestion is always a word the catalogue really uses.
+    """
+    query = str(params.get("query") or params.get("term") or "").strip()
+    try:
+        limit = int(params.get("limit") or 3)
+    except (TypeError, ValueError):
+        limit = 3
+    try:
+        from depotru_integrations.j3.terms import suggest_terms
+
+        return dict(suggest_terms(query, limit))
+    except Exception as exc:  # noqa: BLE001 — a tool must never crash the inbox
+        return {
+            "query": query,
+            "status": "error",
+            "reason": "adapter_error",
+            "detail": str(exc)[:200],
+            "suggestions": [],
+        }
 
 
 def register_builtin_tools(registry: ToolRegistry) -> None:
@@ -643,6 +799,51 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
     )
     registry.register(
         ToolSpec(
+            name="catalog.brand_suggest",
+            description=(
+                "Storefront brands close to what the customer typed; used to "
+                "recommend a real brand instead of refusing a typo. Read-only."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_brand_suggest,
+            public_safe=True,
+            parameters_schema={
+                "query": "word the customer used, e.g. accesco",
+                "limit": "max suggestions (default 3)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.term_suggest",
+            description=(
+                "Catalogue words close to what the customer typed, taken from "
+                "the ERP article names. Read-only, no prices."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_term_suggest,
+            public_safe=True,
+            parameters_schema={
+                "query": "word the customer used, e.g. semento",
+                "limit": "max suggestions (default 3)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.brand_categories",
+            description=(
+                "Categories and subcategories of one brand as the Ecommerce "
+                "storefront organises them. Read-only, no prices."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_brand_categories,
+            public_safe=True,
+            parameters_schema={"brand": "brand name, e.g. pintuco"},
+        )
+    )
+    registry.register(
+        ToolSpec(
             name="catalog.search_products",
             description="Search products by name (Magento and/or sales history)",
             scope=ToolScope.PUBLIC_CATALOG,
@@ -667,6 +868,57 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             parameters_schema={
                 "query": "product name or SKU fragment",
                 "limit": "max results (default 6)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.cross_sell",
+            description=(
+                "Products the Ecommerce storefront declares as complements of "
+                "one SKU (cross-sell, related, upsell), without colour or "
+                "presentation variants. Read-only, no prices."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_cross_sell,
+            public_safe=True,
+            parameters_schema={
+                "sku": "SKU already quoted, e.g. 0020090002",
+                "limit": "max results (default 5)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.cross_sell_affinity",
+            description=(
+                "Complements of one SKU measured on J3 invoices (basket affinity, "
+                "last 12 months): what customers actually buy together, ordered by "
+                "shared baskets. Reads the nightly precomputed table and falls back "
+                "to the live J3 query when it has no row. Read-only, no prices."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_cross_sell_affinity,
+            public_safe=True,
+            parameters_schema={
+                "sku": "SKU already quoted, e.g. 0020090002",
+                "limit": "max results (default 5)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.names_by_sku",
+            description=(
+                "Commercial name of several SKUs in one storefront call. Used to "
+                "name a quote with the store's identity instead of the warehouse's. "
+                "Names only: price and quantity stay in J3."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_names_by_sku,
+            public_safe=True,
+            parameters_schema={
+                "skus": 'list of SKUs already quoted, e.g. ["0020090002"]',
             },
         )
     )
