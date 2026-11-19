@@ -11,7 +11,7 @@ nombres que engañan (AdmDocumentos = tipos de documento).
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any
 

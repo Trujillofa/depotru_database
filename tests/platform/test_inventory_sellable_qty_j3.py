@@ -3,7 +3,6 @@
 Casos del documento integracion-stock-2026-11-03.md §8. Fake-only: sin BD.
 """
 
-from decimal import Decimal
 from unittest.mock import patch as mock_patch
 
 import depotru_integrations.magento.client as magento_client

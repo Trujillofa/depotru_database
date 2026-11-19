@@ -351,7 +351,6 @@ def test_reader_rejects_rows_outside_the_contract(tmp_path, monkeypatch):
     12 meses, complemento distinto del ancla). Con filas basura, la lectura
     cae al J3 en vivo, nunca publica la basura."""
     import sqlite3
-    from datetime import datetime, timezone
 
     from depotru_integrations.affinity import store as affinity_store
 
