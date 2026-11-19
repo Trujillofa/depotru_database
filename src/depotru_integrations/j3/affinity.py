@@ -71,8 +71,9 @@ def _cached(sku: str, limit: int) -> tuple[tuple[str, str, int], ...]:
 
 MIN_BASKETS = 20
 # El job corre a diario a las 02:30; el sello de la tabla no puede llevar
-# más de 5 noches perdidas sin caer al J3 en vivo.
-MAX_TABLE_AGE_DAYS = 35
+# más de 5 noches perdidas sin caer al J3 en vivo. (Era 35: del 5 al 18 nov
+# 2026 el job falló 13 noches seguidas y el lector siguió publicando.)
+MAX_TABLE_AGE_DAYS = 5
 
 
 def _staleness_floor() -> str:

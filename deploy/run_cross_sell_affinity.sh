@@ -21,20 +21,6 @@ set -u
 
 cd "$AFF_REPO_DIR" || exit 1
 
-if [ ! -f "$AFF_J3_ENV" ]; then
-  echo "$(date -Is) env J3 $AFF_J3_ENV no existe - ABORT sin --apply"
-  exit 1
-fi
-set -a
-# shellcheck disable=SC1090
-. "$AFF_J3_ENV"
-rc=$?
-set +a
-if [ "$rc" -ne 0 ] || [ -z "${DB_HOST:-}" ]; then
-  echo "$(date -Is) carga del env J3 falló (rc=${rc}) - ABORT sin --apply"
-  exit 1
-fi
-
 if [ ! -f "$AFF_INBOX_ENV" ]; then
   echo "$(date -Is) env $AFF_INBOX_ENV no existe - ABORT sin --apply"
   exit 1
@@ -53,6 +39,23 @@ if [ -z "${ADVISOR_DATABASE_URL:-}" ] && [ -z "${DATABASE_URL:-}" ]; then
   exit 1
 fi
 export ADVISOR_DATABASE_URL="${ADVISOR_DATABASE_URL:-$DATABASE_URL}"
+
+if [ ! -f "$AFF_J3_ENV" ]; then
+  echo "$(date -Is) env J3 $AFF_J3_ENV no existe - ABORT sin --apply"
+  exit 1
+fi
+# Va después del env del inbox para que un DB_* de allí no lo pise, y
+# sin DB_HOST heredado: el guard sólo pasa si ESTE archivo lo define.
+unset DB_HOST
+set -a
+# shellcheck disable=SC1090
+. "$AFF_J3_ENV"
+rc=$?
+set +a
+if [ "$rc" -ne 0 ] || [ -z "${DB_HOST:-}" ]; then
+  echo "$(date -Is) carga del env J3 falló (rc=${rc}) - ABORT sin --apply"
+  exit 1
+fi
 attempts="${AFF_ATTEMPTS:-3}"
 sleep_s="${AFF_RETRY_SLEEP:-600}"
 i=1

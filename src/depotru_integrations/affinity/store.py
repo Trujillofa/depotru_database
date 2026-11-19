@@ -306,7 +306,11 @@ class PostgresAffinityStore:
             "SELECT sku_name, complement_sku, complement_name, baskets, "
             # updated_at es el sello de frescura: sin él el lector marca
             # toda fila como fuera de contrato y la tabla nunca se usa.
-            f"confidence, lift, window_months, updated_at FROM {TABLE} "
+            # Fecha UTC explícita: el texto de un timestamptz depende del
+            # DateStyle de la sesión, y el lector compara "YYYY-MM-DD".
+            "confidence, lift, window_months, "
+            "to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') "
+            f"FROM {TABLE} "
             "WHERE sku = :'sku' "
             "ORDER BY baskets DESC, lift DESC, complement_sku "
             f"LIMIT {max(1, int(limit))};\n"

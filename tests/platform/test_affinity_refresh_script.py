@@ -15,7 +15,9 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[2] / "deploy" / "run_cross_sell_affinity.sh"
 
 
-def _run(tmp_path: Path, env: dict[str, str]) -> tuple[int, int]:
+def _run(
+    tmp_path: Path, env: dict[str, str], shim_path: Path | None = None
+) -> tuple[int, int]:
     """Corre el script con el job sustituido por un shim; devuelve (rc, llamadas)."""
     fake_repo = tmp_path / "repo"
     fake_repo.mkdir()
@@ -35,7 +37,7 @@ def _run(tmp_path: Path, env: dict[str, str]) -> tuple[int, int]:
     j3.write_text("DB_HOST=j3.test\n", encoding="utf-8")
     env = {**os.environ, "AFF_J3_ENV": str(j3), **env}
     env["AFF_REPO_DIR"] = str(fake_repo)
-    env["AFF_PY"] = str(shim)
+    env["AFF_PY"] = str(shim_path or shim)
     env["PATH"] = str(shim_dir) + ":" + os.environ.get("PATH", "")
     result = subprocess.run(
         ["bash", str(SCRIPT)],
@@ -103,3 +105,47 @@ def test_missing_j3_env_never_runs_the_apply(tmp_path, monkeypatch, j3_content) 
     )
     assert rc == 1
     assert calls == 0
+
+
+def test_inherited_db_host_does_not_satisfy_the_j3_guard(tmp_path, monkeypatch) -> None:
+    """Revisión adversarial: un DB_HOST heredado del entorno del cron no
+    puede pasar por las credenciales J3 que el archivo no trae."""
+    good = tmp_path / "good.env"
+    good.write_text("export DATABASE_URL=postgresql://test/neondb\n", encoding="utf-8")
+    j3 = tmp_path / "sin_host.env"
+    j3.write_text("DB_USER=x\n", encoding="utf-8")
+    monkeypatch.setenv("AFF_ATTEMPTS", "1")
+    monkeypatch.setenv("AFF_RETRY_SLEEP", "0")
+    monkeypatch.setenv("DB_HOST", "heredado.example")
+    rc, calls = _run(
+        tmp_path,
+        env={"AFF_INBOX_ENV": str(good), "AFF_J3_ENV": str(j3)},
+    )
+    assert rc == 1
+    assert calls == 0
+
+
+def test_j3_env_wins_over_db_vars_in_the_inbox_env(tmp_path, monkeypatch) -> None:
+    good = tmp_path / "good.env"
+    good.write_text(
+        "export DATABASE_URL=postgresql://test/neondb\nDB_HOST=del-inbox\n",
+        encoding="utf-8",
+    )
+    j3 = tmp_path / "j3_ok.env"
+    j3.write_text("DB_HOST=j3.real\n", encoding="utf-8")
+    seen = tmp_path / "seen"
+    monkeypatch.setenv("AFF_ATTEMPTS", "1")
+    monkeypatch.setenv("AFF_RETRY_SLEEP", "0")
+    monkeypatch.delenv("DB_HOST", raising=False)
+    shim = tmp_path / "shim_host"
+    shim.write_text(
+        f'#!/usr/bin/env bash\necho "$DB_HOST" > "{seen}"\n', encoding="utf-8"
+    )
+    shim.chmod(0o755)
+    rc, _ = _run(
+        tmp_path,
+        env={"AFF_INBOX_ENV": str(good), "AFF_J3_ENV": str(j3)},
+        shim_path=shim,
+    )
+    assert rc == 0
+    assert seen.read_text().strip() == "j3.real"

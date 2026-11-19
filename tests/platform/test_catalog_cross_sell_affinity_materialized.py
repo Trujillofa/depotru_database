@@ -28,6 +28,8 @@ from depotru_tools.registry import ToolContext
 
 CTX = ToolContext(audience=Audience.PUBLIC)
 AS_OF = date(2026, 11, 1)
+# Sello "fresco" para el lector, que compara contra el reloj real.
+TODAY = datetime.now(timezone.utc).date().isoformat()
 
 
 def _line(
@@ -263,7 +265,8 @@ def test_tool_reads_the_precomputed_table_without_touching_j3(
             ),
         ],
         window_months=12,
-        updated_at=datetime(2026, 11, 1, tzinfo=timezone.utc),
+        # Relativo a hoy: el lector exige un sello de <= MAX_TABLE_AGE_DAYS.
+        updated_at=datetime.now(timezone.utc),
     )
     monkeypatch.setenv(SQLITE_ENV, str(target))
     monkeypatch.delenv(DATABASE_URL_ENV, raising=False)
@@ -359,22 +362,22 @@ def test_reader_rejects_rows_outside_the_contract(tmp_path, monkeypatch):
         # complemento IGUAL al ancla: debe caer.
         conn.execute(
             affinity_store._SQLITE_INSERT,
-            ("A", "A", "Ancla", "Ancla", 60, 1.0, 1.0, 12, "2026-11-08"),
+            ("A", "A", "Ancla", "Ancla", 60, 1.0, 1.0, 12, TODAY),
         )
         # 1 sola canasta (menor que las 20 anunciadas): debe caer.
         conn.execute(
             affinity_store._SQLITE_INSERT,
-            ("A", "B", "Otro", "Bajo", 1, 1.0, 1.0, 12, "2026-11-08"),
+            ("A", "B", "Otro", "Bajo", 1, 1.0, 1.0, 12, TODAY),
         )
         # ventana de 60 meses (stale): debe caer.
         conn.execute(
             affinity_store._SQLITE_INSERT,
-            ("A", "C", "Otro", "Viejo", 500, 1.0, 1.0, 60, "2026-11-08"),
+            ("A", "C", "Otro", "Viejo", 500, 1.0, 1.0, 60, TODAY),
         )
         # ventana absurda (negativa): debe caer.
         conn.execute(
             affinity_store._SQLITE_INSERT,
-            ("A", "E", "Otro", "Raro", 30, 1.0, 1.0, -1, "2026-11-09"),
+            ("A", "E", "Otro", "Raro", 30, 1.0, 1.0, -1, TODAY),
         )
         # sello de escritura 2020: tabla nunca refrescada, debe caer.
         conn.execute(
@@ -407,11 +410,11 @@ def test_reader_rejects_rows_outside_the_contract(tmp_path, monkeypatch):
         conn.execute(affinity_store._SQLITE_DDL)
         conn.execute(
             affinity_store._SQLITE_INSERT,
-            ("A", "B", "Otro", "Bajo", 1, 1.0, 1.0, 12, "2026-11-08"),
+            ("A", "B", "Otro", "Bajo", 1, 1.0, 1.0, 12, TODAY),
         )
         conn.execute(
             affinity_store._SQLITE_INSERT,
-            ("A", "D", "Otro", "Sano", 250, 1.0, 1.0, 12, "2026-11-08"),
+            ("A", "D", "Otro", "Sano", 250, 1.0, 1.0, 12, TODAY),
         )
         conn.commit()
     finally:
@@ -560,7 +563,7 @@ def test_postgres_read_carries_the_freshness_stamp(monkeypatch):
         psql="/usr/bin/psql",
     )
     captured: dict[str, str] = {}
-    fresh = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.123456+00")
+    fresh = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     def fake_run(sql: str, **kwargs) -> str:
         captured["sql"] = sql
@@ -569,7 +572,8 @@ def test_postgres_read_carries_the_freshness_stamp(monkeypatch):
     monkeypatch.setattr(store, "_run", fake_run)
     records = store.top_for_sku("A", 5)
 
-    assert "updated_at" in captured["sql"]
+    # La fecha sale de to_char en UTC, no del DateStyle de la sesión.
+    assert "to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')" in captured["sql"]
     assert len(records) == 1
     assert records[0].stored_at == fresh
     assert reader._in_contract(records[0])
@@ -586,3 +590,31 @@ def test_postgres_password_never_goes_in_argv():
     assert "secret" not in " ".join(args)
     assert env["PGPASSWORD"] == "secret"
     assert env["PGSSLMODE"] == "require"
+
+
+@pytest.mark.unit
+def test_reader_drops_a_table_older_than_five_nights():
+    """Del 5 al 18 nov 2026 el job falló 13 noches y con 35 días de margen
+    el lector seguía publicando la tabla vieja sin avisar."""
+    from datetime import timedelta
+
+    from depotru_integrations.j3 import affinity as reader
+
+    def record(days_old: int) -> AffinityRecord:
+        stamp = (datetime.now(timezone.utc) - timedelta(days=days_old)).date()
+        return AffinityRecord(
+            sku="A",
+            complement_sku="B",
+            sku_name="Cemento",
+            complement_name="Barra",
+            baskets=30,
+            confidence=0.5,
+            lift=1.7,
+            window_months=12,
+            stored_at=stamp.isoformat(),
+        )
+
+    assert reader._in_contract(record(0))
+    assert reader._in_contract(record(4))
+    assert not reader._in_contract(record(6))
+    assert not reader._in_contract(record(13))
