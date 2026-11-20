@@ -273,6 +273,7 @@ def run_job(
     database_url: str | None = None,
     apply: bool = False,
     sample: int = DEFAULT_SAMPLE,
+    category_snapshot: str | None = None,
 ) -> dict[str, Any]:
     """Mide y, sólo con ``apply=True``, reemplaza la tabla destino."""
     store = _resolve_store(target_sqlite=target_sqlite, database_url=database_url)
@@ -287,6 +288,14 @@ def run_job(
         as_of=as_of,
         source_sqlite=source_sqlite,
     )
+
+    category_products = None
+    if category_snapshot:
+        if months != WINDOW_MONTHS or source_sqlite:
+            raise AffinityJobError("category snapshot requires 12 months and J3 source")
+        from business_analyzer.jobs.category_snapshot import compute_category_snapshot
+
+        category_products = compute_category_snapshot(as_of=as_of)
 
     current_rows: int | None = None
     if store is not None:
@@ -343,6 +352,15 @@ def run_job(
             : max(0, int(sample))
         ]
     ]
+    if category_products is not None:
+        result["category_snapshot_products"] = len(category_products)
+        result["category_snapshot_applied"] = False
+        if apply:
+            from depotru_integrations.affinity.category_snapshot import write_snapshot
+
+            assert category_snapshot is not None
+            write_snapshot(category_products, Path(category_snapshot))
+            result["category_snapshot_applied"] = True
     return result
 
 
@@ -417,6 +435,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="escribir la tabla; sin este flag el job es dry-run",
     )
     parser.add_argument("--sample", type=int, default=DEFAULT_SAMPLE)
+    parser.add_argument(
+        "--category-snapshot",
+        default=None,
+        metavar="PATH",
+        help="add individual-invoice/public-price snapshot (writes only with --apply)",
+    )
     parser.add_argument("--json", action="store_true", dest="as_json")
     return parser.parse_args(argv)
 
@@ -436,6 +460,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             database_url=args.database_url,
             apply=args.apply,
             sample=args.sample,
+            category_snapshot=args.category_snapshot,
         )
     except Exception as exc:  # noqa: BLE001 - CLI: mensaje claro y código 1
         print(f"ERROR: {exc}", file=sys.stderr)

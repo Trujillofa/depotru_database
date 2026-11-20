@@ -1,0 +1,43 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.0.3, pluggy-1.6.0
+Business Data Analyzer Test Suite
+Python: 3.12.12 (main, Oct 31 2025, 23:02:31) [Clang 21.1.4 ]
+pymssql: ✓
+pandas: ✓
+matplotlib: ✓
+vanna: ✓
+rootdir: /home/yderf/Projects/depotru_database/.worktrees/t_e35d42b3
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: anyio-4.13.0, asyncio-1.4.0, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 301 items
+
+tests/platform/test_affinity_document_exclusions.py ..                   [  0%]
+tests/platform/test_affinity_refresh_script.py ........                  [  3%]
+tests/platform/test_assistant_llm.py ..........                          [  6%]
+tests/platform/test_assistant_logging.py .......                         [  8%]
+tests/platform/test_b2b_auth.py ..............                           [ 13%]
+tests/platform/test_b2b_cartera.py ..............                        [ 18%]
+tests/platform/test_b2b_credit_order.py ..........                       [ 21%]
+tests/platform/test_b2b_j3_customer_quote.py ............                [ 25%]
+tests/platform/test_b2b_magento_consumer.py ...........                  [ 29%]
+tests/platform/test_b2b_quote_contract.py ....................           [ 35%]
+tests/platform/test_bff_app.py ......                                    [ 37%]
+tests/platform/test_catalog_brand_categories.py ................         [ 43%]
+tests/platform/test_catalog_category_products.py ....................... [ 50%]
+...                                                                      [ 51%]
+tests/platform/test_catalog_cross_sell_affinity_materialized.py ........ [ 54%]
+.........                                                                [ 57%]
+tests/platform/test_catalog_cross_sell_storefront.py .....               [ 59%]
+tests/platform/test_catalog_query.py .....................               [ 66%]
+tests/platform/test_catalog_quote_search.py ............................ [ 75%]
+..........                                                               [ 78%]
+tests/platform/test_catalog_search_products_storefront.py ...........    [ 82%]
+tests/platform/test_catalog_term_suggest.py ......                       [ 84%]
+tests/platform/test_category_snapshot_job.py ...........                 [ 88%]
+tests/platform/test_inventory_sellable_qty_j3.py .....                   [ 89%]
+tests/platform/test_kernel.py .....                                      [ 91%]
+tests/platform/test_magento_product_url.py ...                           [ 92%]
+tests/platform/test_tools_and_assistant.py .......................       [100%]
+
+======================= 301 passed, 7 warnings in 37.26s =======================

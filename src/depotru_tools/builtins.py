@@ -829,6 +829,27 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             },
         )
     )
+    from depotru_integrations.magento.category_products import category_products
+
+    registry.register(
+        ToolSpec(
+            name="catalog.category_products",
+            description=(
+                "Products of a brand and stable storefront category url_path. "
+                "Window 40, ranked by nightly 12-month invoice snapshot then "
+                "smaller presentation. Public IVA-inclusive prices, no stock."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=lambda ctx, params: category_products(
+                params.get("brand"), params.get("url_path")
+            ),
+            public_safe=True,
+            parameters_schema={
+                "brand": "brand name, e.g. sika",
+                "url_path": "stable category url_path from catalog.brand_categories",
+            },
+        )
+    )
     registry.register(
         ToolSpec(
             name="catalog.brand_categories",
