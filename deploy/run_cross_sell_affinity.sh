@@ -64,9 +64,16 @@ sleep_s="${AFF_RETRY_SLEEP:-600}"
 i=1
 while [ "$i" -le "$attempts" ]; do
   if PYTHONPATH=src "$AFF_PY" -m business_analyzer.jobs.cross_sell_affinity \
-      --env-file "$AFF_ENV_FILE" --apply --json \
-      --category-snapshot "$CATALOG_CATEGORY_SNAPSHOT"; then
+      --env-file "$AFF_ENV_FILE" --apply --json; then
     echo "$(date -Is) ok (intento ${i}/${attempts})"
+    # Independent best-effort process: never retry/fail affinity for this file.
+    if PYTHONPATH=src "$AFF_PY" -m business_analyzer.jobs.category_snapshot \
+        --category-snapshot "$CATALOG_CATEGORY_SNAPSHOT" --apply; then
+      echo "$(date -Is) category_snapshot ok"
+    else
+      snapshot_rc=$?
+      echo "$(date -Is) category_snapshot fail (rc=${snapshot_rc})"
+    fi
     exit 0
   fi
   echo "$(date -Is) intento ${i}/${attempts} fallo"

@@ -84,7 +84,7 @@ def test_loaded_env_runs_apply_once(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AFF_RETRY_SLEEP", "0")
     rc, calls = _run(tmp_path, env={"AFF_INBOX_ENV": str(good)})
     assert rc == 0
-    assert calls == 1
+    assert calls == 2  # independent affinity and snapshot invocations
 
 
 # 5-18 nov 2026: sin las credenciales J3 el job fallaba cada noche con

@@ -1,14 +1,22 @@
-"""Additive individual-invoice/public-price snapshot for the affinity job."""
+"""Independent individual-invoice/public-price snapshot; J3 SELECTs only."""
 
 from __future__ import annotations
 
+import argparse
+import json
+import sys
 from datetime import date, datetime, time, timedelta
-from typing import Any
+from pathlib import Path
+from typing import Any, Sequence
 
 from business_analyzer.core.database import Database
 from business_analyzer.core.j3system_sales_warehouse import qualified_j3_table
 from business_analyzer.core.quote_search_iva import build_product
-from depotru_integrations.affinity.category_snapshot import STOCK_FIELDS, WINDOW_MONTHS
+from depotru_integrations.affinity.category_snapshot import (
+    STOCK_FIELDS,
+    WINDOW_MONTHS,
+    write_snapshot,
+)
 from depotru_kernel.documents import excluded_document_sql_in_list
 
 # Existing branch invoice contract (sql_routing / manager reports):
@@ -74,3 +82,30 @@ LEFT JOIN {lines} l ON l.LineasID = a.LineasID
         product["invoice_count"] = totals.get(sku, 0)
         products[sku] = product
     return products
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse this independent snapshot CLI; dry-run by default."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--category-snapshot", required=True, metavar="PATH")
+    parser.add_argument("--as-of", type=date.fromisoformat, default=None)
+    parser.add_argument("--apply", action="store_true")
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Compute/publish only this snapshot, without invoking the affinity job."""
+    args = parse_args(argv)
+    try:
+        products = compute_category_snapshot(as_of=args.as_of)
+        if args.apply:
+            write_snapshot(products, Path(args.category_snapshot))
+    except Exception as exc:  # noqa: BLE001 - CLI boundary, no connection details
+        print(f"category_snapshot error: {type(exc).__name__}", file=sys.stderr)
+        return 1
+    print(json.dumps({"products": len(products), "applied": args.apply}))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

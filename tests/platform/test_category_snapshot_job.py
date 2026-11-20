@@ -101,7 +101,7 @@ def test_compute_snapshot_reuses_public_iva_without_stock(monkeypatch):
 
 
 @pytest.mark.parametrize("apply", [False, True])
-def test_existing_nightly_job_additive_snapshot_flag(monkeypatch, tmp_path, apply):
+def test_independent_snapshot_cli_apply_gate(monkeypatch, tmp_path, apply):
     products = {"A": {"sku": "A", "invoice_count": 2}}
     monkeypatch.setattr(affinity, "compute_records", lambda **kw: [])
     monkeypatch.setattr(job, "compute_category_snapshot", lambda **kw: products)
@@ -109,20 +109,15 @@ def test_existing_nightly_job_additive_snapshot_flag(monkeypatch, tmp_path, appl
     store.count.return_value = 0
     monkeypatch.setattr(affinity, "_resolve_store", lambda **kw: store)
     path = tmp_path / "snapshot.json"
-    result = affinity.run_job(category_snapshot=str(path), apply=apply)
-    assert result["category_snapshot_products"] == 1
-    assert result["category_snapshot_applied"] is apply
+    args = ["--category-snapshot", str(path)] + (["--apply"] if apply else [])
+    assert job.main(args) == 0
     assert path.exists() is apply
     if apply:
         assert json.loads(path.read_text())["products"] == products
-        assert store.replace_all.call_count == 1
-    else:
-        store.replace_all.assert_not_called()
+    store.replace_all.assert_not_called()
 
 
-def test_failed_snapshot_compute_does_not_publish_or_write_affinity(
-    monkeypatch, tmp_path
-):
+def test_failed_snapshot_cli_does_not_publish_or_write_affinity(monkeypatch, tmp_path):
     store = MagicMock()
     monkeypatch.setattr(affinity, "compute_records", lambda **kw: [])
     monkeypatch.setattr(affinity, "_resolve_store", lambda **kw: store)
@@ -132,8 +127,7 @@ def test_failed_snapshot_compute_does_not_publish_or_write_affinity(
 
     monkeypatch.setattr(job, "compute_category_snapshot", broken)
     path = tmp_path / "snapshot.json"
-    with pytest.raises(RuntimeError, match="category_snapshot_unavailable"):
-        affinity.run_job(category_snapshot=str(path), apply=True)
+    assert job.main(["--category-snapshot", str(path), "--apply"]) == 1
     store.replace_all.assert_not_called()
     assert not path.exists()
 
@@ -156,9 +150,34 @@ def test_snapshot_publish_is_atomic_preserves_old_file_on_failure(
 
 def test_cli_accepts_explicit_snapshot_path():
     assert (
-        affinity.parse_args(["--category-snapshot", "/fixture.json"]).category_snapshot
+        job.parse_args(["--category-snapshot", "/fixture.json"]).category_snapshot
         == "/fixture.json"
     )
+
+
+def test_affinity_refresh_never_computes_snapshot(monkeypatch):
+    compute = MagicMock(side_effect=TimeoutError("must not be called"))
+    monkeypatch.setattr(job, "compute_category_snapshot", compute)
+    monkeypatch.setattr(affinity, "compute_records", lambda **kw: [])
+    store = MagicMock()
+    store.count.return_value = 0
+    store.replace_all.return_value = 0
+    monkeypatch.setattr(affinity, "_resolve_store", lambda **kw: store)
+    result = affinity.run_job(apply=True)
+    assert result["applied"] is True
+    store.replace_all.assert_called_once()
+    compute.assert_not_called()
+
+
+def test_snapshot_cli_publish_failure_returns_own_error(monkeypatch, tmp_path, capsys):
+    path = tmp_path / "snapshot.json"
+    path.write_text("previous")
+    monkeypatch.setattr(job, "compute_category_snapshot", lambda **kw: {})
+    publish = MagicMock(side_effect=OSError("private connection detail"))
+    monkeypatch.setattr(job, "write_snapshot", publish)
+    assert job.main(["--category-snapshot", str(path), "--apply"]) == 1
+    assert capsys.readouterr().err == "category_snapshot error: OSError\n"
+    assert path.read_text() == "previous"
 
 
 @pytest.mark.parametrize("count_sku", ["A", "A "])

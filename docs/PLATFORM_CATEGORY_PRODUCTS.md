@@ -31,10 +31,10 @@ window and full deduplicated category membership.
 
 ## Offline snapshot / additive nightly job
 
-The existing `business_analyzer.jobs.cross_sell_affinity` gains an optional
-`--category-snapshot PATH`. The **repo copy only** of
-`deploy/run_cross_sell_affinity.sh` passes that option to the existing nightly
-02:30 invocation. No production cron, service or environment file was changed.
+The **repo copy only** of `deploy/run_cross_sell_affinity.sh` runs
+`business_analyzer.jobs.category_snapshot --category-snapshot PATH --apply`
+as a separate process AFTER logging the affinity `ok` line in the nightly
+02:30 wrapper. No production cron, service or environment file was changed.
 Pair-affinity calculation/store is unchanged; pair counts are never summed as
 individual sales. The new snapshot reuses the affinity job's exact-calendar
 `_cutoff` and canonical document exclusions. It has a fixed 12-month window,
@@ -44,11 +44,13 @@ The additional snapshot is a versioned, atomically replaced **local JSON file**,
 not a new DB table or migration. This avoids request-time J3 access and requires
 no schema rollout. It includes individual invoice counts **and public J3 price /
 IVA fields**: keeping prices offline too honors “never J3 live per message”.
-All publication is gated by the existing `--apply`; without it, the extension
-computes only. Computing the snapshot fails before any affinity write if its J3
-reads fail; a later file-publication failure preserves the old complete file
-and makes the job fail for the existing retry loop. The pair table and file are
-not a distributed transaction; consumers only read their own complete snapshot.
+Snapshot publication is gated by its own `--apply`; without it, this standalone
+CLI computes only. A snapshot compute/publication failure logs a separate
+`category_snapshot fail (rc=...)` line, preserves affinity's preceding `ok`
+and exit 0, and NEVER enters the affinity retry loop. Failed atomic publication
+preserves the old complete file. Affinity retries remain unchanged; snapshot is
+attempted once only after affinity succeeds. The pair table and file are not a
+distributed transaction; consumers only read their own complete snapshot.
 
 Shared path for both job and BFF:
 
