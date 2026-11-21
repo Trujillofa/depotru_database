@@ -1,0 +1,29 @@
+-- D4 DESIGN ONLY. MSSQL; never executed against a DB by this PR.
+-- Run each SELECT separately only after schema/permission review.
+-- Q1: field names/types only, no customer values. Schema dbo is unverified.
+SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+ORDER BY ORDINAL_POSITION;
+
+-- Q2: bounded source-quality aggregates, NOT invoice/conversion counts.
+-- Bind (start_inclusive, end_exclusive); confirm training fields first.
+-- Exclusions must match depotru_kernel.documents canonical constants.
+-- Does not claim a sales allowlist or omit negative quantities/returns.
+SELECT COUNT_BIG(*) AS sales_line_rows,
+       SUM(CASE WHEN TercerosIdentificacion IS NULL
+                 OR LTRIM(RTRIM(TercerosIdentificacion)) = ''
+                THEN CAST(1 AS bigint) ELSE CAST(0 AS bigint) END)
+           AS missing_identification_rows,
+       SUM(CASE WHEN NumeroDocumento IS NULL
+                THEN CAST(1 AS bigint) ELSE CAST(0 AS bigint) END)
+           AS missing_document_number_rows,
+       SUM(CASE WHEN TotalSinIva IS NULL
+                THEN CAST(1 AS bigint) ELSE CAST(0 AS bigint) END)
+           AS missing_amount_rows,
+       SUM(CASE WHEN Cantidad < 0
+                THEN CAST(1 AS bigint) ELSE CAST(0 AS bigint) END)
+           AS negative_quantity_rows
+FROM dbo.banco_datos
+WHERE Fecha >= %s AND Fecha < %s
+  AND DocumentosCodigo NOT IN ('XY', 'AS', 'TS', 'YX', 'ISC');
