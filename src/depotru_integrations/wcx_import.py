@@ -104,6 +104,7 @@ def scan_export(root: Path, source: str) -> Dict[str, int]:
                 "movements",
                 "movements_without_id",
                 "movements_wrong_case",
+                "movements_initial_customer",
                 "messages_unique",
                 "messages_duplicate",
                 "messages_conflict",
@@ -167,17 +168,26 @@ def scan_export(root: Path, source: str) -> Dict[str, int]:
                         customer_phones[customer].add(phone)
                 else:
                     counts["cases_without_customer_id"] += 1
-                for movement in movements:
+                for position, movement in enumerate(movements):
                     if not isinstance(movement, dict):
                         raise ValueError("invalid_structure")
                     counts["movements"] += 1
                     if not _positive_id(movement.get("id")):
                         counts["movements_without_id"] += 1
                         continue
-                    if (
-                        type(movement.get("idTicket")) is not int
-                        or movement["idTicket"] != case_id
+                    movement_case = movement.get("idTicket")
+                    if type(movement_case) is int and movement_case == case_id:
+                        pass
+                    elif (
+                        type(movement_case) is int
+                        and movement_case == 0
+                        and (movement["id"] == case_id or position == 0)
                     ):
+                        # Owner-verified rule: idTicket==0 with id==envelope id
+                        # or first movement (typeMov=8) is the customer's
+                        # initial message of this case, not a foreign reference.
+                        counts["movements_initial_customer"] += 1
+                    else:
                         counts["movements_wrong_case"] += 1
                         continue
                     key = dedupe_key(source, "message", movement["id"], case_id)

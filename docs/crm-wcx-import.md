@@ -1,8 +1,11 @@
-# WCX → CRM historical import — D3 design proposal
+# WCX → CRM historical import — D3 design (owner-corrected revision)
 
-**Status: DRAFT / owner approval required. No import, migration, UI change or
-production access is authorized by this document.** This PR ships a count-only
-prototype, not a database importer. D4 remains blocked until the owner approves D3.
+**Status: design corrected per owner review (2026-11-21). No import,
+migration apply, UI change or production access is authorized by this
+document.** The real numbered migration and the idempotent importer live in
+the **depotru-inbox** repo PR (branch from `master`, `sql/` numbered). This
+repo keeps the design, the corrected count-only prototype and this reference
+draft DDL. D4 remains blocked until the owner approves this revision.
 
 ## 1. Evidence and boundaries
 
@@ -33,9 +36,26 @@ Archive inventory: **33 members**, comprising 1 directory, 30 JSONL files and
 - All detail dates observed use `YYYY-MM-DD HH:MM:SS`, with **no timezone offset**.
   All 301,597 non-null `dateValue` strings share that format. `dateReference`
   also contains other display formats: it is not the authoritative timestamp.
-  Do not infer the source timezone from an export's generation time.
+  **Owner decision: the source timezone is `America/Bogota`.**
 
-### Count-only baseline (one complete offline scan)
+### Initial-message rule (owner-verified correction)
+
+The previous revision classified 14,399 movements as «wrong case» because their
+`idTicket` (0) differed from the envelope ID. The owner verified against the
+vendor data that these are **the first movement of every envelope**, with
+`typeMov = 8` and `id` equal to the envelope (case) ID: it is the customer's
+initial message. An independent local probe confirmed: 14,399 envelopes each
+have their movement at position 0 with `idTicket = 0`, `typeMov = 8` and
+`id = envelope.id`; the 1,154 remaining `idTicket = 0` entries have `typeMov = 0`,
+sit at non-first positions and carry no positive movement ID; there are **zero**
+movements with a non-zero `idTicket` pointing at a different case.
+
+**Rule: a movement with `idTicket == 0` belongs to its envelope when
+`id == envelope.id` OR it is the first movement of the envelope.** Anything else
+with a mismatched case reference is quarantined (currently an empty category).
+The regression was written RED-first with synthetic fixtures of that exact shape.
+
+### Count-only baseline (corrected offline scan)
 
 Counts are observations, not approved import eligibility or semantic message totals.
 
@@ -55,55 +75,54 @@ Counts are observations, not approved import eligibility or semantic message tot
 | Phone candidates shared by multiple source customers | 4 |
 | Source customers with multiple phone candidates | 0 |
 | Movement list entries | 302,751 |
-| Entries without positive movement ID | 1,154 |
-| Positive-ID entries whose `idTicket` differs from envelope | 14,399 |
-| Unique accepted `(source, case ID, movement ID)` keys | 286,800 |
-| Identical duplicate accepted movements | 398 |
+| Entries without positive movement ID (kept only in `raw`) | 1,154 |
+| Entries accepted via the initial-customer rule (`idTicket=0`) | 14,399 |
+| Entries with a non-zero `idTicket` pointing elsewhere | 0 |
+| Unique accepted `(source, case ID, movement ID)` keys | 301,136 |
+| Identical duplicate accepted movements | 461 |
 | Conflicting accepted movement keys | 0 |
 | Entries containing attachment metadata (before dedupe) | 11,535 |
 
-Reconciliation: movement entries are partitioned into no-ID, wrong-case,
-unique accepted, identical duplicate and conflicting-key counts. A separate
-local set-based verification checks the unique and duplicate totals. The
-14,399 wrong-case entries must remain quarantined pending vendor/owner mapping;
-they must NOT be silently reassigned to the envelope. No-ID entries also remain
-outside `wcx_messages`; their future identity/classification requires a decision.
-All 286,800 accepted entries are **movement candidates**, including potentially
+Reconciliation: 302,751 entries = 301,136 unique accepted + 461 identical
+duplicates + 1,154 without positive ID. The previous 14,399-entry «wrong case»
+quarantine is empty under the corrected rule; those entries are now accepted
+as each case's initial customer message. Of the 14,399 accepted initial
+messages, 63 are identical repeats of already-seen envelopes and are counted
+as duplicates. The 1,154 no-ID entries are not lost: **the complete original
+envelope JSON is stored in `wcx_cases.raw`**, so they remain reviewable.
+All 301,136 accepted entries are **movement candidates**, including potentially
 notes/system events, not a claim that every entry is a WhatsApp chat message.
-No channel/status/actor enum meaning is inferred from numeric values.
+No channel/status enum meaning is inferred from numeric values.
 
-## 2. Proposed storage (PostgreSQL, inbox-owned)
+## 2. Storage (PostgreSQL, inbox-owned)
 
-Draft DDL: [`drafts/crm-wcx-import.sql`](drafts/crm-wcx-import.sql). It is deliberately
-outside `data/sql/` and the inbox's numbered `sql/` migration harness. It aborts
-before DDL and ends with `ROLLBACK`; **never applied or tested against a DB**.
-A future approved migration must be a new reviewed artifact in the inbox repo,
-not execution of this draft. No schema change belongs in MSSQL or Magento.
+The **real migration** is a numbered `sql/` file in the depotru-inbox repo
+PR, reviewed there with the importer and integration tests. The DDL below
+(`drafts/crm-wcx-import.sql`) remains an inert reference draft in this repo:
+it aborts before DDL and ends with `ROLLBACK`; it is never applied. No schema
+change belongs in MSSQL or Magento.
 
 ### `wcx_customers`
 
 One row per source customer identity; **never merge by display name or phone**.
+There is **no `contact_id` and no `link_state`**: the inbox link is resolved
+in read time by normalized phone (section 3).
 
 | Column(s) | PostgreSQL type | Meaning |
 |---|---|---|
 | `source` | text | Stable account namespace, not archive name/month; lowercase token |
 | `source_customer_id` | bigint | Positive WCX customer ID; PK with source |
 | `phone_e164` | text nullable | Conservative `+57` candidate; not identity evidence |
+| `phone_shared` | boolean NOT NULL default false | True when the same phone candidate is attached to several source customers; such rows are displayed as «compartido» and **never merged** |
 | `display_name` | text nullable | Historical name, never overwrites inbox name |
-| `contact_id` | text nullable | FK to inbox `contacts.id`, `ON DELETE SET NULL` |
-| `link_state` | text | `unreviewed`, `ambiguous`, `approved`, `rejected` |
 | `source_fingerprint` | bytea | 32-byte canonical source customer projection hash |
 | `first_batch_sha256`, `last_batch_sha256` | bytea | Archive provenance, each 32 bytes |
 | `imported_at`, `last_seen_at` | timestamptz | Import bookkeeping, not historical event times |
 
 Indexes: PK `(source, source_customer_id)`; partial nonunique index on
-`phone_e164`; partial unique indexes on `(source, contact_id)` and
-`(source, phone_e164)` for linked rows. Unlinked duplicate phones intentionally
-preserve the observed shared-phone ambiguity. A non-null contact link requires
-`approved` and a non-null phone. Uniqueness prevents duplicate approved links
-per source but cannot prove ownership or detect ambiguous unlinked candidates.
-Contact deletion unlinks, but retention/deletion of historical content is an
-owner/legal policy gate, not permission to retain indefinitely.
+`phone_e164`. Shared phones intentionally preserve the observed ambiguity:
+four phone candidates are flagged `phone_shared` and no automatic link is
+created for them.
 
 ### `wcx_cases`
 
@@ -115,13 +134,14 @@ owner/legal policy gate, not permission to retain indefinitely.
 | `source_status`, `source_channel` | integer nullable | Preserve numeric `status`/`origin`, no invented labels |
 | `source_agent_id` | bigint nullable | Historical assignment, NOT inbox `agents.id` |
 | `created_local`, `updated_local` | timestamp nullable | Strictly parsed WCX local timestamps |
-| `source_timezone` | text nullable | Owner-confirmed IANA zone only |
-| `created_at`, `updated_at` | timestamptz nullable | Filled only after confirmed timezone conversion |
+| `source_timezone` | text NOT NULL default 'America/Bogota' | Owner-confirmed zone; CHECK pins the value |
+| `created_at`, `updated_at` | timestamptz nullable | Local timestamps converted at `America/Bogota` |
+| `raw` | jsonb NOT NULL | **Complete original envelope JSON**, including the 1,154 no-ID movement entries; nothing is lost |
 | fingerprint, batch hashes, bookkeeping | same as customer | Row provenance |
 
 Timeline index `(source, source_customer_id, created_local DESC, source_case_id DESC)`.
 No FK to live `cases`, no new open ticket, no assignment, SLA or sales conversion
-side effect. Cases without valid customer IDs can be preserved unlinked, never
+side effect. Cases without valid customer IDs are preserved unlinked, never
 pooled into a fake customer ID `0`.
 
 ### `wcx_messages`
@@ -131,26 +151,24 @@ pooled into a fake customer ID `0`.
 | `source`, `source_case_id`, `source_message_id` | text, bigint, bigint | Composite PK; source movement ID must be positive |
 | `source`, `source_case_id` | composite FK | Belongs to exactly one historical case |
 | `source_type` | integer nullable | Raw `typeMov`, mapping not approved |
-| `actor` | text | `customer`, `agent`, `automation`, `system`, `unknown`; default unknown |
+| `actor` | text NOT NULL | Owner-approved mapping: `isAutomation` → `automation`; `isAdmin`/agent → `agent`; everything else → `customer` |
+| `is_admin`, `is_owner`, `is_automation` | boolean nullable | Raw flags preserved exactly as exported |
 | `body_text` | text nullable | `contentText`, never executed as HTML |
 | `has_attachment` | boolean | Metadata placeholder only; no URL fetching |
 | `occurred_local` | timestamp nullable | Strictly parsed `dateValue`, null on invalid/missing |
-| `source_timezone`, `occurred_at` | text, timestamptz nullable | Zone/conversion gate as above |
+| `source_timezone` | text NOT NULL default 'America/Bogota' | Owner-confirmed zone |
+| `occurred_at` | timestamptz nullable | Local timestamp converted at `America/Bogota` |
 | fingerprint, batch hashes, bookkeeping | same as customer | Row provenance |
 
-Timeline index `(source, source_case_id, occurred_local, source_message_id)`;
-query explicitly sorts null dates last. Unknown timestamps display as unknown,
-never substituted with import time. No global unique constraint on movement ID
-until the vendor guarantees its scope. WCX IDs must not be assigned to inbox
-`wa_message_id`; those are Meta identities with a different namespace.
+Timeline index `(source, source_case_id, occurred_at, source_message_id)`.
+Unknown timestamps display as unknown, never substituted with import time. No
+global unique constraint on movement ID until the vendor guarantees its scope.
+WCX IDs must not be assigned to inbox `wa_message_id`; those are Meta
+identities with a different namespace. Participant emails, tokens and URL
+query strings are not projected into queryable columns; they stay only inside
+`wcx_cases.raw` (the lossless original), which is never rendered as HTML.
 
-Do not store entire raw envelopes, HTML, participant emails, tokens or URL
-query strings in JSONB as a shortcut. Future customer projection is restricted
-to source ID, canonical phone and historical display name. Multiple different
-projections for one customer ID in a batch must be quarantined, not chosen by
-file order. The prototype does not claim to resolve those attribute conflicts.
-
-## 3. Phone normalization and inbox link
+## 3. Phone normalization and the read-time inbox link
 
 The Python normalizer accepts ASCII strings only, optional spaces/dashes and
 one balanced parenthesis pair. Accepted forms are Colombian national 10-digit
@@ -160,33 +178,30 @@ numbers, channel prefixes (`tg:`), extensions, multiple numbers, Unicode digits,
 legacy dialing prefixes and malformed input. No guessed repairs.
 
 This is conservative syntax validation, **not** proof of ownership, reachability,
-WhatsApp membership or a specific person's identity. A recycled/shared number
-must not expose another customer's history.
+WhatsApp membership or a specific person's identity.
 
 Verified inbox source at `a2bff9bbf4cc44e0303588d752f6f6121b05e52d`:
 
-- `sql/001_init.sql`: `contacts.id` is text, `contacts.phone` is text with a unique
-  index on the stored string (not on a validated Colombian number).
+- `sql/001_init.sql`: `contacts.id` is text, `contacts.phone` is text with a
+  unique index on the stored string (not on a validated Colombian number).
 - `lib/whatsapp/phone.ts::canonicalPhone` strips nondigits and prefixes `+`; it
   does **not** infer `+57` or validate Colombian numbers. The Python function is
   intentionally stricter; do not claim they are equivalent.
 - `lib/whatsapp/neon-inbound-repo.ts` resolves existing contacts by exact phone.
-  This PR reads code only; it has not queried live contacts or verified matches.
 
-Future linking procedure, OFF until approved:
+**Owner decision: no stored link, no `contact_id`, no manual approval flow.**
+The customer history view joins inbox contacts **in read time** by canonical
+phone equality against `wcx_customers.phone_e164`:
 
-1. Normalize WCX phone candidates locally. Keep invalid rows unlinked.
-2. In a separately authorized process, derive candidates from inbox WhatsApp
-   contacts with the same strict normalizer; do not rewrite `contacts.phone`
-   and do not normalize Telegram identities into phone numbers.
-3. Require one unambiguous source customer ↔ one unambiguous contact per phone.
-   Multiple source customers, multiple contacts after normalization, missing
-   contact, changed phone or rejected link produces no automatic link.
-4. Proposed default: explicit owner-approved link review, with contact phone
-   revalidation before display and an audit of approver/time/reason in the
-   future implementation. That audit mechanism is not shipped here.
-5. No auto-creation or overwriting of contacts, ERP customers, names or cases.
-   Never resolve by name/email or expose unresolved candidate history to agents.
+1. Normalize WCX phone candidates at import time (stored, indexed).
+2. At read time, canonicalize the inbox contact phone and select WCX customers
+   with the same `phone_e164`.
+3. Exactly one match → the history tab shows that customer's cases.
+4. Multiple source customers share the phone (`phone_shared`) → the tab shows
+   «teléfono compartido» and lists each source customer separately; histories
+   are **never merged or interleaved**.
+5. No match → no history tab. No auto-creation or overwriting of contacts, ERP
+   customers, names or cases. Never resolve by name/email.
 
 ## 4. Dedupe and idempotent reimport contract
 
@@ -196,59 +211,54 @@ keys: customer `(source, customer ID)`, case `(source, case ID)`, movement
 `(source, case ID, movement ID)`. Positive **integer** source IDs only; no bool,
 float, coerced string, content-only key or order-based fallback.
 
-The prototype hashes canonical JSON (sorted keys, UTF-8, compact separators),
-comparing case `detail` independently of export time and movement lists, and
-full movement objects independently of the envelope. Equal key + equal hash
-is a duplicate; each additional distinct hash for a key is one conflict. All
-observed hash variants are retained in memory, so duplicate/conflict totals
-are independent of row order. A conflicted key is never eligible merely because
-one of its versions was counted as the first unique observation. SHA-256 is for local
-comparison, **not anonymization**; neither keys nor hashes are printed.
-A changed nested `detailParent` can conservatively trigger a movement conflict;
-this is preferable to silent mutation. The future minimal stored projection
-needs a versioned canonicalizer and a separately reviewed revision mechanism.
+Dedupe hashes canonical JSON (sorted keys, UTF-8, compact separators), comparing
+case `detail` independently of export time and movement lists, and full
+movement objects independently of the envelope. Equal key + equal hash is a
+duplicate; each additional distinct hash for a key is one conflict. All observed
+hash variants are retained in memory, so duplicate/conflict totals are
+independent of row order. SHA-256 is for local comparison, **not anonymization**;
+neither keys nor hashes are printed.
 
-Future writer, NOT present in this PR:
+The **idempotent importer is implemented in the depotru-inbox repo PR** with
+`--dry-run` (counts only) and a real mode, plus integration tests against a
+local ephemeral PostgreSQL. Its contract:
 
-- Preflight the complete archive locally, verify batch SHA-256, parser version,
-  account namespace, reconciliation counts and approved link policy.
-- Quarantine invalid identities, mismatched case references and conflicting
-  keys; do not resolve by latest shard or `exportedAt` (export time is not a
-  business version). Preserve originals for later review.
-- Stage an approved batch and publish atomically in one transaction with
-  serialized per-source imports. Enforce unique keys in PostgreSQL; in-memory
-  dedupe alone is not a concurrent import guarantee.
+- `--dry-run` performs zero writes and reports the same aggregate counts as
+  this prototype; the real mode stages and publishes atomically in one
+  transaction per source.
 - Existing identical keys are no-ops except optional `last_seen_at` and last
-  batch provenance. Existing changed keys abort/quarantine pending revision
-  policy; never blanket `ON CONFLICT DO UPDATE`. Retry after rollback safely.
-- Absent rows in a later partial export are not deletes. No deletion sync,
-  send queue, webhook, analytics, automation or AI-training side effect.
+  batch provenance. Existing changed keys abort/quarantine; never blanket
+  `ON CONFLICT DO UPDATE`. Re-running the import changes nothing.
+- The 1,154 no-ID movement entries survive inside `wcx_cases.raw`.
+- Absent rows in a later partial export are not deletes. **Retention: keep
+  everything** (owner rule). No deletion sync, send queue, webhook, analytics,
+  automation or AI-training side effect.
 - Abort on structural corruption; never print the failing line, filename,
   identifier or exception payload. Only aggregate error categories may escape.
 
-## 5. Proposed experience when a customer writes on WhatsApp
+## 5. Experience when a customer writes on WhatsApp
 
 The existing inbound path continues creating/resolving its live case normally.
 A **future**, feature-flagged, authenticated inbox view adds a separate tab:
-**“Historial WCX (solo lectura)”**. It appears only for approved, still-valid
-links and viewers authorized to access that contact's history. No public BFF
-endpoint, customer-facing replay or advisor/LLM context injection is enabled.
+**“Historial WCX (solo lectura)”**. It appears only when the read-time phone
+join (section 3) resolves exactly one source customer, and for viewers
+authorized to see that contact's history. No public BFF endpoint,
+customer-facing replay or advisor/LLM context injection is enabled.
 
-The tab lists historical cases newest first with source badge, historical date,
-subject and unmapped status shown as unknown until approved mapping. Opening a
-case loads a bounded page of movements ordered by local date and source ID,
-with unknown dates last. Cross-case/cross-source ties have explicit stable ID
-ordering. Actor stays “Sin clasificar” until vendor mapping is approved. Render
-plain escaped text only; never `content` HTML, scripts or remote images. An
-attachment displays “Adjunto histórico no disponible”; no remote URL is loaded.
-A missing/conflicting link displays **“Historial no vinculado; requiere revisión”**
-without previewing possible matches. Phone changes/revocation immediately hide
-the tab. Unlinking never changes the live conversation.
+The tab lists historical cases newest first with source badge, historical
+date (`America/Bogota`), subject and unmapped status shown as unknown until
+approved mapping. Opening a case loads a bounded page of movements ordered by
+timestamp and source ID, unknown dates last. Actor is derived from the
+owner-approved flag mapping (`automation` / `agent` / `customer`); raw flags
+remain available for audit. Render plain escaped text only; never `content`
+HTML, scripts or remote images. An attachment displays “Adjunto histórico no
+disponible”; no remote URL is loaded. A shared phone displays «teléfono
+compartido» with separate, unmerged per-customer histories. Unlinking never
+changes the live conversation; a phone change simply stops resolving the tab.
 
-This PR contains no inbox UI patch. Before implementation, owner approval must
-specify role/group visibility (no cross-group leakage), retention/deletion,
-audit, phone ownership/recycling handling and access revocation. Archive content
-is historical untrusted input, never instructions to tools or the assistant.
+This design contains no inbox UI patch; the depotru-inbox PR ships only the
+migration, importer and tests. Role/group visibility for the future tab
+remains an owner gate before any UI work.
 
 ## 6. Executable count-only prototype and verification
 
@@ -267,8 +277,7 @@ The command only opens local JSONL files for reading and prints integer aggregat
 counts. It rejects symlinks, empty input, malformed envelopes and invalid case
 identities. Inventory-only input is not evidence of import readiness. Source
 files are streamed one row at a time; sets/hashes grow with unique identities,
-so resource requirements must be re-evaluated for larger exports. Use only the
-approved raw directory for real data; arbitrary temp input is for synthetic tests.
+so resource requirements must be re-estimated for larger exports.
 
 ```bash
 PYTHONPATH=src TESTING=true AI_PROVIDER=ollama \
@@ -276,35 +285,27 @@ PYTHONPATH=src TESTING=true AI_PROVIDER=ollama \
   tests/platform/test_wcx_import.py -q
 ```
 
-RED was executed **before** the implementation: collection exited 2 with
-`ModuleNotFoundError: depotru_integrations.wcx_import`. Initial GREEN: 34 synthetic
-tests passed. Independent review then exposed ASCII-boundary, empty-input and
-order-dependent conflict-count gaps: regression RED was 5 failed / 36 passed;
-after correction the final targeted suite passed **41/41**, and the offline
-`tests/platform` regression suite passed **346/346** (6 warnings). Scoped
-`pre-commit run --files ...` passed, including mypy and gitleaks. Fixtures cover
-strict phones, source/case-scoped identity,
-duplicate vs conflict, reimport stability, no phone-based merging, quarantines,
-malformed structures, mandatory dry-run, read-only input and sanitized errors.
-No real records are test fixtures. SQL is reviewed as inert text, never applied;
-DB transaction/concurrency, UI authorization, enum and timezone mappings remain
-unimplemented acceptance gates, not implied test coverage. The draft CHECKs only
-require timezone presence for converted times; the future writer must validate
-the owner-approved IANA zone and verify local↔UTC correspondence. The DDL does
-not itself enforce timezone policy, contact ownership, or inbox authorization.
+Original verification: RED before implementation (module missing), 41/41
+after independent review fixes, `tests/platform` 346/346, scoped pre-commit
+passed including mypy and gitleaks. **Correction round (this PR):** the
+owner-verified initial-message rule was written RED-first — 3 new synthetic
+fixtures of the exact shape (`idTicket=0`, `id=envelope.id`, first position,
+`typeMov=8`) failed with `movements_wrong_case`/missing counter, then passed
+after the rule change; the corrected offline scan of the real export produced
+the counts in section 1 (reconciled: 301,136 + 461 + 1,154 = 302,751). No real
+records are test fixtures. SQL is reviewed as inert text, never applied.
 
-## 7. Decisions required from the owner (before any implementation/apply)
+## 7. Owner decisions applied and remaining gates
 
-1. Approve or revise this design and the stable WCX account namespace.
-2. Confirm source timezone, vendor channel/status/type/actor mappings, and the
-   meaning of mismatched-ticket/no-ID entries; do not silently discard history.
-3. Approve strict phone policy and manual link review, shared/recycled number
-   handling, contact changes and the future link audit mechanism.
-4. Approve historical content scope, attachment exclusion, retention/deletion,
-   lawful processing basis and authorized role/group visibility.
-5. Approve a conflict/revision policy and the inbox-owned deployment path.
-   A separate named authorization is required for any Neon/test/production DB
-   write, real import, migration, merge, deployment or service change.
+Applied in this revision (owner review, 2026-11-21): initial-message counting
+rule; no stored link/manual approval (read-time phone join; shared phones
+flagged, never merged); `raw` jsonb lossless envelope; timezone
+`America/Bogota`; actor mapping with preserved raw flags; keep-everything
+retention; real migration + importer moved to depotru-inbox.
 
-The requested deliverable is this design PR plus aggregate evidence. It does
-not authorize execution. D3 stays awaiting the owner; D4 must not start yet.
+Still requiring the owner before any execution: review/merge of the
+depotru-inbox PR (numbered migration, importer, integration tests), approval
+of the production `source` namespace token, vendor channel/status/type enum
+mappings for display, and a separate named authorization for any Neon/test or
+production DB write, real import, migration apply, merge, deployment or
+service change. Until then nothing is applied and D4 stays blocked.
