@@ -66,7 +66,7 @@ ORDER BY v.Fecha DESC
 - One `VentaID` maps to **multiple rows** in `InvVentasDetalle` (one per line item). If you need one warehouse per sale, use `CROSS APPLY TOP 1 d.AlmacenID` per `VentaID`.
 - Filter with `a.AlmacenCodigo IS NOT NULL AND a.AlmacenCodigo <> ''` when excluding unassigned lines.
 - `InvImpresionFactura` may be used for recent e-invoice staging but does not join to most historical `InvVentas` rows.
-- `AdmAlmacenUbicacion` exists if physical location detail is needed beyond the warehouse code.
+- `AdmAlmacenUbicacion` exists if physical location detail is needed beyond the warehouse code. In this database both `AdmUbicacion` and `AdmUbicacionAlmacen` are empty (2026-08-29), so a DIS physical count cannot be bin-based. See `docs/reference/dis-physical-inventory-audit.md`.
 
 ## Code & Vanna Integration
 
