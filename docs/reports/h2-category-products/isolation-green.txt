@@ -1,0 +1,20 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.0.3, pluggy-1.6.0
+Business Data Analyzer Test Suite
+Python: 3.12.12 (main, Oct 31 2025, 23:02:31) [Clang 21.1.4 ]
+pymssql: ✓
+pandas: ✓
+matplotlib: ✓
+vanna: ✓
+rootdir: /home/yderf/Projects/depotru_database/.worktrees/t_e35d42b3
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: anyio-4.13.0, asyncio-1.4.0, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 21 items
+
+tests/platform/test_category_snapshot_isolation.py ..                    [  9%]
+tests/platform/test_category_snapshot_job.py ...........                 [ 61%]
+tests/platform/test_affinity_refresh_script.py ........                  [100%]
+
+======================== 21 passed, 1 warning in 0.88s =========================
+pytest exit=0

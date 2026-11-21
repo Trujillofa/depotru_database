@@ -1,0 +1,11 @@
+
+$ /home/yderf/Projects/depotru_database/.venv/bin/python -m black --version
+python -m black, 23.12.1 (compiled: yes)
+Python (CPython) 3.12.12
+
+exit=0
+
+$ /home/yderf/Projects/depotru_database/.venv/bin/python -m isort --version-number
+5.13.2
+
+exit=0

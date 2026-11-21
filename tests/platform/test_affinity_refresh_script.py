@@ -84,7 +84,7 @@ def test_loaded_env_runs_apply_once(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AFF_RETRY_SLEEP", "0")
     rc, calls = _run(tmp_path, env={"AFF_INBOX_ENV": str(good)})
     assert rc == 0
-    assert calls == 1
+    assert calls == 2  # independent affinity and snapshot invocations
 
 
 # 5-18 nov 2026: sin las credenciales J3 el job fallaba cada noche con
@@ -149,3 +149,26 @@ def test_j3_env_wins_over_db_vars_in_the_inbox_env(tmp_path, monkeypatch) -> Non
     )
     assert rc == 0
     assert seen.read_text().strip() == "j3.real"
+
+
+def test_wrapper_passes_additive_category_snapshot_path(tmp_path, monkeypatch):
+    good = tmp_path / "good.env"
+    good.write_text("DATABASE_URL=postgresql://test/neondb\n", encoding="utf-8")
+    seen = tmp_path / "args"
+    shim = tmp_path / "shim_args"
+    shim.write_text(
+        f'#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "{seen}"\n',
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    monkeypatch.setenv("AFF_ATTEMPTS", "1")
+    path = str(tmp_path / "category snapshot.json")
+    rc, _ = _run(
+        tmp_path,
+        env={"AFF_INBOX_ENV": str(good), "CATALOG_CATEGORY_SNAPSHOT": path},
+        shim_path=shim,
+    )
+    assert rc == 0
+    args = seen.read_text().splitlines()
+    assert args[args.index("--category-snapshot") + 1] == path
+    assert "--apply" in args

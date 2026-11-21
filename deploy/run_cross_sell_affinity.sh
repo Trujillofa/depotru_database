@@ -13,6 +13,9 @@ set -u
 : "${AFF_REPO_DIR:=/home/yderf/Projects/depotru_database-wt/bff-clean-main}"
 : "${AFF_PY:=$AFF_REPO_DIR/.venv/bin/python}"
 : "${AFF_ENV_FILE:=/home/yderf/Projects/depotru-inbox-prod/.env.local}"
+# Repo-only extension. Owner deploys this script; no production cron edits.
+# BFF and job must share this file (same user by default); no stock/cost stored.
+: "${CATALOG_CATEGORY_SNAPSHOT:=$HOME/.cache/depotru/catalog-category-products.json}"
 # Credenciales J3 (DB_HOST/DB_USER/...). El worktree no tiene .env propio y
 # Database() no las encuentra: sin esto el job fallaba cada noche con
 # j3_unavailable: ConnectionError (5-18 nov 2026). Es el mismo archivo que
@@ -63,6 +66,14 @@ while [ "$i" -le "$attempts" ]; do
   if PYTHONPATH=src "$AFF_PY" -m business_analyzer.jobs.cross_sell_affinity \
       --env-file "$AFF_ENV_FILE" --apply --json; then
     echo "$(date -Is) ok (intento ${i}/${attempts})"
+    # Independent best-effort process: never retry/fail affinity for this file.
+    if PYTHONPATH=src "$AFF_PY" -m business_analyzer.jobs.category_snapshot \
+        --category-snapshot "$CATALOG_CATEGORY_SNAPSHOT" --apply; then
+      echo "$(date -Is) category_snapshot ok"
+    else
+      snapshot_rc=$?
+      echo "$(date -Is) category_snapshot fail (rc=${snapshot_rc})"
+    fi
     exit 0
   fi
   echo "$(date -Is) intento ${i}/${attempts} fallo"
