@@ -77,7 +77,7 @@ class TestRecommendedReportsCatalog:
     def test_payload_includes_period_defaults_and_month_names(self):
         payload = recommended_reports_payload(today=date(2024, 12, 15))
         assert "reports" in payload
-        assert len(payload["reports"]) == 9
+        assert len(payload["reports"]) == 10
         assert payload["default_year"] == 2024
         assert payload["default_month"] == 11
         assert payload["month_names"]["12"] == "Diciembre"
@@ -124,6 +124,9 @@ class TestRecommendedReportsCatalog:
         assert "generate_invoice_summary" in patched
         assert "informe-as-of" in patched
         assert "informe-invoices" in patched
+        assert "generate_brand_report" in patched
+        assert "informe-brand" in patched
+        assert "informe-date" in patched
 
 
 @pytest.fixture

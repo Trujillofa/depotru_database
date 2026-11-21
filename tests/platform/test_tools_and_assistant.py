@@ -132,7 +132,8 @@ def test_assistant_product_name_search_routes():
     resp = run_assistant_turn(
         ChatRequest(message="tienen cemento?", audience=Audience.PUBLIC)
     )
-    assert "catalog.search_products" in resp.tools_used
+    catalog_tools = {"catalog.quote_search", "catalog.search_products"}
+    assert catalog_tools.intersection(resp.tools_used)
     # Either product hits or storefront search URL — never bare generic help
     assert "cemento" in resp.reply.lower()
     assert "modo herramientas" not in resp.reply.lower()
@@ -170,9 +171,8 @@ def test_assistant_chat_log_product_and_guide_routes():
         ChatRequest(message="cotizar un tanque ajover", audience=Audience.PUBLIC)
     )
     assert "platform.health" not in resp.tools_used
-    assert (
-        resp.guide_id == "tanque_agua" or "catalog.search_products" in resp.tools_used
-    )
+    catalog_hit = {"catalog.search_products", "catalog.quote_search"}
+    assert resp.guide_id == "tanque_agua" or catalog_hit.intersection(resp.tools_used)
     assert "tanque" in resp.reply.lower()
 
     # Greeting + product search
@@ -183,7 +183,7 @@ def test_assistant_chat_log_product_and_guide_routes():
         )
     )
     assert "platform.health" not in resp.tools_used
-    assert "catalog.search_products" in resp.tools_used
+    assert catalog_hit.intersection(resp.tools_used)
     assert "rodillo" in resp.reply.lower() or "rodillos" in resp.reply.lower()
 
     # Bare product / typo anticorrosivo → metal paint guide or catalog
@@ -191,9 +191,7 @@ def test_assistant_chat_log_product_and_guide_routes():
         ChatRequest(message="SDS anticorrisvo negro", audience=Audience.PUBLIC)
     )
     assert "platform.health" not in resp.tools_used
-    assert (
-        resp.guide_id == "pintura_metal" or "catalog.search_products" in resp.tools_used
-    )
+    assert resp.guide_id == "pintura_metal" or catalog_hit.intersection(resp.tools_used)
 
     # Lámina galvanizada
     resp = run_assistant_turn(
@@ -203,7 +201,7 @@ def test_assistant_chat_log_product_and_guide_routes():
         )
     )
     assert "platform.health" not in resp.tools_used
-    assert resp.guide_id == "teja_zinc" or "catalog.search_products" in resp.tools_used
+    assert resp.guide_id == "teja_zinc" or catalog_hit.intersection(resp.tools_used)
     assert (
         "lám" in resp.reply.lower()
         or "lamina" in resp.reply.lower()
@@ -223,6 +221,7 @@ def test_assistant_cart_pay_not_product_search():
         )
     )
     assert "catalog.search_products" not in resp.tools_used
+    assert "catalog.quote_search" not in resp.tools_used
     assert "platform.health" not in resp.tools_used
     assert "carrito" in resp.reply.lower() or "checkout" in resp.reply.lower()
     assert "pagar" in resp.reply.lower() or "tienda" in resp.reply.lower()
@@ -357,3 +356,79 @@ def test_affinity_contract_headers():
     assert ok2, msg2
     bad, _ = validate_crosssell_csv_header(["sku"])
     assert not bad
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_tienen_sika_routes_to_catalog_not_guide():
+    """Brand availability must not open the Sika impermeabilizante job guide."""
+    from modules.assistant.chat import extract_product_query, prefers_catalog_over_guide
+
+    assert prefers_catalog_over_guide("tienen sika????")
+    assert extract_product_query("tienen sika????") == "sika"
+
+    resp = run_assistant_turn(
+        ChatRequest(message="tienen sika????", audience=Audience.PUBLIC)
+    )
+    assert resp.guide_id is None
+    assert "catalog.quote_search" in resp.tools_used or (
+        "catalog.search_products" in resp.tools_used
+    )
+    assert "cemento gris" not in resp.reply.lower()
+    assert "sika" in (resp.product_query or "").lower() or "sika" in resp.reply.lower()
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_clean_query_strips_precio_and_x():
+    from modules.assistant.chat import _clean_product_query, bare_product_query
+
+    assert _clean_product_query("sikafill 7 x galon precio") == "sikafill 7 galon"
+    assert bare_product_query("sikafill 7 x galon precio") == "sikafill 7 galon"
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_session_size_refiner_combines_galon():
+    from modules.assistant.chat import (
+        _SESSION_LAST_PRODUCT,
+        _refine_with_session,
+        _remember_product_query,
+    )
+
+    sid = "test-session-sikafill"
+    _SESSION_LAST_PRODUCT.pop(sid, None)
+    _remember_product_query(sid, "sikafill 7")
+    assert _refine_with_session(sid, "galon", "galon") == "sikafill 7 galon"
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_format_product_lines_includes_price_with_iva():
+    from modules.assistant.chat import format_product_lines
+
+    text = format_product_lines(
+        [
+            {
+                "name": "SIKAFILL 7 POWER BLANCO X GALON",
+                "price_with_iva": 89100,
+                "product_url": "https://www.depositotrujillo.co/sikafill.html",
+            }
+        ],
+        limit=5,
+    )
+    assert "SIKAFILL 7 POWER BLANCO X GALON" in text
+    assert "$89.100" in text
+    assert "IVA incluido" in text
+
+
+@pytest.mark.unit
+@pytest.mark.module_assistant
+def test_catalog_search_tokens_drop_noise():
+    from depotru_tools.builtins import _catalog_search_tokens
+
+    assert _catalog_search_tokens("sikafill 7 x galon precio") == [
+        "sikafill",
+        "7",
+        "galon",
+    ]

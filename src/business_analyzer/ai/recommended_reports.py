@@ -151,6 +151,17 @@ def get_recommended_report_templates() -> List[Dict[str, Any]]:
             "period_type": "invoices",
             "template": {"report_kind": "invoice_summary"},
         },
+        {
+            "id": "brand-report",
+            "title": "Análisis de marca",
+            "description": (
+                "Informe completo por marca: ventas, margen, clientes, "
+                "devoluciones e inventario vs. año anterior."
+            ),
+            "period_type": "brand",
+            "template": {"brand": "sika"},
+            "group": "Marcas",
+        },
     ]
 
 
@@ -200,6 +211,22 @@ def get_recommended_reports(*, today: Optional[date] = None) -> List[Dict[str, A
                 }
             )
             continue
+        if entry.get("period_type") == "brand":
+            brand = (entry.get("template") or {}).get("brand") or "sika"
+            year = (today or date.today()).year
+            reports.append(
+                {
+                    **entry,
+                    "action": {
+                        "type": "generate_brand_report",
+                        "brand": brand,
+                        "start_date": f"{year}-01-01",
+                        "end_date": f"{year}-12-31",
+                        "year": year,
+                    },
+                }
+            )
+            continue
         template = entry["template"]
         action = build_manager_action(
             year=default_year,
@@ -223,6 +250,10 @@ def recommended_reports_payload(*, today: Optional[date] = None) -> Dict[str, An
         "default_iso_week": default_iso_week,
         "max_iso_week": iso_weeks_in_year(default_iso_year),
         "default_as_of_date": default_as_of_date(today=today),
+        "default_brand": "sika",
+        "default_brand_year": (today or date.today()).year,
+        "default_brand_start": f"{(today or date.today()).year}-01-01",
+        "default_brand_end": f"{(today or date.today()).year}-12-31",
         "default_format": "html",
         "format_options": FORMAT_OPTIONS,
         "month_names": {str(k): v for k, v in MONTH_NAMES_ES.items()},
@@ -236,7 +267,7 @@ RECOMMENDED_REPORTS_CSS = """
   border-left: 1px solid #e5e7eb;
   background: linear-gradient(180deg, #f8fafc 0%, #eff6ff 100%);
   padding: 1rem 1rem 1.25rem;
-  overflow-y: auto;
+  overflow-y: auto !important;
   max-height: 100vh;
   box-sizing: border-box;
 }
@@ -316,6 +347,8 @@ body.dark #informes-recomendados {
 .informe-week,
 .informe-format,
 .informe-sede,
+.informe-brand,
+.informe-date,
 .informe-invoices {
   font-size: 0.78rem;
   border: 1px solid #cbd5e1;
@@ -332,6 +365,8 @@ body.dark #informes-recomendados {
   line-height: 1.35;
 }
 .informe-month { flex: 1 1 6.5rem; min-width: 0; }
+.informe-brand { flex: 1 1 100%; min-width: 0; }
+.informe-date { flex: 1 1 7rem; min-width: 0; }
 .informe-year { width: 4.5rem; }
 .informe-week { width: 4.5rem; }
 .informe-format { flex: 1 1 4.5rem; min-width: 0; }
@@ -340,6 +375,8 @@ body.dark #informes-recomendados {
 .dark .informe-week,
 .dark .informe-format,
 .dark .informe-sede,
+.dark .informe-brand,
+.dark .informe-date,
 .dark .informe-invoices {
   background: #0f172a;
   border-color: #475569;
@@ -505,13 +542,28 @@ RECOMMENDED_REPORTS_JS = """
     return response.json();
   }
 
+  async function triggerBrandReport(brand, startDate, endDate, fmt) {
+    const response = await fetch("/api/v0/generate_brand_report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        brand: brand,
+        start_date: startDate,
+        end_date: endDate,
+        format: fmt || "html",
+      }),
+    });
+    return response.json();
+  }
+
   function handleGenerateResult(result) {
     if (
       result.type === "manager_report" ||
       result.type === "kpi_board" ||
       result.type === "rotacion" ||
       result.type === "cartera" ||
-      result.type === "invoice_summary"
+      result.type === "invoice_summary" ||
+      result.type === "brand_report"
     ) {
       setStatus(shortStatus(result), false);
       if (result.download_url) window.open(result.download_url, "_blank");
@@ -777,7 +829,112 @@ RECOMMENDED_REPORTS_JS = """
     });
   }
 
-  function renderCard(report, defaults, monthNames, formatOptions) {
+  function renderBrandCard(report, defaults, brands) {
+    const card = document.createElement("div");
+    card.className = "informe-card";
+    card.setAttribute("role", "listitem");
+    card.dataset.reportId = report.id;
+
+    const title = document.createElement("span");
+    title.className = "informe-card-title";
+    title.textContent = report.title;
+
+    const desc = document.createElement("span");
+    desc.className = "informe-card-desc";
+    desc.textContent = report.description;
+
+    const period = document.createElement("div");
+    period.className = "informe-period";
+
+    const brandSelect = document.createElement("select");
+    brandSelect.className = "informe-brand";
+    brandSelect.setAttribute("aria-label", "Marca del informe");
+    const brandOptions =
+      brands && brands.length ? brands : [{ value: "SIKA", label: "Sika" }];
+    brandOptions.forEach((brand) => {
+      const option = document.createElement("option");
+      option.value = String(brand.value);
+      option.textContent = brand.label || brand.value;
+      if (String(brand.value) === String(defaults.brand)) option.selected = true;
+      brandSelect.appendChild(option);
+    });
+
+    const startInput = document.createElement("input");
+    startInput.type = "date";
+    startInput.className = "informe-date";
+    startInput.value = String(defaults.brand_start || "");
+    startInput.setAttribute("aria-label", "Fecha inicial");
+
+    const endInput = document.createElement("input");
+    endInput.type = "date";
+    endInput.className = "informe-date";
+    endInput.value = String(defaults.brand_end || "");
+    endInput.setAttribute("aria-label", "Fecha final");
+
+    const formatSelect = document.createElement("select");
+    formatSelect.className = "informe-format";
+    formatSelect.setAttribute("aria-label", "Formato del informe de marca");
+    [
+      { value: "html", label: "HTML" },
+      { value: "json", label: "JSON" },
+    ].forEach((opt) => {
+      const option = document.createElement("option");
+      option.value = opt.value;
+      option.textContent = opt.label;
+      if (opt.value === "html") option.selected = true;
+      formatSelect.appendChild(option);
+    });
+
+    const generateBtn = document.createElement("button");
+    generateBtn.type = "button";
+    generateBtn.className = "informe-generate-btn";
+    generateBtn.textContent = "Generar informe";
+
+    period.appendChild(brandSelect);
+    period.appendChild(startInput);
+    period.appendChild(endInput);
+    period.appendChild(formatSelect);
+    period.appendChild(generateBtn);
+
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(period);
+    listEl.appendChild(card);
+
+    generateBtn.addEventListener("click", async () => {
+      const startDate = (startInput.value || "").trim();
+      const endDate = (endInput.value || "").trim();
+      const datePattern = /^\\d{4}-\\d{2}-\\d{2}$/;
+      if (!datePattern.test(startDate) || !datePattern.test(endDate)) {
+        setStatus("Indica fechas válidas (AAAA-MM-DD).", true);
+        return;
+      }
+      if (startDate > endDate) {
+        setStatus("La fecha inicial no puede ser posterior a la final.", true);
+        return;
+      }
+      const fmt = formatSelect.value || "html";
+      card.classList.add("is-busy");
+      generateBtn.disabled = true;
+      setStatus("Generando informe de marca (" + fmt.toUpperCase() + ")…", false);
+      try {
+        const result = await triggerBrandReport(
+          brandSelect.value,
+          startDate,
+          endDate,
+          fmt
+        );
+        handleGenerateResult(result);
+      } catch (err) {
+        setStatus("No se pudo contactar el servidor.", true);
+      } finally {
+        card.classList.remove("is-busy");
+        generateBtn.disabled = false;
+      }
+    });
+  }
+
+  function renderCard(report, defaults, monthNames, formatOptions, brands) {
     if (report.period_type === "week") {
       renderWeekCard(report, defaults);
       return;
@@ -788,6 +945,10 @@ RECOMMENDED_REPORTS_JS = """
     }
     if (report.period_type === "invoices") {
       renderInvoicesCard(report);
+      return;
+    }
+    if (report.period_type === "brand") {
+      renderBrandCard(report, defaults, brands);
       return;
     }
     const card = document.createElement("div");
@@ -884,15 +1045,32 @@ RECOMMENDED_REPORTS_JS = """
     });
   }
 
-  fetch("/api/v0/recommended_reports")
-    .then((r) => r.json())
-    .then((data) => {
+  const reportsPromise = fetch("/api/v0/recommended_reports").then((r) =>
+    r.json()
+  );
+  const brandsPromise = fetch("/api/v0/brands")
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+
+  Promise.all([reportsPromise, brandsPromise])
+    .then(([data, brandData]) => {
       const reports = (data && data.reports) || [];
       const monthNames = (data && data.month_names) || {};
       const formatOptions = (data && data.format_options) || [
         { value: "html", label: "HTML" },
         { value: "pdf", label: "PDF" },
       ];
+      const brands = ((brandData && brandData.brands) || []).map((brand) => ({
+        value: brand.value,
+        label: brand.label || brand.value,
+      }));
+      if (!brands.some((brand) => brand.value === "SIKA")) {
+        brands.unshift({ value: "SIKA", label: "Sika" });
+      }
+      const brandMaxDate = (brandData && brandData.max_date) || "";
+      const brandYear = brandMaxDate
+        ? Number(String(brandMaxDate).slice(0, 4))
+        : (data && data.default_brand_year) || new Date().getFullYear();
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
       const yyyy = yesterday.getFullYear();
@@ -907,13 +1085,19 @@ RECOMMENDED_REPORTS_JS = """
         max_iso_week: (data && data.max_iso_week) || 53,
         as_of_date:
           (data && data.default_as_of_date) || yyyy + "-" + mm + "-" + dd,
+        brand:
+          (brandData && brandData.default_brand) ||
+          (data && data.default_brand) ||
+          "SIKA",
+        brand_start: brandYear + "-01-01",
+        brand_end: brandYear + "-12-31",
       };
       if (!reports.length) {
         setStatus("No hay informes recomendados configurados.", true);
         return;
       }
       reports.forEach((report) =>
-        renderCard(report, defaults, monthNames, formatOptions)
+        renderCard(report, defaults, monthNames, formatOptions, brands)
       );
     })
     .catch(() => setStatus("No se pudo cargar la lista de informes.", true));
