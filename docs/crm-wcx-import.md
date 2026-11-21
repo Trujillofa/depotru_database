@@ -96,11 +96,13 @@ No channel/status enum meaning is inferred from numeric values.
 
 ## 2. Storage (PostgreSQL, inbox-owned)
 
-The **real migration** is a numbered `sql/` file in the depotru-inbox repo
-PR, reviewed there with the importer and integration tests. The DDL below
-(`drafts/crm-wcx-import.sql`) remains an inert reference draft in this repo:
-it aborts before DDL and ends with `ROLLBACK`; it is never applied. No schema
-change belongs in MSSQL or Magento.
+The **real migration** is `sql/038_wcx_import.sql` in the depotru-inbox repo,
+delivered in PR https://github.com/Trujillofa/depotru-inbox/pull/45 (branch
+`hermes/d3-wcx-import` from `master`), reviewed there with the importer
+(`scripts/wcx-import.ts`) and the ephemeral-Postgres tests (`pgtests/`). The
+DDL below (`drafts/crm-wcx-import.sql`) remains an inert reference draft in
+this repo: it aborts before DDL and ends with `ROLLBACK`; it is never applied.
+No schema change belongs in MSSQL or Magento.
 
 ### `wcx_customers`
 
@@ -219,8 +221,9 @@ hash variants are retained in memory, so duplicate/conflict totals are
 independent of row order. SHA-256 is for local comparison, **not anonymization**;
 neither keys nor hashes are printed.
 
-The **idempotent importer is implemented in the depotru-inbox repo PR** with
-`--dry-run` (counts only) and a real mode, plus integration tests against a
+The **idempotent importer is implemented in the depotru-inbox repo**
+(`scripts/wcx-import.ts`, PR https://github.com/Trujillofa/depotru-inbox/pull/45)
+with `--dry-run` (counts only) and a real mode, plus integration tests against a
 local ephemeral PostgreSQL. Its contract:
 
 - `--dry-run` performs zero writes and reports the same aggregate counts as
