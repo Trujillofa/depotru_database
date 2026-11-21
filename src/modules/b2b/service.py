@@ -172,6 +172,13 @@ def request_quote(
         line["line_total"] = format_amount(net * line_qty)
         line["unit"] = UNIT
 
+    # Retention hint from AdmTerceros (any priced row). Never affects unit_net.
+    retefuente_suggested = False
+    for row in rows.values():
+        if row.get("retefuente_suggested") is True:
+            retefuente_suggested = True
+            break
+
     expires_at = now + _QUOTE_TTL
     return {
         **base,
@@ -182,6 +189,7 @@ def request_quote(
         "site": site,
         "currency": CURRENCY,
         "price_includes_iva": PRICE_INCLUDES_IVA,
+        "retefuente_suggested": retefuente_suggested,
         "lines": lines,
         "timestamp": now.isoformat(),
         "expires_at": expires_at.isoformat(),

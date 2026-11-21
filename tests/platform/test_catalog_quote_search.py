@@ -208,7 +208,7 @@ def test_quote_search_merges_j3_rows(monkeypatch: pytest.MonkeyPatch):
 
         def execute_query(self, sql, params):
             assert "ArticulosCosto" not in sql
-            assert params == ("%cemento%", "%cemento%")
+            assert params == ("%cemento%", "cemento")
             return [
                 {
                     "sku": "0020080005",
@@ -677,7 +677,8 @@ def test_quote_search_limit_parsing(monkeypatch: pytest.MonkeyPatch):
     assert "TOP 6" in top_for(True)  # bool → default 6
     assert "TOP 1" in top_for(0)  # supplied 0 clamps to 1, not default
     assert "TOP 1" in top_for(-5)  # negative clamps to 1
-    assert "TOP 10" in top_for(99)  # above max clamps to 10
+    assert "TOP 40" in top_for(99)  # above max clamps to 40
+    assert "TOP 25" in top_for(25)  # a wide family window is honoured
     assert "TOP 5" in top_for(5)  # valid int passes through
 
 
@@ -1258,3 +1259,13 @@ def test_magento_default_search_still_returns_floats(
     assert out[0]["list_price"] == 999.99
     assert isinstance(out[0]["price"], float)
     assert isinstance(out[0]["list_price"], float)
+
+
+def test_quote_search_tokens_match_every_word() -> None:  # noqa: D103
+    """«sikafill galon» names a product whose words are not contiguous."""
+    from business_analyzer.core.j3system_website_stock import build_quote_search_sql
+
+    sql = build_quote_search_sql(dialect="sqlite", tokens=["sikafill", "galon"])
+    assert "LOWER(a.ArticulosNombre) LIKE ?" in sql
+    assert sql.count("LOWER(a.ArticulosNombre) LIKE ?") == 2
+    assert " AND " in sql.split("WHERE", 1)[1]

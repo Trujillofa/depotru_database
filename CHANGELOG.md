@@ -9,12 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Hybrid J3 quote search** normalizes accents, retains fractions and natural-language
+  cleanup, and guards material/dimension tokens in names even on phrase hits.
+  SKU matches are exact and LIKE input is literal; default six, maximum forty.
+
 - **Website J3 warehouse denylist** now includes `CON` (CONTABILIDAD) to match
   storefront policy in [depositotrujillo.co#395](https://github.com/Trujillofa/depositotrujillo.co/issues/395).
   Full SSOT set: BDT, CEN, EXH, EXD, MDL, TRA, CON. Accounting/service SKUs
   (`0130010001`–`0130010006`) with stock only in CON are not website-sellable.
 
 ### Added
+
+- **Per-brand business report** (`depotru-brand-report` and Vanna
+  **Análisis de marca**): explicit start/end date range compared with the same
+  range last year, covering KPIs, company share, annual/monthly trend,
+  warehouses, products/promotions, rubros, customers/cohorts, vendors,
+  returns, J3 inventory, findings, and an action plan. Supports every brand in
+  `productos_adicional`; inventory uses the commercial warehouse allowlist and
+  SKU denylist.
+
+- **Cross-sell affinity materialized to the advisor table** (`catalog.cross_sell_affinity`):
+  - `depotru-cross-sell-affinity` reads `SmartBusiness.dbo.banco_datos` (read-only),
+    computes directed pairs with >= 20 baskets over 12 months, and replaces
+    `advisor_cross_sell_affinity` only with `--apply` (Postgres/Neon via `psql`;
+    SQLite for demo/tests). Dry-run is the default.
+  - `catalog.cross_sell_affinity` reads the precomputed table first and falls
+    back to the live J3 query when the table is empty or unreachable.
 
 - **Hybrid stub-first LLM assistant** (`ASSISTANT_LLM=1`):
   - Confident stub paths (greetings, sedes, cart, guides, product search) skip LLM

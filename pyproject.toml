@@ -144,6 +144,7 @@ all = [
 [project.scripts]
 # CLI Entry Points
 depotru-report = "business_analyzer.reports.monthly:main"
+depotru-brand-report = "business_analyzer.reports.brand_report:main"
 vanna-grok = "vanna_grok:main"
 vanna-chat = "vanna_grok:main"
 depotru-db-mcp = "business_analyzer.mcp.database_server:main"
@@ -154,6 +155,7 @@ depotru-website-stock = "business_analyzer.core.website_stock_cli:main"
 depotru-monday-cash = "business_analyzer.jobs.monday_cash_pack:main"
 depotru-akzonobel-core-lines = "business_analyzer.jobs.akzonobel_core_lines:main"
 depotru-mine-chat-guides = "business_analyzer.jobs.chat_log_guides:main"
+depotru-cross-sell-affinity = "business_analyzer.jobs.cross_sell_affinity:main"
 
 [project.urls]
 Homepage = "https://github.com/Trujillofa/depotru_database"

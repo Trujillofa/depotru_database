@@ -122,7 +122,12 @@ WHERE {year_filter}
 """.strip()
 
 
-def build_quote_search_sql(*, limit: int = 6, dialect: str = "tsql") -> str:
+def build_quote_search_sql(
+    *,
+    limit: int = 6,
+    dialect: str = "tsql",
+    tokens: Optional[Sequence[str]] = None,
+) -> str:
     """Name/SKU search with allowlisted website qty, list price, and IVA rate.
 
     Price is ``AdmArticulos.ArticulosVenta`` (money, before IVA). Never select
@@ -135,10 +140,17 @@ def build_quote_search_sql(*, limit: int = 6, dialect: str = "tsql") -> str:
     production SQL Server dialect) or ``"sqlite"`` (used by fake-only tests via
     an exact ``Decimal`` ``decimal_sum`` aggregate). Both emit the same query
     structure and logic.
+
+    ``tokens`` switches the match from one contiguous phrase to "every word
+    appears in the name". ``sikafill galon`` is not a substring of
+    ``SIKAFILL 7 POWER BLANCO X GALON``, yet it names it exactly: the fallback
+    keeps a refinement answer («galon») from ending in "no encontrado".
     """
     if dialect not in {"tsql", "sqlite"}:
         raise ValueError(f"unsupported dialect: {dialect!r}")
-    limit_n = max(1, min(int(limit), 10))
+    # Six rows alphabetically hid whole families ("SIKAFILL 7" after 100 and
+    # 12): the caller decides how wide to look, up to a bounded window.
+    limit_n = max(1, min(int(limit), 40))
     allow_sql = sql_in_list(website_warehouse_allowlist())
 
     sqlite = dialect == "sqlite"
@@ -174,6 +186,16 @@ def build_quote_search_sql(*, limit: int = 6, dialect: str = "tsql") -> str:
     detalle = table("InvDetalleExistencias")
     existencias = table("InvExistencias")
     almacen = table("AdmAlmacen")
+    token_list = [t for t in (tokens or []) if str(t).strip()]
+    if token_list:
+        name_filter = " AND ".join(
+            f"LOWER(a.ArticulosNombre) LIKE {placeholder}" for _ in token_list
+        )
+    else:
+        name_filter = (
+            f"(a.ArticulosNombre LIKE {placeholder} "
+            f"OR a.ArticulosCodigo LIKE {placeholder})"
+        )
     return f"""
 SELECT {top}
     a.ArticulosCodigo AS sku,
@@ -195,7 +217,7 @@ LEFT JOIN (
       AND {stock_filter}
     GROUP BY e.ArticulosID
 ) s ON s.ArticulosID = a.ArticulosID
-WHERE (a.ArticulosNombre LIKE {placeholder} OR a.ArticulosCodigo LIKE {placeholder})
+WHERE {name_filter}
 ORDER BY CASE WHEN {sort_cond} THEN 0 ELSE 1 END,
          a.ArticulosNombre
 {tail}

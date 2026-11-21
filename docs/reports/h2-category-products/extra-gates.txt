@@ -1,0 +1,76 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.0.3, pluggy-1.6.0 -- /home/yderf/Projects/depotru_database/.venv/bin/python3
+cachedir: .pytest_cache
+Business Data Analyzer Test Suite
+Python: 3.12.12 (main, Oct 31 2025, 23:02:31) [Clang 21.1.4 ]
+pymssql: ✓
+pandas: ✓
+matplotlib: ✓
+vanna: ✓
+rootdir: /home/yderf/Projects/depotru_database/.worktrees/t_e35d42b3
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: anyio-4.13.0, asyncio-1.4.0, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 13 items
+
+tests/test_basic.py::TestRepositoryStructure::test_readme_exists PASSED  [  7%]
+tests/test_basic.py::TestRepositoryStructure::test_requirements_exists PASSED [ 15%]
+tests/test_basic.py::TestRepositoryStructure::test_src_directory_exists PASSED [ 23%]
+tests/test_basic.py::TestRepositoryStructure::test_tests_directory_exists PASSED [ 30%]
+tests/test_basic.py::TestRepositoryStructure::test_docs_directory_exists PASSED [ 38%]
+tests/test_basic.py::TestRepositoryStructure::test_env_example_exists PASSED [ 46%]
+tests/test_basic.py::TestBasicPythonFunctionality::test_basic_math PASSED [ 53%]
+tests/test_basic.py::TestBasicPythonFunctionality::test_string_operations PASSED [ 61%]
+tests/test_basic.py::TestBasicPythonFunctionality::test_list_operations PASSED [ 69%]
+tests/test_basic.py::TestUtilityFunctions::test_safe_divide PASSED       [ 76%]
+tests/test_basic.py::TestUtilityFunctions::test_calculate_percentage PASSED [ 84%]
+tests/test_basic.py::TestUtilityFunctions::test_format_currency PASSED   [ 92%]
+tests/test_basic.py::test_pytest_is_working PASSED                       [100%]
+
+======================== 13 passed, 1 warning in 0.02s =========================
+======================================================================
+Running Business Data Analyzer Tests
+======================================================================
+Command: pytest tests/test_basic.py -v
+
+
+======================================================================
+✅ All tests passed!
+======================================================================
+BASIC_EXIT=0
+Name                                       Stmts   Miss   Cover   Missing
+-------------------------------------------------------------------------
+src/business_analyzer/reports/monthly.py     390     32  91.79%   40-51, 204, 390, 555-565, 575-576, 587, 595-597, 605-607
+-------------------------------------------------------------------------
+TOTAL                                        390     32  91.79%
+Name                                           Stmts   Miss   Cover   Missing
+-----------------------------------------------------------------------------
+src/business_analyzer/reports/cartera_pdf.py     103      2  98.06%   25-26
+-----------------------------------------------------------------------------
+TOTAL                                            103      2  98.06%
+Name                                                       Stmts   Miss   Cover   Missing
+-----------------------------------------------------------------------------------------
+src/business_analyzer/analysis/manager_report/queries.py     244     15  93.85%   9-16, 58, 595-596, 622-623, 665-666, 886
+-----------------------------------------------------------------------------------------
+TOTAL                                                        244     15  93.85%
+Name                                                      Stmts   Miss   Cover   Missing
+----------------------------------------------------------------------------------------
+src/business_analyzer/core/website_stock_magento_ssh.py     198     11  94.44%   156, 236-237, 256-264, 270, 463-464
+----------------------------------------------------------------------------------------
+TOTAL                                                       198     11  94.44%
+Name                                             Stmts   Miss    Cover   Missing
+--------------------------------------------------------------------------------
+src/business_analyzer/jobs/monday_cash_pack.py     317      0  100.00%
+--------------------------------------------------------------------------------
+TOTAL                                              317      0  100.00%
+Name                                                 Stmts   Miss   Cover   Missing
+-----------------------------------------------------------------------------------
+src/business_analyzer/jobs/akzonobel_core_lines.py     370     13  96.49%   64, 70, 171, 184, 188, 207, 210, 315, 333, 387, 552-554, 679
+-----------------------------------------------------------------------------------
+TOTAL                                                  370     13  96.49%
+Name                                            Stmts   Miss   Cover   Missing
+------------------------------------------------------------------------------
+src/business_analyzer/jobs/chat_log_guides.py     607     24  96.05%   426, 484, 492, 518, 528, 552, 554, 556, 749, 773-774, 802, 889-890, 1053-1054, 1061-1062, 1068-1069, 1082-1083, 1096-1097
+------------------------------------------------------------------------------
+TOTAL                                             607     24  96.05%
+EXTRA_GATES_EXIT=0

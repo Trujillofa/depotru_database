@@ -86,6 +86,9 @@ cp .env.example .env
 depotru-report --year 2024 --month 5
 depotru-report --year 2024 --month 5 --format html --output reports/report_mayo_2024.html
 depotru-report --year 2024 --month 5 --format pdf --output reports/report_mayo_2024.pdf
+
+# Brand report: explicit date range vs. the same range last year
+depotru-brand-report --brand SIKA --start-date 2026-01-01 --end-date 2026-12-31 --format html
 ```
 
 ### Option 3: MCP Database Server (for AI agents)
@@ -120,7 +123,7 @@ python scripts/utils/run_weekly_kpi_board.py
 python scripts/utils/run_weekly_kpi_board.py --print-cron
 ```
 
-From the Vanna chat UI (`python src/vanna_grok.py` → http://localhost:8084), use **Informes recomendados** to pick a month/format for the manager report or an ISO week for the KPI Control Board.
+From the Vanna chat UI (`python src/vanna_grok.py` → http://localhost:8084), use **Informes recomendados** to pick a month/format for the manager report, an ISO week for the KPI Control Board, or a brand and full date range for the brand report.
 
 Output example:
 - `reports/KPI_CONTROL_BOARD_2026_W27.md`

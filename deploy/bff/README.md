@@ -80,6 +80,41 @@ journalctl --user -u depotru-bff-tunnel -n 30 --no-pager
 # PYTHONPATH=src .venv/bin/python -c "from scripts... "  # or restart tunnel unit
 ```
 
+## Cross-sell affinity table (`advisor_cross_sell_affinity`)
+
+The tool `catalog.cross_sell_affinity` reads the precomputed affinity table first;
+if the table is empty or unreachable for that SKU, it falls back to the live J3
+query. The job only **reads** `SmartBusiness.dbo.banco_datos`; it writes the
+advisor table only when `--apply` is passed.
+
+```bash
+cd ~/Projects/depotru_database
+set -a; . deploy/bff/env.bff; set +a   # provides ADVISOR_DATABASE_URL
+
+# Dry-run: measures and prints; writes nothing.
+PYTHONPATH=src .venv/bin/python -m business_analyzer.jobs.cross_sell_affinity
+
+# Apply: replaces the table in one transaction.
+PYTHONPATH=src .venv/bin/python -m business_analyzer.jobs.cross_sell_affinity --apply
+```
+
+Demo/test target (SQLite, no Neon):
+
+```bash
+PYTHONPATH=src .venv/bin/python -m business_analyzer.jobs.cross_sell_affinity \
+  --target-sqlite /tmp/advisor_affinity.sqlite --apply
+```
+
+Opt-in cron example (after the 02:00 J3 mart refresh; adjust the path/user):
+
+```cron
+30 2 * * * cd /home/yderf/Projects/depotru_database && set -a && . deploy/bff/env.bff && set +a && PYTHONPATH=src .venv/bin/python -m business_analyzer.jobs.cross_sell_affinity --apply >> ~/business_reports/cross_sell_affinity.log 2>&1
+```
+
+`ADVISOR_AFFINITY_SQLITE` takes precedence over `ADVISOR_DATABASE_URL` and is
+meant only for demo/tests. `DATABASE_URL` is accepted as a fallback if
+`ADVISOR_DATABASE_URL` is not set.
+
 ## Ops
 
 ```bash

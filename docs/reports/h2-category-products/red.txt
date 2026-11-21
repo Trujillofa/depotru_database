@@ -1,0 +1,33 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.0.3, pluggy-1.6.0
+Business Data Analyzer Test Suite
+Python: 3.12.12 (main, Oct 31 2025, 23:02:31) [Clang 21.1.4 ]
+pymssql: ✓
+pandas: ✓
+matplotlib: ✓
+vanna: ✓
+rootdir: /home/yderf/Projects/depotru_database/.worktrees/t_e35d42b3
+configfile: pytest.ini (WARNING: ignoring pytest config in pyproject.toml!)
+plugins: anyio-4.13.0, asyncio-1.4.0, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+tests/platform/test_catalog_category_products.py F                       [100%]
+
+=================================== FAILURES ===================================
+__________________ test_category_products_is_public_read_only __________________
+src/depotru_tools/registry.py:56: in get
+    return self._tools[name]
+           ^^^^^^^^^^^^^^^^^
+E   KeyError: 'catalog.category_products'
+
+The above exception was the direct cause of the following exception:
+tests/platform/test_catalog_category_products.py:11: in test_category_products_is_public_read_only
+    spec = registry.get("catalog.category_products")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/depotru_tools/registry.py:58: in get
+    raise ToolNotFoundError(name) from exc
+E   depotru_tools.registry.ToolNotFoundError: 'catalog.category_products'
+=========================== short test summary info ============================
+FAILED tests/platform/test_catalog_category_products.py::test_category_products_is_public_read_only
+========================= 1 failed, 1 warning in 0.10s =========================
