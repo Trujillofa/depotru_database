@@ -319,6 +319,24 @@ class EnhancedAIVanna(AIVanna):
             return None, None, None
 
 
+def waitress_serve_kwargs(*, host: str, port: int) -> dict:
+    """Waitress settings for long-running manager-report HTTP requests.
+
+    Waitress closes idle channels after ``channel_timeout`` seconds with no
+    traffic. Sede HTML reports (SQL + matplotlib) routinely exceed the
+    default 120s, so the UI shows a dropped connection while the file is
+    still written. Override with ``WAITRESS_CHANNEL_TIMEOUT``.
+    """
+    threads = int(os.getenv("WAITRESS_THREADS", "8"))
+    channel_timeout = int(os.getenv("WAITRESS_CHANNEL_TIMEOUT", "600"))
+    return {
+        "host": host,
+        "port": port,
+        "threads": threads,
+        "channel_timeout": channel_timeout,
+    }
+
+
 def main():
     print("=" * 70)
     print("🚀 VANNA 2.0.1 MULTI-PROVIDER – SMARTBUSINESS BI DASHBOARD")
@@ -356,19 +374,17 @@ def main():
         "true",
         "yes",
     )
-    threads = int(os.getenv("WAITRESS_THREADS", "8"))
-
     try:
         if production:
             from waitress import serve
 
-            print(f"✓ Starting Waitress production server ({threads} threads)")
-            serve(
-                app.flask_app,
-                host=Config.HOST,
-                port=Config.PORT,
-                threads=threads,
+            serve_kwargs = waitress_serve_kwargs(host=Config.HOST, port=Config.PORT)
+            print(
+                f"✓ Starting Waitress production server "
+                f"({serve_kwargs['threads']} threads, "
+                f"channel_timeout {serve_kwargs['channel_timeout']}s)"
             )
+            serve(app.flask_app, **serve_kwargs)
         else:
             print("✓ Starting Flask development server")
             app.flask_app.run(

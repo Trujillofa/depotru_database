@@ -1,13 +1,13 @@
 .PHONY: install test lint run-ai kpi-weekly clean
 
-VENV = venv
+VENV ?= .venv
 PYTHON = $(VENV)/bin/python
 PIP = $(VENV)/bin/pip
 
 install:
 	python3 -m venv $(VENV)
 	$(PIP) install -e ".[dev]"
-	$(PIP) install pytest flake8 black isort mypy bandit safety
+	$(PIP) install bandit safety
 
 test:
 	$(PYTHON) -m pytest tests/ -v

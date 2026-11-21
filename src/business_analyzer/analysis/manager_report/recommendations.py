@@ -410,6 +410,8 @@ class ReportRecommendationsMixin:
                         }
                     )
             items.sort(key=lambda x: x["suggested_order"], reverse=True)
+            if not items:
+                continue
             suggestions.append(
                 {
                     "customer_name": cname,

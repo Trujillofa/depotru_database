@@ -37,7 +37,16 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 MAX_STACK_FRAME_DEPTH = 20
-SUPPORTED_PROVIDERS = ["grok", "openai", "deepseek", "anthropic", "ollama"]
+SUPPORTED_PROVIDERS = [
+    "grok",
+    "openai",
+    "deepseek",
+    "anthropic",
+    "ollama",
+    "openrouter",
+    "groq",
+    "commandcode",
+]
 DEFAULT_PROVIDER = "grok"
 DEFAULT_NCX_FILE_PATH = os.path.expanduser(
     "~/Coding_OMARCHY/python_files/connections.ncx"
@@ -473,6 +482,8 @@ def hydrate_ai_config() -> None:
     Config.OPENAI_API_KEY = None
     Config.DEEPSEEK_API_KEY = None
     Config.ANTHROPIC_API_KEY = None
+    Config.GROQ_API_KEY = None
+    Config.OPENROUTER_API_KEY = None
 
     if provider == "grok":
         Config.GROK_API_KEY = get_env_or_test_default(
@@ -504,6 +515,22 @@ def hydrate_ai_config() -> None:
             error_msg="La clave de Anthropic debe comenzar con 'sk-ant-'",
             warn_on_test_default=True,
         )
+    elif provider == "groq":
+        Config.GROQ_API_KEY = get_env_or_test_default(
+            "GROQ_API_KEY",
+            test_default="gsk_test_key_for_ci_only",
+            validation_func=lambda x: x.startswith("gsk_"),
+            error_msg="La clave de Groq debe comenzar con 'gsk_'",
+            warn_on_test_default=True,
+        )
+    elif provider == "openrouter":
+        Config.OPENROUTER_API_KEY = get_env_or_test_default(
+            "OPENROUTER_API_KEY",
+            test_default="sk-or-test-key-for-ci-only",
+            validation_func=lambda x: x.startswith("sk-or-"),
+            error_msg="La clave de OpenRouter debe comenzar con 'sk-or-'",
+            warn_on_test_default=True,
+        )
 
     Config.OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
     Config.OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
@@ -511,6 +538,14 @@ def hydrate_ai_config() -> None:
         "DEEPSEEK_BASE_URL", "https://api.deepseek.com"
     )
     Config.DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    Config.GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+    Config.GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+    Config.OPENROUTER_BASE_URL = os.getenv(
+        "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+    )
+    Config.OPENROUTER_MODEL = os.getenv(
+        "OPENROUTER_MODEL", "deepseek/deepseek-v4.1-flash"
+    )
     # Fail-fast on missing production DB, same as historical ai/base.py Config.
     Config._DB_SETTINGS = resolve_database_settings()
     Config.PORT = int(os.getenv("PORT", "8084"))

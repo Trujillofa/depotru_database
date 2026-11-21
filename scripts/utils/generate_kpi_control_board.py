@@ -271,6 +271,10 @@ def format_optional_currency(value: Optional[float], decimals: int = 0) -> str:
     return format_currency(value, decimals)
 
 
+def format_int_es(value: float) -> str:
+    return f"{value:,.0f}".replace(",", ".")
+
+
 def format_optional_number(value: Optional[float], decimals: int = 0) -> str:
     if value is None:
         return "—"
@@ -417,6 +421,18 @@ def presupuesto_summary_from_q10(
     total_meta = sum(as_float(r.get("Meta_Prorrateada")) for r in q10_rows)
     total_mtd = sum(as_float(r.get("Ventas_MTD")) for r in q10_rows)
     first = q10_rows[0]
+    if total_meta > 0 and total_mtd <= 0:
+        return {
+            "cumplimiento_pct": None,
+            "total_meta_prorrateada": total_meta,
+            "total_ventas_mtd": 0.0,
+            "meta_origen": str(first.get("Meta_Origen") or "").strip()
+            or "periodo_actual",
+            "periodo": first.get("Periodo"),
+            "periodo_meta": first.get("Periodo_Meta"),
+            "available": False,
+            "warning": "Q10 devolvió Ventas_MTD=0 con meta > 0",
+        }
     meta_origen = str(first.get("Meta_Origen") or "").strip() or (
         "periodo_actual" if total_meta > 0 else "sin_meta"
     )
@@ -511,10 +527,11 @@ def generate_narrative(
         if critical_inventory_summary_from_rows and q13:
             inv = critical_inventory_summary_from_rows(q13)
             skus_criticos = inv.get("SKUs_Criticos", 0)
-            dias_cobertura = inv.get("Promedio_Dias_Cobertura", 0.0)
+            raw_cobertura = as_float(inv.get("Promedio_Dias_Cobertura"))
+            dias_cobertura = raw_cobertura if raw_cobertura >= 0 else None
         else:
             skus_criticos = 0
-            dias_cobertura = 0.0
+            dias_cobertura = None
         q14 = results.get("Q14", [])
         if otif_summary_from_warehouse_rows and q14:
             otif = otif_summary_from_warehouse_rows(q14)
@@ -555,11 +572,11 @@ def generate_narrative(
             f"DSO {dso:.0f} días, Cartera vencida >90d {cartera_90:.2f}%, "
             f"Cumplimiento presupuesto MTD {presupuesto:.2f}%, "
             f"Tasa conversión cotizaciones {conv_rate:.2f}% "
-            f"(días prom. {conv_days:.1f}), "
+            f"(días prom. {format_optional_number(conv_days, 1)}), "
             f"SKUs inventario crítico {skus_criticos} "
-            f"(cobertura prom. {dias_cobertura:.1f} días), "
+            f"(cobertura prom. {format_optional_number(dias_cobertura, 1)} días), "
             f"OTIF entregas {otif_pct:.2f}% "
-            f"(lead time {lead_time:.1f} días), "
+            f"(lead time {format_optional_number(lead_time, 1)} días), "
             f"Conciliación devoluciones {conc_pct:.2f}% "
             f"(tasa validada {tasa_dev:.2f}%), "
             f"Aceptación factura electrónica {fe_aceptacion:.2f}% "
@@ -656,11 +673,12 @@ def compute_scorecard(
     if critical_inventory_summary_from_rows and q13:
         inv = critical_inventory_summary_from_rows(q13)
         current_skus_criticos = as_float(inv.get("SKUs_Criticos"))
-        current_cobertura = as_float(inv.get("Promedio_Dias_Cobertura"))
+        raw_cobertura = as_float(inv.get("Promedio_Dias_Cobertura"))
+        current_cobertura = raw_cobertura if raw_cobertura >= 0 else None
         current_quiebre_7d = as_float(inv.get("SKUs_Quiebre_7d"))
     else:
         current_skus_criticos = 0.0
-        current_cobertura = 0.0
+        current_cobertura = None
         current_quiebre_7d = 0.0
 
     q14 = results.get("Q14", [])
@@ -810,13 +828,31 @@ def compute_scorecard(
             higher_is_better=False,
             delta_kind="count",
         ),
-        "cobertura_critica": _metric(
-            current=current_cobertura,
-            target=KPI_TARGETS["cobertura_days"],
-            baseline=None,
-            higher_is_better=True,
-            delta_kind="days",
-        ),
+        "cobertura_critica": {
+            **(
+                _metric(
+                    current=current_cobertura,
+                    target=KPI_TARGETS["cobertura_days"],
+                    baseline=None,
+                    higher_is_better=True,
+                    delta_kind="days",
+                )
+                if current_cobertura is not None
+                else {
+                    "baseline": None,
+                    "target": KPI_TARGETS["cobertura_days"],
+                    "current": None,
+                    "delta": None,
+                    "status": "⚪",
+                    "delta_kind": "days",
+                }
+            ),
+            "warning": (
+                "Q13 reportó cobertura negativa; revise saldos"
+                if current_cobertura is None
+                else None
+            ),
+        },
         "quiebre_7d": _metric(
             current=current_quiebre_7d,
             target=KPI_TARGETS["quiebre_7d"],
@@ -990,22 +1026,20 @@ def render_markdown(
     lines: List[str] = []
     lines.append("# KPI Control Board (Weekly)")
     lines.append("")
-    lines.append("## 1) Control Header")
+    lines.append("## 1) Encabezado de control")
     lines.append("")
     lines.append(
-        f"- **Week (ISO):** {datetime.fromisoformat(end_date).isocalendar().week}"
+        f"- **Semana (ISO):** {datetime.fromisoformat(end_date).isocalendar().week}"
     )
-    lines.append(f"- **Date range:** {start_date} to {end_date}")
+    lines.append(f"- **Rango de fechas:** {start_date} a {end_date}")
     lines.append(
-        "- **Prepared by:** Auto-generated (scripts/utils/generate_kpi_control_board.py)"
+        "- **Preparado por:** Auto-generado (scripts/utils/generate_kpi_control_board.py)"
     )
-    lines.append("- **Reviewed with:** Comercial / Compras / Operaciones / Finanzas")
+    lines.append("- **Revisado con:** Comercial / Compras / Operaciones / Finanzas")
     lines.append("")
-    lines.append("## 2) North-Star KPI Scorecard")
+    lines.append("## 2) Scorecard de KPIs")
     lines.append("")
-    lines.append(
-        "| KPI | Formula | Baseline | Target | This Week | vs Baseline* | Status |"
-    )
+    lines.append("| KPI | Fórmula | Base | Meta | Semana actual | vs Base* | Estado |")
     lines.append("|---|---|---:|---:|---:|---:|---|")
     lines.append(
         "| Margen Bruto % | `SUM(TotalSinIva-ValorCosto)/SUM(TotalSinIva)*100` "
@@ -1074,8 +1108,8 @@ def render_markdown(
     lines.append(
         "| Días Cotización → Factura | `AVG(DATEDIFF)` post-cotización (J3System) "
         f"| {format_optional_number(scorecard['dias_conversion']['baseline'], 1)} "
-        f"| {scorecard['dias_conversion']['target']:.1f} "
-        f"| {scorecard['dias_conversion']['current']:.1f} "
+        f"| {format_optional_number(scorecard['dias_conversion']['target'], 1)} "
+        f"| {format_optional_number(scorecard['dias_conversion']['current'], 1)} "
         f"| {format_delta(scorecard['dias_conversion']['delta'], 'days')} "
         f"| {scorecard['dias_conversion']['status']} |"
     )
@@ -1090,8 +1124,8 @@ def render_markdown(
     lines.append(
         "| Cobertura Inventario (días prom.) | `Saldo / venta_diaria` SKUs críticos "
         f"| {format_optional_number(scorecard['cobertura_critica']['baseline'], 1)} "
-        f"| {scorecard['cobertura_critica']['target']:.1f} "
-        f"| {scorecard['cobertura_critica']['current']:.1f} "
+        f"| {format_optional_number(scorecard['cobertura_critica']['target'], 1)} "
+        f"| {format_optional_number(scorecard['cobertura_critica']['current'], 1)} "
         f"| {format_delta(scorecard['cobertura_critica']['delta'], 'days')} "
         f"| {scorecard['cobertura_critica']['status']} |"
     )
@@ -1106,8 +1140,8 @@ def render_markdown(
     lines.append(
         "| Lead Time Entrega (días prom.) | `AVG(FechaEntrega - FechaFactura)` "
         f"| {format_optional_number(scorecard['lead_time_entrega']['baseline'], 1)} "
-        f"| {scorecard['lead_time_entrega']['target']:.1f} "
-        f"| {scorecard['lead_time_entrega']['current']:.1f} "
+        f"| {format_optional_number(scorecard['lead_time_entrega']['target'], 1)} "
+        f"| {format_optional_number(scorecard['lead_time_entrega']['current'], 1)} "
         f"| {format_delta(scorecard['lead_time_entrega']['delta'], 'days')} "
         f"| {scorecard['lead_time_entrega']['status']} |"
     )
@@ -1145,22 +1179,22 @@ def render_markdown(
     )
     lines.append("")
     lines.append(
-        "*\\* vs Baseline: for north-star sales KPIs with Q1 history, delta is vs "
-        "prior-week average; when baseline is `—`, delta is vs target.*"
+        "*\\* vs Base: para KPIs de ventas con historia Q1 el delta es contra el "
+        "promedio de la semana anterior; cuando la base es `—`, el delta es contra la meta.*"
     )
 
     lines.append("")
-    lines.append("## 3) Diagnostic Cut (Where we win/lose)")
+    lines.append("## 3) Corte de diagnóstico (dónde ganamos/perdemos)")
     lines.append("")
-    lines.append("### 3.1 Category/Subcategory")
-    lines.append("- **Top 5 by ganancia:**")
+    lines.append("### 3.1 Categoría/Subcategoría")
+    lines.append("- **Top 5 por ganancia:**")
     for row in top_gain:
         lines.append(
             f"  - {row.get('Categoria')} / {row.get('Subcategoria')} | "
             f"Ganancia: {format_currency(as_float(row.get('Ganancia_Bruta')))} | "
             f"Margen: {format_pct(as_float(row.get('Margen_Bruto_Pct')))}"
         )
-    lines.append("- **Bottom 5 by margen:**")
+    lines.append("- **Top 5 por menor margen:**")
     for row in bottom_margin:
         lines.append(
             f"  - {row.get('Categoria')} / {row.get('Subcategoria')} | "
@@ -1170,7 +1204,7 @@ def render_markdown(
     wow = biggest_wow_margin_drop(q2, results.get("Q2_prev") or [])
     if wow:
         lines.append(
-            f"- **Biggest WoW drop in margen:** {wow.get('Categoria')} / "
+            f"- **Mayor caída semanal de margen:** {wow.get('Categoria')} / "
             f"{wow.get('Subcategoria')} | "
             f"{format_pct(wow['Margen_Prev'])} → {format_pct(wow['Margen_Actual'])} "
             f"({format_delta(-wow['Drop_Pp'], 'pp')}) | "
@@ -1178,25 +1212,25 @@ def render_markdown(
         )
     else:
         lines.append(
-            "- **Biggest WoW drop in margen:** sin comparación (falta semana anterior "
+            "- **Mayor caída semanal de margen:** sin comparación (falta semana anterior "
             "o sin categorías con ventas suficientes en ambas semanas)."
         )
 
     lines.append("")
-    lines.append("### 3.2 SKU Focus (High Volume + Low Margin)")
-    lines.append("- **Critical SKUs (ACCION_INMEDIATA / ACCION_ALTA):**")
+    lines.append("### 3.2 Foco SKU (alto volumen + bajo margen)")
+    lines.append("- **SKUs críticos (ACCION_INMEDIATA / ACCION_ALTA):**")
     for row in critical_skus:
         lines.append(
-            f"  - {row.get('SKU')} | {row.get('Producto')} | Volumen: {int(as_float(row.get('Unidades'))):,} | "
+            f"  - {row.get('SKU')} | {row.get('Producto')} | Volumen: {format_int_es(as_float(row.get('Unidades')))} | "
             f"Margen: {format_pct(as_float(row.get('Margen_Bruto_Pct')))} | Prioridad: {row.get('Prioridad')}"
         )
 
     lines.append("")
-    lines.append("### 3.3 Customer Concentration")
+    lines.append("### 3.3 Concentración de clientes")
     lines.append(
         f"- **Top-10 concentration %:** {format_pct(scorecard['concentracion']['current'])}"
     )
-    lines.append("- **Top customers with low margin (< target floor):**")
+    lines.append("- **Clientes top con margen bajo (bajo el piso meta):**")
     for row in low_margin_customers:
         lines.append(
             f"  - {row.get('Cliente')} | Margen: {format_pct(as_float(row.get('Margen_Bruto_Pct')))} | "
@@ -1204,8 +1238,8 @@ def render_markdown(
         )
 
     lines.append("")
-    lines.append("### 3.4 Returns and Margin Erosion")
-    lines.append("- **Categories with highest return rate %:**")
+    lines.append("### 3.4 Devoluciones y erosión de margen")
+    lines.append("- **Categorías con mayor tasa de devolución %:**")
     for row in returns_top:
         lines.append(
             f"  - {row.get('Categoria')} | Tasa devolución: {format_pct(as_float(row.get('Tasa_Devolucion_Pct')))} | "
@@ -1213,7 +1247,7 @@ def render_markdown(
         )
     ret_impact = estimated_return_margin_impact(q7)
     lines.append(
-        f"- **Estimated margin impact:** {format_currency(ret_impact['total'])} "
+        f"- **Impacto estimado en margen:** {format_currency(ret_impact['total'])} "
         f"(heurística: Σ tasa_devolución% × ganancia_bruta por categoría)"
     )
     for row in ret_impact.get("top") or []:
@@ -1239,9 +1273,9 @@ def render_markdown(
             f"**Días periodo:** {int(as_float(q9_row.get('Dias_Periodo')))}"
         )
         lines.append(
-            f"- **Clientes con saldo:** {int(as_float(q9_row.get('Clientes_Con_Saldo'))):,} | "
+            f"- **Clientes con saldo:** {format_int_es(as_float(q9_row.get('Clientes_Con_Saldo')))} | "
             f"**Sobre cupo:** {int(as_float(q9_row.get('Clientes_Sobre_Cupo'))):,} | "
-            f"**Días vencidos prom. ponderado:** {as_float(q9_row.get('Dias_Vencidos_Promedio_Ponderado')):.1f}"
+            f"**Días vencidos prom. ponderado:** {format_optional_number(as_float(q9_row.get('Dias_Vencidos_Promedio_Ponderado')), 1)}"
         )
     else:
         lines.append("- **Sin datos de cartera (Q9 vacío).**")
@@ -1351,7 +1385,7 @@ def render_markdown(
             f"**Convertidas:** {int(as_float(funnel_summary.get('Convertidas'))):,} | "
             f"**Perdidas:** {int(as_float(funnel_summary.get('Perdidas'))):,} | "
             f"**Tasa:** {format_pct(as_float(funnel_summary.get('Tasa_Conversion_Pct')))} | "
-            f"**Días prom.:** {as_float(funnel_summary.get('Dias_Promedio_Conversion')):.1f}"
+            f"**Días prom.:** {format_optional_number(as_float(funnel_summary.get('Dias_Promedio_Conversion')), 1)}"
         )
         lines.append("- **Top 5 vendedores por cotizaciones:**")
         for row in q12[:5]:
@@ -1375,17 +1409,25 @@ def render_markdown(
 
     lines.append("")
     lines.append("### 3.9 Inventario crítico y quiebres (InvDetalleExistencias)")
+    cov_raw = as_float((inv_summary or {}).get("Promedio_Dias_Cobertura"))
+    cov = cov_raw if cov_raw >= 0 else None
     if inv_summary:
         lines.append(
             f"- **SKUs críticos (top 25):** {int(as_float(inv_summary.get('SKUs_Criticos'))):,} | "
             f"**Quiebre <7d:** {int(as_float(inv_summary.get('SKUs_Quiebre_7d'))):,} | "
             f"**Stock ≤10:** {int(as_float(inv_summary.get('SKUs_Stock_Bajo'))):,} | "
-            f"**Cobertura prom.:** {as_float(inv_summary.get('Promedio_Dias_Cobertura')):.1f} días"
+            f"**Cobertura prom.:** {format_optional_number(cov, 1)} días"
         )
+        if cov_raw < 0:
+            lines.append(
+                "- **Aviso:** Q13 devolvió cobertura negativa; revisar saldos antes de decidir."
+            )
         lines.append("- **Top 10 SKUs por riesgo de quiebre (menor cobertura):**")
         for row in q13[:10]:
             dias = row.get("Dias_Cobertura")
-            dias_txt = f"{as_float(dias):.1f}" if dias is not None else "—"
+            dias_txt = (
+                format_optional_number(as_float(dias), 1) if dias is not None else "—"
+            )
             lines.append(
                 f"  - {row.get('SKU')} | {row.get('Producto', '')[:50]} | "
                 f"{row.get('AlmacenCodigo')} | Stock: {as_float(row.get('Saldo_Actual')):.0f} | "
@@ -1402,7 +1444,7 @@ def render_markdown(
             f"- **Total entregas:** {int(as_float(otif_summary.get('Total_Entregas'))):,} | "
             f"**A tiempo:** {int(as_float(otif_summary.get('Entregas_A_Tiempo'))):,} | "
             f"**OTIF:** {format_pct(as_float(otif_summary.get('OTIF_Pct')))} | "
-            f"**Lead prom.:** {as_float(otif_summary.get('Lead_Time_Promedio_Dias')):.1f}d | "
+            f"**Lead prom.:** {format_optional_number(as_float(otif_summary.get('Lead_Time_Promedio_Dias')), 1)}d | "
             f"**Fill rate:** {format_pct(as_float(otif_summary.get('Fill_Rate_Pct')))}"
         )
         lines.append("- **Bodegas con peor OTIF:**")
@@ -1411,7 +1453,7 @@ def render_markdown(
                 f"  - {row.get('Almacen_Codigo')} | "
                 f"OTIF: {format_pct(as_float(row.get('OTIF_Pct')))} | "
                 f"Entregas: {int(as_float(row.get('Total_Entregas')))} | "
-                f"Lead: {as_float(row.get('Lead_Time_Promedio_Dias')):.1f}d"
+                f"Lead: {format_optional_number(as_float(row.get('Lead_Time_Promedio_Dias')), 1)}d"
             )
     else:
         lines.append("- **Sin datos OTIF (Q14 vacío).**")
@@ -1516,28 +1558,28 @@ def render_markdown(
         lines.append("- **Sin datos contables (Q17 vacío).**")
 
     lines.append("")
-    lines.append("## 4) Weekly Action Plan (Execution)")
+    lines.append("## 4) Plan de acción semanal (ejecución)")
     lines.append("")
     lines.append(
-        "| Priority | Lever | Action | Owner | Due Date | Expected KPI Impact |"
+        "| Prioridad | Palanca | Acción | Responsable | Fecha límite | Impacto esperado |"
     )
     lines.append("|---|---|---|---|---|---|")
-    lines.append("| High | Pricing |  |  |  | +pp margen |")
-    lines.append("| High | Mix/Bundles |  |  |  | +ticket / +margen |")
+    lines.append("| Alta | Precios |  |  |  | +pp margen |")
+    lines.append("| Alta | Mix/Bundles |  |  |  | +ticket / +margen |")
     lines.append(
-        "| High | Customer Terms / Cobranza | Revisar clientes sobre cupo y >90d vencidos | Finanzas |  | -DSO / -cartera 90+ |"
+        "| Alta | Términos y cobranza | Revisar clientes sobre cupo y >90d vencidos | Finanzas |  | -DSO / -cartera 90+ |"
     )
-    lines.append("| Medium | Customer Terms |  |  |  | +margen cliente |")
-    lines.append("| Medium | Inventory |  |  |  | +capital / +margen |")
+    lines.append("| Media | Términos cliente |  |  |  | +margen cliente |")
+    lines.append("| Media | Inventario |  |  |  | +capital / +margen |")
 
     lines.append("")
-    lines.append("## 6) AI Narrative Summary")
+    lines.append("## 5) Resumen narrativo IA")
     lines.append("")
     narrative = generate_narrative(scorecard, results)
     lines.append(narrative)
     lines.append("")
 
-    lines.append("## 5) SQL Blocks Used (Traceability)")
+    lines.append("## 6) Bloques SQL usados (trazabilidad)")
     lines.append("")
     for q in range(1, 18):
         lines.append(f"- [x] Q{q}")

@@ -44,6 +44,24 @@ class TestVannaGrokCLI:
         assert callable(vanna_grok_module.main)
 
 
+class TestWaitressServeKwargs:
+    def test_defaults_cover_long_manager_reports(self, vanna_grok_module, monkeypatch):
+        monkeypatch.delenv("WAITRESS_THREADS", raising=False)
+        monkeypatch.delenv("WAITRESS_CHANNEL_TIMEOUT", raising=False)
+        kwargs = vanna_grok_module.waitress_serve_kwargs(host="0.0.0.0", port=8084)
+        assert kwargs["host"] == "0.0.0.0"
+        assert kwargs["port"] == 8084
+        assert kwargs["threads"] == 8
+        assert kwargs["channel_timeout"] == 600
+
+    def test_env_overrides(self, vanna_grok_module, monkeypatch):
+        monkeypatch.setenv("WAITRESS_THREADS", "4")
+        monkeypatch.setenv("WAITRESS_CHANNEL_TIMEOUT", "900")
+        kwargs = vanna_grok_module.waitress_serve_kwargs(host="127.0.0.1", port=9)
+        assert kwargs["threads"] == 4
+        assert kwargs["channel_timeout"] == 900
+
+
 class TestConfiguration:
     def test_config_values(self):
         mock_config = Mock()

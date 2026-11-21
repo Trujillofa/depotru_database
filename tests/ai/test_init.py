@@ -26,6 +26,7 @@ class TestAIPackageImports:
         assert AIVanna is not None
         assert Config is not None
         assert isinstance(SUPPORTED_PROVIDERS, list)
+        assert "deepseek" in SUPPORTED_PROVIDERS
         assert isinstance(DEFAULT_PROVIDER, str)
 
     def test_import_formatting(self):
@@ -70,6 +71,7 @@ class TestAIPackageImports:
         """Test importing providers."""
         from business_analyzer.ai import (
             AnthropicProvider,
+            DeepSeekProvider,
             GrokProvider,
             OllamaProvider,
             OpenAIProvider,
@@ -77,6 +79,7 @@ class TestAIPackageImports:
 
         assert GrokProvider is not None
         assert OpenAIProvider is not None
+        assert DeepSeekProvider is not None
         assert AnthropicProvider is not None
         assert OllamaProvider is not None
 

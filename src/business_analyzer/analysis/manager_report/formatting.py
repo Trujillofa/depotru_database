@@ -49,6 +49,9 @@ def format_for_display(
             "average_order_value": format_currency(
                 summary.get("average_order_value", 0), 0
             ),
+            "average_order_value_without_iva": format_currency(
+                summary.get("average_order_value_without_iva", 0), 0
+            ),
             "average_order_profit": format_currency(
                 summary.get("average_order_profit", 0), 0
             ),
@@ -108,7 +111,7 @@ def format_for_display(
                 "total_revenue": format_currency(v["total_revenue"], 0),
                 "profit": format_currency(v["profit"], 0),
                 "profit_margin_pct": format_percentage(v["profit_margin_pct"], 1),
-                "revenue_pct": f"{v['revenue_pct']:.1f}%",
+                "revenue_pct": format_percentage(v["revenue_pct"], 1),
                 "transactions": format_integer(v["transactions"]),
             }
             for v in vendor_sales
@@ -119,7 +122,7 @@ def format_for_display(
                 "total_revenue": format_currency(m["total_revenue"], 0),
                 "profit": format_currency(m["profit"], 0),
                 "profit_margin_pct": format_percentage(m["profit_margin_pct"], 1),
-                "revenue_pct": f"{m['revenue_pct']:.1f}%",
+                "revenue_pct": format_percentage(m["revenue_pct"], 1),
                 "transactions": format_integer(m["transactions"]),
             }
             for m in marca_sales
@@ -133,7 +136,7 @@ def format_for_display(
                     {
                         "vendor_name": tv["vendor_name"],
                         "revenue": format_currency(tv["revenue"], 0),
-                        "pct": f"{tv['pct']:.1f}%",
+                        "pct": format_percentage(tv["pct"], 1),
                     }
                     for tv in m.get("top_vendors", [])
                 ],
@@ -147,7 +150,7 @@ def format_for_display(
                     {
                         "product_name": i["product_name"],
                         "sku": i["sku"],
-                        "avg_monthly": f"{i['avg_monthly']:.1f}",
+                        "avg_monthly": f"{i['avg_monthly']:.1f}".replace(".", ","),
                         "suggested_order": format_integer(i["suggested_order"]),
                         "current_stock": (
                             f"{i['current_stock']:.0f}"
@@ -213,9 +216,8 @@ def format_for_display(
             for p in procurement_plan
         ],
         "abc_analysis": {
-            "products": abc_analysis.get("products", {}),
-            "customers": abc_analysis.get("customers", {}),
-            "vendors": abc_analysis.get("vendors", {}),
+            dim: _format_abc_dimension(abc_analysis.get(dim, {}))
+            for dim in ("products", "customers", "vendors")
         },
         "stock_replenishment_suggestions": [
             {
@@ -237,7 +239,7 @@ def format_for_display(
                     "revenue_without_iva": format_currency(w["revenue_without_iva"], 0),
                     "revenue_with_iva": format_currency(w["revenue_with_iva"], 0),
                     "quantity": format_integer(int(w.get("quantity", 0))),
-                    "revenue_pct": f"{w['revenue_pct']:.1f}%",
+                    "revenue_pct": format_percentage(w["revenue_pct"], 1),
                 }
                 for w in warehouse_sales.get("breakdown", [])
             ],
@@ -256,6 +258,27 @@ def format_for_display(
         },
         "budget_vs_actual": _format_budget_vs_actual(budget_vs_actual or {}),
         "contabilidad": _format_contabilidad(contabilidad or {}),
+    }
+
+
+def _format_abc_bucket(bucket: Any) -> Dict[str, Any]:
+    if not isinstance(bucket, dict):
+        return {}
+    return {
+        "count": bucket.get("count", 0),
+        "revenue": format_currency(bucket.get("revenue", 0), 0),
+        "revenue_pct": format_percentage(bucket.get("revenue_pct", 0), 1),
+    }
+
+
+def _format_abc_dimension(dimension: Any) -> Dict[str, Any]:
+    if not isinstance(dimension, dict) or not dimension:
+        return {}
+    return {
+        "a": _format_abc_bucket(dimension.get("a")),
+        "b": _format_abc_bucket(dimension.get("b")),
+        "c": _format_abc_bucket(dimension.get("c")),
+        "total": dimension.get("total", 0),
     }
 
 

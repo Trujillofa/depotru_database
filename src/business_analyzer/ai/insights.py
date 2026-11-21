@@ -4,6 +4,7 @@ Insights module for AI package.
 Contains AI-powered insights generation for query results.
 """
 
+import os
 from typing import Any
 
 import pandas as pd
@@ -31,7 +32,7 @@ def generate_insights(
         # Wrap the specific provider call with a circuit breaker
         decorator = with_circuit_breaker(provider)
 
-        if provider in ["grok", "openai"]:
+        if provider in ["grok", "openai", "deepseek"]:
             decorated_func = decorator(_generate_openai_insights)
             prompt = _prepare_prompt(question, sql, df)
             return decorated_func(ai_client, prompt, provider)
@@ -96,9 +97,17 @@ Formato en español, conciso, enfocado en acción.
 Usa emojis para hacer el análisis más visual."""
 
 
+def _openai_compatible_model(provider: str) -> str:
+    if provider == "grok":
+        return "grok-4-1-fast-non-reasoning"
+    if provider == "deepseek":
+        return os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    return "gpt-4"
+
+
 def _generate_openai_insights(ai_client, prompt: str, provider: str) -> str:
-    """Generate insights using OpenAI-compatible API (Grok, OpenAI)."""
-    model = "grok-4-1-fast-non-reasoning" if provider == "grok" else "gpt-4"
+    """Generate insights using OpenAI-compatible API (Grok, OpenAI, DeepSeek)."""
+    model = _openai_compatible_model(provider)
 
     response = ai_client.chat.completions.create(
         model=model,
@@ -114,7 +123,10 @@ def _generate_openai_insights(ai_client, prompt: str, provider: str) -> str:
     )
 
     insights = response.choices[0].message.content.strip()
-    provider_name = "Grok" if provider == "grok" else "OpenAI"
+    provider_name = {
+        "grok": "Grok",
+        "deepseek": "DeepSeek",
+    }.get(provider, "OpenAI")
     header = f"🤖 ANÁLISIS INTELIGENTE (Powered by {provider_name})"
     return f"\n{'=' * 70}\n{header}\n{'=' * 70}\n\n{insights}\n{'=' * 70}\n"
 

@@ -13,11 +13,54 @@ Usage:
 """
 
 import base64
+import html as html_lib
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from jinja2 import Template
+
+try:  # optional dependency: degrade gracefully if it is missing
+    from markdown import markdown as render_markdown
+except ImportError:  # pragma: no cover - exercised only without `markdown`
+
+    def render_markdown(text, extensions=None):  # type: ignore[no-redef]
+        """Minimal Markdown subset used when the `markdown` package is absent."""
+        import re
+
+        lines = []
+        for line in str(text).splitlines():
+            stripped = line.strip()
+            if not stripped:
+                lines.append("")
+            elif re.fullmatch(r"[-*_]{3,}", stripped):
+                lines.append("<hr />")
+            elif stripped.startswith("#"):
+                lines.append(f"<p><strong>{stripped.lstrip('# ')}</strong></p>")
+            elif stripped.startswith(("- ", "* ")):
+                lines.append(f"<p>• {stripped[2:]}</p>")
+            else:
+                lines.append(f"<p>{stripped}</p>")
+        return "\n".join(lines)
+
+
+HTML_ESCAPE = html_lib.escape
+
+
+def _render_markdown(text: Optional[str]) -> str:
+    """Render an AI narrative as HTML; escape first so DB-sourced text cannot inject."""
+    if not text:
+        return ""
+    escaped = HTML_ESCAPE(str(text))
+    return render_markdown(escaped, extensions=["extra", "sane_lists"])
+
+
+def _has_stock_data(order_suggestions: List[Dict[str, Any]]) -> bool:
+    return any(
+        item.get("current_stock") not in (None, "", "N/A")
+        for suggestion in order_suggestions
+        for item in suggestion.get("suggested_items", [])
+    )
 
 
 def _shopping_section(recommendations: Any, key: str) -> List[Any]:
@@ -80,11 +123,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .badge-info { background: #dbeafe; color: #1e40af; }
         .kpi-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 1rem;
             margin-bottom: 2rem;
         }
         .kpi-card {
+            min-width: 0;
             background: var(--card-bg);
             border: 1px solid var(--border);
             border-radius: 1rem;
@@ -94,7 +138,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 10px 25px rgba(0,0,0,0.08); }
         .kpi-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
-        .kpi-value { font-size: 1.6rem; font-weight: 700; color: var(--primary); }
+        .kpi-value { font-size: clamp(1.05rem, 2.1vw, 1.6rem); font-weight: 700; color: var(--primary); overflow-wrap: anywhere; }
+        .kpi-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem; }
         .kpi-value.green { color: var(--accent); }
         .kpi-value.red { color: var(--danger); }
         .kpi-value.blue { color: var(--secondary); }
@@ -134,7 +179,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
         @media (max-width: 768px) {
             .two-col { grid-template-columns: 1fr; }
-            .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+            .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .container { padding: 1rem; }
             header h1 { font-size: 1.5rem; }
         }
@@ -170,8 +215,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <div class="kpi-value">{{ formatted_summary.order_count }}</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-label">Ticket Promedio</div>
+                <div class="kpi-label">Ticket Promedio (con IVA)</div>
                 <div class="kpi-value orange">{{ formatted_summary.average_order_value }}</div>
+                <div class="kpi-sub">Sin IVA: {{ formatted_summary.average_order_value_without_iva }}</div>
             </div>
         </div>
 
@@ -330,7 +376,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         {% endif %}
 
-        <!-- Contabilidad ERP (Q17) -->
         {% if contabilidad.available %}
         <div class="section" style="border-left: 4px solid #7c3aed;">
             <h2>📒 Contabilidad ERP — Balance y PyG (PUC)</h2>
@@ -476,7 +521,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             </table>
             {% endif %}
         </div>
-        {% elif contabilidad.note %}
+        {% elif contabilidad.note and not branch_name %}
         <div class="section">
             <h2>📒 Contabilidad ERP</h2>
             <p style="color:var(--text-muted);">{{ contabilidad.note }}</p>
@@ -548,11 +593,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:0.5rem;">Clientes top y sus principales proveedores (mezcla de demanda por origen).</p>
             {% for m in customer_vendor_mix[:8] %}
             <div style="background:#f8fafc; border:1px solid var(--border); border-radius:0.5rem; padding:0.6rem; margin-bottom:0.4rem; font-size:0.9rem;">
-                <strong>🏪 {{ m.customer_name[:32] }}</strong> — {{ m.vendor_count }} proveedores, {{ m.total_revenue }}
+                <strong>🏪 {{ m.customer_name }}</strong> — {{ m.vendor_count }} proveedor{{ "" if m.vendor_count|int == 1 else "es" }}, {{ m.total_revenue }}
                 <br>
                 <span style="color:var(--text-muted);">Principales:</span>
                 {% for tv in m.top_vendors %}
-                    <span class="badge badge-info">{{ tv.vendor_name[:14] }} {{ tv.pct }}</span>
+                    <span class="badge badge-info" title="{{ tv.vendor_name }}">{{ tv.vendor_name }} {{ tv.pct }}</span>
                 {% endfor %}
             </div>
             {% endfor %}
@@ -566,18 +611,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             {% for s in order_suggestions %}
             <div style="background:#f8fafc; border:1px solid var(--border); border-radius:0.5rem; padding:1rem; margin-bottom:0.75rem;">
                 <h3 style="margin:0 0 0.5rem; color:var(--primary);">🏪 {{ s.customer_name }}</h3>
-                <p style="margin:0 0 0.5rem; color:var(--text-muted);">Total sugerido: <strong>{{ s.total_suggested }}</strong> unidades</p>
+                <p style="margin:0 0 0.5rem; color:var(--text-muted);">Total sugerido: <strong>{{ s.total_suggested }}</strong> unidad{{ "" if s.total_suggested|int == 1 else "es" }}</p>
                 <table>
                     <thead>
-                        <tr><th>Producto</th><th>Marca</th><th>Proveedor</th><th class="num">Stock</th><th class="num">Prom./Mes</th><th class="num">Sugerido</th></tr>
+                        <tr><th>Producto</th><th>Marca</th><th>Proveedor</th>{% if show_stock %}<th class="num">Stock</th>{% endif %}<th class="num">Prom./Mes</th><th class="num">Sugerido</th></tr>
                     </thead>
                     <tbody>
                     {% for i in s.suggested_items %}
                         <tr>
-                            <td><code>{{ i.sku }}</code> {{ i.product_name[:40] }}</td>
-                            <td>{{ i.marca[:16] if i.marca else "—" }}</td>
-                            <td>{{ i.primary_vendor[:18] if i.primary_vendor else "—" }}</td>
+                            <td><code>{{ i.sku }}</code> {{ i.product_name }}</td>
+                            <td>{{ i.marca if i.marca else "—" }}</td>
+                            <td>{{ i.primary_vendor if i.primary_vendor else "—" }}</td>
+                            {% if show_stock %}
                             <td class="num" style="color:{% if i.current_stock != 'N/A' and i.current_stock|int <= 5 %}var(--danger){% endif %}">{{ i.current_stock }}</td>
+                            {% endif %}
                             <td class="num">{{ i.avg_monthly }}</td>
                             <td class="num"><strong>{{ i.suggested_order }}</strong></td>
                         </tr>
@@ -596,13 +643,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <p style="color:var(--text-muted); font-size:0.9rem;">Consolidado de pedidos sugeridos por cliente, agrupados por proveedor para facilitar negociación y abastecimiento. Mezcla de vendors + patrones de clientes YTD.</p>
             {% for p in procurement_plan[:8] %}
             <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:0.5rem; padding:0.6rem; margin-bottom:0.5rem;">
-                <strong>🏭 {{ p.vendor_name }}</strong> — {{ p.total_suggested_units }} unidades totales, {{ p.affected_customers }} clientes, {{ p.key_products_count }} productos clave
+                <strong>🏭 {{ p.vendor_name }}</strong> — {{ p.total_suggested_units }} unidad{{ "" if p.total_suggested_units|int == 1 else "es" }} total{{ "" if p.total_suggested_units|int == 1 else "es" }}, {{ p.affected_customers }} cliente{{ "" if p.affected_customers|int == 1 else "s" }}, {{ p.key_products_count }} producto{{ "" if p.key_products_count|int == 1 else "s" }} clave
                 {% if p.key_products_count|int > 0 and p.key_products %}
                 <details style="margin-top:0.3rem;">
                     <summary style="cursor:pointer; font-size:0.85rem; color:var(--secondary);">Ver productos sugeridos</summary>
                     <ul style="margin:0.3rem 0 0; padding-left:1.2rem; font-size:0.85rem;">
                     {% for kp in p.key_products %}
-                        <li><code>{{ kp.sku or '' }}</code> {{ kp.product_name[:28] }}: <strong>{{ kp.suggested_order }}</strong> uds ({{ kp.affected_customers }} clientes)</li>
+                        <li><code>{{ kp.sku or '' }}</code> {{ kp.product_name }}: <strong>{{ kp.suggested_order }}</strong> uds ({{ kp.affected_customers }} cliente{{ "" if kp.affected_customers|int == 1 else "s" }})</li>
                     {% endfor %}
                     </ul>
                 </details>
@@ -622,9 +669,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             {% if d %}
             <h3 style="font-size:1rem; margin:0.5rem 0 0.25rem;">{{ dim|capitalize }}</h3>
             <table style="width:100%; font-size:0.9rem;">
-                <tr><td>A</td><td>{{ d.a.count }} items</td><td>{{ d.a.revenue_pct }}% rev</td></tr>
-                <tr><td>B</td><td>{{ d.b.count }} items</td><td>{{ d.b.revenue_pct }}% rev</td></tr>
-                <tr><td>C</td><td>{{ d.c.count }} items</td><td>{{ d.c.revenue_pct }}% rev</td></tr>
+                <tr><td>A</td><td>{{ d.a.count }} items</td><td>{{ d.a.revenue_pct }} rev</td></tr>
+                <tr><td>B</td><td>{{ d.b.count }} items</td><td>{{ d.b.revenue_pct }} rev</td></tr>
+                <tr><td>C</td><td>{{ d.c.count }} items</td><td>{{ d.c.revenue_pct }} rev</td></tr>
             </table>
             {% endif %}
             {% endfor %}
@@ -638,7 +685,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <p style="font-size:0.85rem;">Items con stock crítico + alto movimiento. Usa datos de existencias J3 + ventas.</p>
             <ul style="font-size:0.9rem;">
             {% for s in stock_replenishment_suggestions[:6] %}
-                <li><strong>{{ s.product_name[:35] }}</strong> ({{ s.marca or s.proveedor }}) — Stock: {{ s.current_stock }} | Vendidos: {{ s.recent_sold }}</li>
+                <li><strong>{{ s.product_name }}</strong> ({{ s.marca or s.proveedor }}) — Stock: {{ s.current_stock }} | Vendidos: {{ s.recent_sold }}</li>
             {% endfor %}
             </ul>
         </div>
@@ -650,11 +697,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <h2>🔗 Recomendaciones de Compra Cruzada</h2>
             {% for r in cross_sell %}
             <div style="background:#faf5ff; border:1px solid #e9d5ff; border-radius:0.5rem; padding:0.75rem; margin-bottom:0.5rem;">
-                <strong>📦 {{ r.product_name }}</strong> ({{ r.buyers }} compradores)
+                <strong>📦 {{ r.product_name }}</strong> ({{ r.buyers }} comprador{{ "" if r.buyers|int == 1 else "es" }})
                 <br>
                 <span style="color:var(--text-muted); font-size:0.9rem;">También compran: </span>
                 {% for cr in r.recommended_with %}
-                    <span class="badge badge-info">{{ cr.product_name[:20] }}{% if not loop.last %}, {% endif %}</span>
+                    <span class="badge badge-info" title="{{ cr.product_name|trim }}">{{ cr.product_name|trim }}{% if not loop.last %}, {% endif %}</span>
                 {% endfor %}
             </div>
             {% endfor %}
@@ -675,7 +722,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <tbody>
                 {% for p in high_margin_promote %}
                     <tr>
-                        <td>{{ p.product_name[:45] }}</td>
+                        <td>{{ p.product_name }}</td>
                         <td class="num" style="color:var(--accent);">{{ p.margin_pct }}</td>
                         <td class="num">{{ p.quantity_sold }}</td>
                         <td class="num">{{ p.revenue }}</td>
@@ -831,7 +878,7 @@ class HTMLReportGenerator:
             "charts": charts_b64,
             "formatted_top_products": formatted.get("top_products", []),
             "formatted_top_customers": formatted.get("top_customers", []),
-            "ai_narrative": self.ai_insights.get("ai_analysis_text"),
+            "ai_narrative": _render_markdown(self.ai_insights.get("ai_analysis_text")),
             "executive_summary": self.ai_insights.get("executive_summary", []),
             "recommendations": self.ai_insights.get("recommendations", []),
             "risks": self.ai_insights.get("risks", []),
@@ -844,6 +891,9 @@ class HTMLReportGenerator:
             "marca_sales": formatted.get("marca_sales", []),
             "customer_vendor_mix": formatted.get("customer_vendor_mix", []),
             "order_suggestions": formatted.get("customer_order_suggestions", []),
+            "show_stock": _has_stock_data(
+                formatted.get("customer_order_suggestions", [])
+            ),
             "cross_sell": _shopping_section(
                 formatted.get("shopping_recommendations"), "cross_sell"
             ),

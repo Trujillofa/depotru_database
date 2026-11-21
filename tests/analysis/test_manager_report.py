@@ -539,6 +539,22 @@ class TestManagerSalesReport:
         assert result["formatted"]["contabilidad"]["pyg_summary"]["ingresos_creditos"]
         cont_runner.build_report.assert_called_once_with("2024-05-01", "2024-05-31")
 
+    @patch("business_analyzer.analysis.manager_report.report.ContabilidadRunner")
+    @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
+    def test_branch_report_omits_contabilidad(
+        self, MockRunner, MockContabilidad, sample_sales_data
+    ):
+        """Sede reports skip ERP Balance/PyG; it stays on gerencial only."""
+        self._setup_mock_runner(MockRunner, sample_sales_data)
+
+        report = ManagerSalesReport(2024, 5, branch_document_code="FET")
+        result = report.generate()
+        cont = result["contabilidad"]
+
+        assert cont["available"] is False
+        assert "informe gerencial" in (cont.get("note") or "").lower()
+        MockContabilidad.assert_not_called()
+
     @patch("business_analyzer.analysis.manager_report.report.SalesQueryRunner")
     def test_j3system_failure_graceful(self, MockRunner, sample_sales_data):
         """Test J3System connection failure is handled gracefully."""

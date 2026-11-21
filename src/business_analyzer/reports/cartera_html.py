@@ -8,36 +8,15 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from business_analyzer.ai.formatting import format_currency
 
+from .text import decimal_es as _f
+from .text import percent_es as _pct
+
 
 def _money(value: Any) -> str:
     try:
         return str(format_currency(float(value), 0))
     except (TypeError, ValueError):
         return "—"
-
-
-def _f(value: Any, decimals: int = 0) -> str:
-    try:
-        n = float(value)
-    except (TypeError, ValueError):
-        return "—"
-    if decimals == 0:
-        return f"{n:,.0f}".replace(",", ".")
-    t = f"{n:,.{decimals}f}"
-    return t.replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-def _pct(value: Any, decimals: int = 1) -> str:
-    try:
-        n = float(value)
-    except (TypeError, ValueError):
-        return "—"
-    return _f(n, decimals) + "%"
-
-
-def _short(text: Any, n: int = 48) -> str:
-    s = str(text or "")
-    return s if len(s) <= n else s[: n - 1] + "…"
 
 
 def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
@@ -127,8 +106,8 @@ def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
         lines = []
         for row in top_od[:5]:
             lines.append(
-                f"<li><strong>{escape(_short(row.get('cliente_razon_social'), 50))}</strong>"
-                f" · vendedor {escape(_short(row.get('vendedor_nombre'), 24))} · "
+                f"<li><strong>{escape(str(row.get('cliente_razon_social') or ''))}</strong>"
+                f" · vendedor {escape(str(row.get('vendedor_nombre') or ''))} · "
                 f"vencido <strong>{_money(row.get('vencido'))}</strong> · "
                 f"total {_money(row.get('total'))} · "
                 f"{_f(row.get('dias_vencidos'))} d · "
@@ -157,7 +136,7 @@ def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
         top10 = conc[:10]
         acum10 = float(top10[-1].get("share_acum") or 0) if top10 else 0
         bits = "; ".join(
-            f"<em>{escape(_short(c.get('cliente_razon_social'), 36))}</em> "
+            f"<em>{escape(str(c.get('cliente_razon_social') or ''))}</em> "
             f"({_pct(100 * float(c.get('share_total') or 0))})"
             for c in top3
         )
@@ -181,7 +160,7 @@ def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
         lines = []
         for row in over[:5]:
             lines.append(
-                f"<li><strong>{escape(_short(row.get('cliente_razon_social'), 45))}</strong> · "
+                f"<li><strong>{escape(str(row.get('cliente_razon_social') or ''))}</strong> · "
                 f"cupo {_money(row.get('cliente_cupo'))} · "
                 f"saldo {_money(row.get('total'))} · "
                 f"exceso <strong>{_money(row.get('exceso_cupo'))}</strong></li>"
@@ -191,7 +170,7 @@ def build_insights(report: Mapping[str, Any]) -> List[Dict[str, str]]:
                 "title": "Clientes sobre cupo de crédito",
                 "severity": "danger" if sobre >= 5 else "warning",
                 "body": (
-                    f"Hay <strong>{_f(sobre)}</strong> cliente(s) con saldo por encima del cupo. "
+                    f"Hay <strong>{_f(sobre)}</strong> cliente{'s' if sobre != 1 else ''} con saldo por encima del cupo. "
                     + ("Ejemplos:" f"<ol>{''.join(lines)}</ol>" if lines else "")
                     + "Congelar pedidos a crédito hasta regularizar o ampliar cupo "
                     "con aprobación formal."
@@ -334,12 +313,12 @@ def render_html(
     overdue_cols = [
         (
             "Cliente",
-            lambda r: escape(_short(r.get("cliente_razon_social"))),
+            lambda r: escape(str(r.get("cliente_razon_social") or "")),
             "left",
         ),
         (
             "Vendedor",
-            lambda r: escape(_short(r.get("vendedor_nombre"), 22)),
+            lambda r: escape(str(r.get("vendedor_nombre") or "")),
             "left",
         ),
         ("Vencido", lambda r: _money(r.get("vencido")), "num"),
@@ -350,7 +329,7 @@ def render_html(
     conc_cols = [
         (
             "Cliente",
-            lambda r: escape(_short(r.get("cliente_razon_social"))),
+            lambda r: escape(str(r.get("cliente_razon_social") or "")),
             "left",
         ),
         ("Total", lambda r: _money(r.get("total")), "num"),
@@ -369,7 +348,7 @@ def render_html(
     over_cols = [
         (
             "Cliente",
-            lambda r: escape(_short(r.get("cliente_razon_social"))),
+            lambda r: escape(str(r.get("cliente_razon_social") or "")),
             "left",
         ),
         ("Cupo", lambda r: _money(r.get("cliente_cupo")), "num"),
@@ -377,14 +356,14 @@ def render_html(
         ("Exceso", lambda r: _money(r.get("exceso_cupo")), "num"),
         (
             "Vendedor",
-            lambda r: escape(_short(r.get("vendedor_nombre"), 22)),
+            lambda r: escape(str(r.get("vendedor_nombre") or "")),
             "left",
         ),
     ]
     vend_cols = [
         (
             "Vendedor",
-            lambda r: escape(_short(r.get("vendedor_nombre"), 32)),
+            lambda r: escape(str(r.get("vendedor_nombre") or "")),
             "left",
         ),
         ("Clientes", lambda r: _f(r.get("clientes")), "num"),

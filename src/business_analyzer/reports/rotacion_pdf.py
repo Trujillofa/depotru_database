@@ -5,6 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from .text import decimal_es as _f
+from .text import shorten as _short
+from .text import strip_html as _strip_html
+
 try:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER
@@ -22,36 +26,6 @@ try:
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
-
-
-def _f(value: Any, decimals: int = 0) -> str:
-    try:
-        n = float(value)
-    except (TypeError, ValueError):
-        return "—"
-    if decimals == 0:
-        return f"{n:,.0f}".replace(",", ".")
-    t = f"{n:,.{decimals}f}"
-    return t.replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-def _short(text: Any, n: int = 36) -> str:
-    s = str(text or "")
-    return s if len(s) <= n else s[: n - 1] + "…"
-
-
-def _strip_html(text: str) -> str:
-    """Very small strip for insight bodies (bold/code/ol)."""
-    import re
-
-    t = text or ""
-    t = re.sub(r"<br\s*/?>", "\n", t, flags=re.I)
-    t = re.sub(r"</?(strong|em|code|p|div|span)[^>]*>", "", t, flags=re.I)
-    t = re.sub(r"</?ol[^>]*>", "\n", t, flags=re.I)
-    t = re.sub(r"<li[^>]*>", "• ", t, flags=re.I)
-    t = re.sub(r"</li>", "\n", t, flags=re.I)
-    t = re.sub(r"<[^>]+>", "", t)
-    return " ".join(t.split())
 
 
 def write_rotacion_pdf(
