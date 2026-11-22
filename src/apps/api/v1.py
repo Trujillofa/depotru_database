@@ -118,7 +118,10 @@ async def list_tools(audience: Audience = Depends(require_scoped_api_key)):
 
 
 @router.post("/tools/call", response_model=ToolCallResponse)
-async def call_tool(
+def call_tool(
+    # Sync on purpose: reg.call runs blocking ERP/J3 queries, and an async
+    # def endpoint would execute them on the event loop, serializing every
+    # concurrent request behind the slowest tool call (t_ffbf9522).
     body: ToolCallBody,
     audience: Audience = Depends(require_scoped_api_key),
 ):
