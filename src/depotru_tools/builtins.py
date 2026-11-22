@@ -631,29 +631,46 @@ def _tool_quote_skus(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
 
     cache = get_quote_sku_cache()
 
-    def _batch_compute(sku_key: str) -> list[dict]:
-        # One query for every key of THIS call still missing from the cache;
-        # sibling entries (and empty answers) are stored from the same rows.
-        # A concurrent overlapping call may run its own batch for keys this
-        # flight has not stored yet — bounded duplication, same answers.
-        missing_now = [k for k in lower_skus if cache.peek(k) is None]
-        if not missing_now:
-            return cache.peek(sku_key) or []
-        sql, sql_params = quote_skus_statement(missing_now)
-        rows = _quote_search_j3_rows(sql, sql_params, limit=len(missing_now))
+    if cache.ttl_seconds <= 0:
+        # Cache disabled: ONE batch query for all keys. Going through
+        # cache.resolve() here would run one query per SKU (peek() is always
+        # None without a TTL), i.e. N round trips — the exact profile this
+        # tool removes.
+        try:
+            sql, sql_params = quote_skus_statement(lower_skus)
+            rows = _quote_search_j3_rows(sql, sql_params, limit=len(lower_skus))
+        except Exception:  # noqa: BLE001 — map any J3 failure to the fixed reason
+            return _error("catalog_unavailable", cleaned)
         grouped: dict[str, list[dict]] = {}
         for row in rows:
             grouped.setdefault(str(row.get("sku") or "").casefold(), []).append(row)
-        for k in missing_now:
-            cache.store(k, grouped.get(k, []))
-        return grouped.get(sku_key, [])
+        rows_by_key = {sku_key: grouped.get(sku_key, []) for sku_key in lower_skus}
+    else:
 
-    try:
-        rows_by_key: dict[str, list[dict]] = {
-            sku_key: cache.resolve(sku_key, _batch_compute) for sku_key in lower_skus
-        }
-    except Exception:  # noqa: BLE001 — map any J3 failure to the fixed reason
-        return _error("catalog_unavailable", cleaned)
+        def _batch_compute(sku_key: str) -> list[dict]:
+            # One query for every key of THIS call still missing from the cache;
+            # sibling entries (and empty answers) are stored from the same rows.
+            # A concurrent overlapping call may run its own batch for keys this
+            # flight has not stored yet — bounded duplication, same answers.
+            missing_now = [k for k in lower_skus if cache.peek(k) is None]
+            if not missing_now:
+                return cache.peek(sku_key) or []
+            sql, sql_params = quote_skus_statement(missing_now)
+            rows = _quote_search_j3_rows(sql, sql_params, limit=len(missing_now))
+            grouped: dict[str, list[dict]] = {}
+            for row in rows:
+                grouped.setdefault(str(row.get("sku") or "").casefold(), []).append(row)
+            for k in missing_now:
+                cache.store(k, grouped.get(k, []))
+            return grouped.get(sku_key, [])
+
+        try:
+            rows_by_key = {
+                sku_key: cache.resolve(sku_key, _batch_compute)
+                for sku_key in lower_skus
+            }
+        except Exception:  # noqa: BLE001 — map any J3 failure to the fixed reason
+            return _error("catalog_unavailable", cleaned)
 
     from business_analyzer.core.quote_search_iva import build_product
 

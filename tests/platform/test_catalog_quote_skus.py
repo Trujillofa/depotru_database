@@ -264,6 +264,87 @@ def test_quote_skus_ttl_zero_disables_cache(_fake_db, monkeypatch: pytest.Monkey
 
 
 @pytest.mark.unit
+def test_quote_cache_resolve_error_then_retry_succeeds():
+    """A failed compute must not poison the key: the next resolve retries.
+
+    Regression for the permanent ``_inflight`` leak: the exception path used
+    to leave the dead flight registered, so every later ``resolve`` re-raised
+    the stale error without ever calling compute again.
+    """
+    from depotru_tools.quote_cache import QuoteSkuCache
+
+    cache = QuoteSkuCache(ttl_seconds=60)
+    calls = {"n": 0}
+
+    def _fail_once(_key: str) -> list[dict]:
+        calls["n"] += 1
+        raise ConnectionError("transient J3 failure")
+
+    with pytest.raises(ConnectionError):
+        cache.resolve("a1", _fail_once)
+    assert calls["n"] == 1
+
+    def _healthy(_key: str) -> list[dict]:
+        calls["n"] += 1
+        return [{"sku": "a1"}]
+
+    rows = cache.resolve("a1", _healthy)  # must NOT re-raise the stale error
+    assert rows == [{"sku": "a1"}]
+    assert calls["n"] == 2  # compute was retried, not replayed from the corpse
+
+    assert cache.resolve("a1", _healthy) == [{"sku": "a1"}]
+    assert calls["n"] == 2  # now served from the cache
+    assert cache.hits == 1
+
+
+@pytest.mark.unit
+def test_quote_skus_j3_failure_does_not_poison_retry(_fake_db, monkeypatch):
+    """One transient J3 blip must not return catalog_unavailable forever."""
+    from depotru_tools.builtins import _tool_quote_skus
+
+    class FailDB:
+        def __init__(self, suppress_error_details=False):
+            pass
+
+        def __enter__(self):
+            raise ConnectionError("transient J3 blip")
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr("business_analyzer.core.database.Database", FailDB)
+    ctx = ToolContext(audience=Audience.PUBLIC)
+    out1 = _tool_quote_skus(ctx, {"skus": ["X1"]})
+    assert out1["status"] == "error"
+    assert out1["reason"] == "catalog_unavailable"
+
+    monkeypatch.setattr("business_analyzer.core.database.Database", _FakeDB)
+    out2 = _tool_quote_skus(ctx, {"skus": ["X1"]})
+    assert out2["status"] == "ok"
+    assert out2["count"] == 1
+    out3 = _tool_quote_skus(ctx, {"skus": ["X1"]})
+    assert out3["status"] == "ok"
+
+
+@pytest.mark.unit
+def test_quote_skus_ttl_zero_one_query_for_n_skus(_fake_db, monkeypatch):
+    """TTL=0 disables the cache, NOT the batch: N SKUs in ONE query.
+
+    Documented in ``.env.example`` ("0 disables caching (batch still
+    resolves N SKUs in one query)") — this pins the query count.
+    """
+    from depotru_tools.builtins import _tool_quote_skus
+
+    monkeypatch.setenv("QUOTE_SKU_CACHE_TTL_SECONDS", "0")
+    _FakeDB.calls = []
+    out = _tool_quote_skus(ToolContext(audience=Audience.PUBLIC), {"skus": SKUS[:3]})
+    assert out["status"] == "ok"
+    assert out["count"] == 3
+    assert len(_FakeDB.calls) == 1
+    assert tuple(_FakeDB.calls[0][1]) == tuple(s.lower() for s in SKUS[:3])
+
+
+@pytest.mark.unit
 def test_quote_skus_single_flight_under_concurrency(monkeypatch: pytest.MonkeyPatch):
     """12 parallel identical SKU lookups cause ONE J3 query, not a stampede."""
     from depotru_tools.builtins import _tool_quote_skus

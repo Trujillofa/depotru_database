@@ -85,8 +85,9 @@ class QuoteSkuCache:
         """Return cached rows for ``key`` or compute them exactly once.
 
         Concurrent ``resolve`` calls for the same key block on one
-        ``compute``; the first exception propagates to every waiter and is
-        not cached.
+        ``compute``; the first exception propagates to every waiter, is not
+        cached, and the failed flight is discarded so the next ``resolve``
+        retries ``compute`` instead of replaying the stale error.
         """
         if self.ttl_seconds <= 0:
             return list(compute(key))
@@ -113,6 +114,11 @@ class QuoteSkuCache:
             rows = list(compute(key))
         except BaseException as exc:  # noqa: BLE001 — shared with waiters
             flight.error = exc
+            # Discard the dead flight BEFORE waking waiters: a failed compute
+            # must not poison the key, or every later resolve would replay
+            # this stale error instead of retrying compute.
+            with self._lock:
+                self._inflight.pop(key, None)
             flight.event.set()
             raise
         with self._lock:
