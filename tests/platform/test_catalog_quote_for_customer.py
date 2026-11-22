@@ -6,8 +6,10 @@ import pytest
 
 from business_analyzer.core.j3system_customer_quote import (
     FORBIDDEN_SQL_FRAGMENTS,
+    PUBLIC_TARIFF_CODE,
     build_customer_quote_lines_sql,
     build_customer_tariff_sql,
+    build_public_quote_lines_sql,
     fetch_customer_quote,
     parse_quote_request,
 )
@@ -149,18 +151,7 @@ def _request():
 
 
 @pytest.mark.unit
-def test_missing_and_refused_tariffs_do_not_read_prices():
-    missing = _FakeDB([{"terceros_id": 42, "tarifas_id": None}])
-    out = fetch_customer_quote(missing, _request())
-    assert out["reason"] == "tariff_missing"
-    assert len(missing.calls) == 1
-
-    zero = _FakeDB(
-        [{"terceros_id": 42, "tarifas_id": 0, "tarifa_codigo": "", "tarifa_nombre": ""}]
-    )
-    assert fetch_customer_quote(zero, _request())["reason"] == "tariff_missing"
-    assert len(zero.calls) == 1
-
+def test_refused_tariff_does_not_read_prices():
     cost = _FakeDB(
         [
             {

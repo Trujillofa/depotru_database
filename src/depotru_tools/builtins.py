@@ -948,8 +948,10 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             description=(
                 "Customer quote: AdmPrecios net (before IVA) for a resolved "
                 "TercerosID, unit UND, and per-warehouse stock at neiva "
-                "(ALM, BD6, SUR, DIS, BOD) or florencia (FLO). Fails closed. "
-                "Does not write."
+                "(ALM, BD6, SUR, DIS, BOD) or florencia (FLO). A tercero "
+                "without TarifasID (consumidor final) is quoted at the "
+                "public store price (ArticulosVenta, tarifa_origen="
+                "publica). Fails closed. Does not write."
             ),
             scope=ToolScope.SALES_PORTFOLIO,
             handler=_tool_quote_for_customer,

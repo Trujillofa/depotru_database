@@ -1,9 +1,16 @@
 """Customer quote: list price, UND, and stock at the site warehouses.
 
-A quote exists only when the ERP returns the customer's price list and the
-stock of each warehouse for that site. ``PreciosValor`` is the net price
-(before IVA). ``PreciosIncremento`` and the mostrador price are not applied.
-Cost and margin columns are never selected.
+A quote exists when the ERP returns a price and the stock of each warehouse
+for that site. ``PreciosValor`` is the net price (before IVA).
+``PreciosIncremento`` and the mostrador price are not applied. Cost and
+margin columns are never selected.
+
+A tercero without any ``TarifasID`` (consumidor final) is quoted at the
+public store price: ``AdmArticulos.ArticulosVenta``, the same net public
+reference price the storefront catalog uses. The response marks that
+fallback explicitly with ``tarifa_origen="publica"`` and a ``tarifa`` payload
+without an ERP tariff id (``id`` is null; no tariff row is invented). A
+refused tariff (006 AL COSTO) and a dangling ``TarifasID`` still fail closed.
 
 Neiva stock is reported per warehouse (ALM, BD6, SUR, DIS, BOD). Florencia
 is FLO only. The sell unit is the article itself: UND.
@@ -32,6 +39,12 @@ SITES: dict[str, tuple[str, ...]] = {
 REFUSED_TARIFF_IDS = frozenset({6})
 REFUSED_TARIFF_CODES = frozenset({"006"})
 REFUSED_TARIFF_NAMES = frozenset({"AL COSTO"})
+
+# Public-tariff fallback (consumidor final without TarifasID).
+CUSTOMER_TARIFF_ORIGEN = "tercero"
+PUBLIC_TARIFF_ORIGEN = "publica"
+PUBLIC_TARIFF_CODE = "PUBLICA"
+PUBLIC_TARIFF_NAME = "PRECIO PUBLICO (RESPALDO)"
 
 FORBIDDEN_SQL_FRAGMENTS: tuple[str, ...] = (
     "ArticulosCosto",
@@ -170,17 +183,14 @@ WHERE t.TercerosID = %s
 """.strip()
 
 
-def build_customer_quote_lines_sql(*, site: str, skus: Sequence[str]) -> str:
-    """Net list price and per-warehouse qty for exact SKUs.
+def _stock_join_parts(site: str) -> tuple[str, str]:
+    """``(outer qty columns, LEFT JOIN clause)`` for the site warehouses.
 
-    ``TarifasID`` is the only bound parameter. SKUs and warehouse codes are
-    validated literals.
+    Shared by the tariff quote and the public fallback quote so both report
+    identical per-warehouse stock.
     """
     warehouses = warehouses_for_site(site)
-    sku_sql = sql_in_list(skus, max_len=SKU_MAX_LEN)
     warehouse_sql = sql_in_list(warehouses)
-    articulos = qualified_j3_table("AdmArticulos")
-    precios = qualified_j3_table("AdmPrecios")
     detalle = qualified_j3_table("InvDetalleExistencias")
     existencias = qualified_j3_table("InvExistencias")
     almacen = qualified_j3_table("AdmAlmacen")
@@ -198,6 +208,34 @@ def build_customer_quote_lines_sql(*, site: str, skus: Sequence[str]) -> str:
         qty_outer.append(f"CAST(ISNULL(st.{alias}, 0) AS DECIMAL(18, 4)) AS {alias}")
     qty_sum_sql = ",\n        ".join(qty_sums)
     qty_outer_sql = ",\n    ".join(qty_outer)
+    join_sql = (
+        f"LEFT JOIN (\n"
+        f"    SELECT\n"
+        f"        e.ArticulosID,\n"
+        f"        {qty_sum_sql}\n"
+        f"    FROM {detalle} d\n"
+        f"    JOIN {existencias} e ON e.ExistenciasID = d.ExistenciasID\n"
+        f"    JOIN {almacen} al ON al.AlmacenID = d.AlmacenID\n"
+        f"    WHERE d.Ano = (SELECT MAX(Ano) FROM {detalle})\n"
+        f"      AND CAST(d.SaldoActual AS DECIMAL(18, 4)) >= 0\n"
+        f"      AND al.AlmacenCodigo IN ({warehouse_sql})\n"
+        f"    GROUP BY e.ArticulosID\n"
+        f") st ON st.ArticulosID = a.ArticulosID"
+    )
+    return qty_outer_sql, join_sql
+
+
+def build_customer_quote_lines_sql(*, site: str, skus: Sequence[str]) -> str:
+    """Net list price and per-warehouse qty for exact SKUs.
+
+    ``TarifasID`` is the only bound parameter. SKUs and warehouse codes are
+    validated literals.
+    """
+    sku_sql = sql_in_list(skus, max_len=SKU_MAX_LEN)
+    articulos = qualified_j3_table("AdmArticulos")
+    precios = qualified_j3_table("AdmPrecios")
+    qty_outer_sql, stock_join_sql = _stock_join_parts(site)
+
     return f"""
 SELECT
     a.ArticulosCodigo AS sku,
@@ -218,20 +256,51 @@ LEFT JOIN (
       AND p.Cantidad = 0
     GROUP BY p.ArticulosID
 ) pr ON pr.ArticulosID = a.ArticulosID
-LEFT JOIN (
-    SELECT
-        e.ArticulosID,
-        {qty_sum_sql}
-    FROM {detalle} d
-    JOIN {existencias} e ON e.ExistenciasID = d.ExistenciasID
-    JOIN {almacen} al ON al.AlmacenID = d.AlmacenID
-    WHERE d.Ano = (SELECT MAX(Ano) FROM {detalle})
-      AND CAST(d.SaldoActual AS DECIMAL(18, 4)) >= 0
-      AND al.AlmacenCodigo IN ({warehouse_sql})
-    GROUP BY e.ArticulosID
-) st ON st.ArticulosID = a.ArticulosID
+{stock_join_sql}
 WHERE a.ArticulosCodigo IN ({sku_sql})
 """.strip()
+
+
+def build_public_quote_lines_sql(*, site: str, skus: Sequence[str]) -> str:
+    """Public store price and per-warehouse qty for exact SKUs.
+
+    Fallback quote for a tercero without ``TarifasID``: the price is
+    ``AdmArticulos.ArticulosVenta``, the same net public reference price the
+    storefront catalog quotes (``quote_search`` basis), before IVA. No
+    ``AdmPrecios`` read and no customer tariff is invented. A null
+    ``ArticulosVenta`` surfaces as ``price_missing`` per line, fail-closed.
+    """
+    sku_sql = sql_in_list(skus, max_len=SKU_MAX_LEN)
+    articulos = qualified_j3_table("AdmArticulos")
+    qty_outer_sql, stock_join_sql = _stock_join_parts(site)
+
+    return f"""
+SELECT
+    a.ArticulosCodigo AS sku,
+    a.ArticulosNombre AS name,
+    1 AS price_rows,
+    CAST(a.ArticulosVenta AS DECIMAL(18, 2)) AS price_min,
+    CAST(a.ArticulosVenta AS DECIMAL(18, 2)) AS price_max,
+    {qty_outer_sql}
+FROM {articulos} a
+{stock_join_sql}
+WHERE a.ArticulosCodigo IN ({sku_sql})
+""".strip()
+
+
+def tariff_is_absent(row: Mapping[str, Any]) -> bool:
+    """True when the tercero carries no ``TarifasID`` at all.
+
+    NULL, empty, unparseable, or 0. A set-but-dangling id (no ``AdmTarifas``
+    row) is not absent: it still fails closed as ``tariff_missing``.
+    """
+    raw_id = row.get("tarifas_id")
+    if raw_id is None or raw_id == "":
+        return True
+    try:
+        return int(raw_id) == 0
+    except (TypeError, ValueError):
+        return True
 
 
 def tariff_decision(row: Mapping[str, Any]) -> Optional[str]:
@@ -356,13 +425,66 @@ def _line_from_row(
     return None, {**base, "status": "ok", "price": _as_float(price_min)}
 
 
+def public_tarifa_payload() -> dict[str, Any]:
+    """The explicit public-fallback tariff marker. No ERP tariff is invented."""
+    return {"id": None, "codigo": PUBLIC_TARIFF_CODE, "nombre": PUBLIC_TARIFF_NAME}
+
+
+def _fetch_public_fallback_quote(db: Any, request: QuoteRequest) -> dict[str, Any]:
+    """Quote at the public store price because the tercero has no tariff.
+
+    Same fail-closed shape as the tariff quote: a price-read failure is
+    ``erp_unavailable`` with the public tariff already resolved, and per-line
+    problems (``article_not_found``, ``price_missing``) fail the quote.
+    """
+    tarifa = public_tarifa_payload()
+
+    def _fail_public(reason: str) -> dict[str, Any]:
+        return _fail(
+            reason,
+            terceros_id=request.terceros_id,
+            site=request.site,
+            tarifa=tarifa,
+        )
+
+    try:
+        line_rows = db.execute_query(
+            build_public_quote_lines_sql(site=request.site, skus=request.skus),
+            (),
+        )
+    except Exception:  # noqa: BLE001 — fail closed; do not leak the driver message
+        return _fail_public("erp_unavailable")
+    if not isinstance(line_rows, list):
+        return _fail_public("erp_unavailable")
+    mappings = [row for row in line_rows if isinstance(row, Mapping)]
+    if len(mappings) != len(line_rows):
+        return _fail_public("erp_unavailable")
+    line_reason, lines = _assemble_lines(request, mappings)
+    if line_reason == "erp_unavailable":
+        return _fail_public("erp_unavailable")
+    body: dict[str, Any] = {
+        "status": "ok" if line_reason == "ok" else "error",
+        "terceros_id": request.terceros_id,
+        "site": request.site,
+        "tarifa": tarifa,
+        "tarifa_origen": PUBLIC_TARIFF_ORIGEN,
+        "price_includes_iva": False,
+        "lines": lines,
+    }
+    if line_reason != "ok":
+        body["reason"] = line_reason
+    return body
+
+
 def fetch_customer_quote(db: Any, request: QuoteRequest) -> dict[str, Any]:
     """Read one quote. ``db.execute_query`` must already be connected.
 
-    A missing or refused tariff returns an error and does not read prices.
-    A failure of the price and stock read returns ``erp_unavailable`` and
-    keeps the tariff already resolved. A failure of the customer read is
-    raised for the tool handler to turn into ``erp_unavailable``.
+    A tercero without any ``TarifasID`` is quoted at the public store price
+    (``ArticulosVenta``) with ``tarifa_origen="publica"``. A refused tariff
+    returns an error and does not read prices. A failure of the price and
+    stock read returns ``erp_unavailable`` and keeps the tariff already
+    resolved. A failure of the customer read is raised for the tool handler
+    to turn into ``erp_unavailable``.
     """
     customer_rows = db.execute_query(
         build_customer_tariff_sql(),
@@ -396,6 +518,8 @@ def fetch_customer_quote(db: Any, request: QuoteRequest) -> dict[str, Any]:
     tarifa = tarifa_payload(customer)
     reason = tariff_decision(customer)
     if reason:
+        if reason == "tariff_missing" and tariff_is_absent(customer):
+            return _fetch_public_fallback_quote(db, request)
         return _fail(
             reason,
             terceros_id=request.terceros_id,
@@ -443,6 +567,7 @@ def fetch_customer_quote(db: Any, request: QuoteRequest) -> dict[str, Any]:
         "terceros_id": request.terceros_id,
         "site": request.site,
         "tarifa": tarifa,
+        "tarifa_origen": CUSTOMER_TARIFF_ORIGEN,
         "price_includes_iva": False,
         "lines": lines,
     }
