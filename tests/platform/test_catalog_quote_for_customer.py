@@ -414,3 +414,187 @@ def test_tool_fails_closed_when_the_price_query_raises(monkeypatch: pytest.Monke
     assert out["reason"] == "erp_unavailable"
     assert out["lines"] == []
     assert out["tarifa"]["codigo"] == "005"
+
+
+# --- Consumidor final: public-tariff fallback (BFF-A3) ----------------------
+
+
+class _FakeDB29321:
+    """FakeDB that answers the tariff read for tercero 29321 and any price read."""
+
+    def __init__(self, customer, lines=None, boom_on=None):
+        self.customer = customer
+        self.lines = lines or []
+        self.boom_on = boom_on
+        self.calls: list[tuple[str, tuple]] = []
+
+    def execute_query(self, sql, params):
+        self.calls.append((sql, params))
+        if self.boom_on is not None and "AdmTerceros" not in sql:
+            raise ConnectionError("down")
+        if "AdmTerceros" in sql:
+            return self.customer
+        return self.lines
+
+
+_CONSUMIDOR_FINAL = {"terceros_id": 29321, "tarifas_id": None}
+
+_PUBLIC_LINES = [
+    {
+        "sku": "0020080005",
+        "name": "CEMENTO GRIS 50KG",
+        "price_rows": 1,
+        "price_min": 28000,
+        "price_max": 28000,
+        "qty_alm": 4,
+        "qty_bd6": 0,
+        "qty_sur": 2,
+        "qty_dis": None,
+        "qty_bod": 1,
+    }
+]
+
+
+def _request_29321():
+    parsed, error = parse_quote_request(
+        {"terceros_id": 29321, "site": "neiva", "skus": ["0020080005"]}
+    )
+    assert error is None and parsed is not None
+    return parsed
+
+
+@pytest.mark.unit
+def test_consumidor_final_without_tariff_falls_back_to_public_price():
+    """RED BFF-A3: 29321 (TarifasID NULL) must quote at the public price.
+
+    Today this returns ``tariff_missing``. With the fallback it must return
+    ok lines priced at the public store reference (``ArticulosVenta``) and
+    mark the public-tariff origin explicitly.
+    """
+    db = _FakeDB29321([dict(_CONSUMIDOR_FINAL)], lines=list(_PUBLIC_LINES))
+    out = fetch_customer_quote(db, _request_29321())
+    assert out["status"] == "ok", out
+    assert out["terceros_id"] == 29321
+    assert out["site"] == "neiva"
+    assert out["price_includes_iva"] is False
+    assert out["tarifa_origen"] == "publica"
+    assert out["tarifa"]["id"] is None
+    assert out["tarifa"]["codigo"] == "PUBLICA"
+    assert out["tarifa"]["nombre"].strip() != ""
+    line = out["lines"][0]
+    assert line["status"] == "ok"
+    assert line["price"] == 28000
+    assert line["unit"] == "UND"
+    assert [w["code"] for w in line["warehouses"]] == [
+        "ALM",
+        "BD6",
+        "SUR",
+        "DIS",
+        "BOD",
+    ]
+    assert [w["qty"] for w in line["warehouses"]] == [4, 0, 2, 0, 1]
+    # the fallback read prices: exactly two queries (tariff + public lines)
+    assert len(db.calls) == 2
+    assert "AdmPrecios" not in db.calls[1][0]
+    assert "ArticulosVenta" in db.calls[1][0]
+
+
+@pytest.mark.unit
+def test_zero_tarifas_id_also_falls_back_to_public_price():
+    db = _FakeDB29321(
+        [
+            {
+                "terceros_id": 29321,
+                "tarifas_id": 0,
+                "tarifa_codigo": "",
+                "tarifa_nombre": "",
+            }
+        ],
+        lines=list(_PUBLIC_LINES),
+    )
+    out = fetch_customer_quote(db, _request_29321())
+    assert out["status"] == "ok", out
+    assert out["tarifa_origen"] == "publica"
+
+
+@pytest.mark.unit
+def test_refused_tariff_never_falls_back():
+    db = _FakeDB29321(
+        [
+            {
+                "terceros_id": 29321,
+                "tarifas_id": 6,
+                "tarifa_codigo": "006",
+                "tarifa_nombre": "AL COSTO",
+            }
+        ],
+        lines=list(_PUBLIC_LINES),
+    )
+    out = fetch_customer_quote(db, _request_29321())
+    assert out["status"] == "error"
+    assert out["reason"] == "tariff_refused"
+    assert len(db.calls) == 1
+
+
+@pytest.mark.unit
+def test_dangling_tariff_row_does_not_fall_back():
+    db = _FakeDB29321(
+        [
+            {
+                "terceros_id": 29321,
+                "tarifas_id": 9,
+                "tarifa_codigo": "",
+                "tarifa_nombre": "",
+            }
+        ],
+        lines=list(_PUBLIC_LINES),
+    )
+    out = fetch_customer_quote(db, _request_29321())
+    assert out["status"] == "error"
+    assert out["reason"] == "tariff_missing"
+    assert len(db.calls) == 1
+
+
+@pytest.mark.unit
+def test_public_fallback_fails_closed_when_price_read_raises():
+    db = _FakeDB29321([dict(_CONSUMIDOR_FINAL)], boom_on="lines")
+    out = fetch_customer_quote(db, _request_29321())
+    assert out["status"] == "error"
+    assert out["reason"] == "erp_unavailable"
+    assert out["lines"] == []
+    assert out["tarifa"]["codigo"] == "PUBLICA"
+
+
+@pytest.mark.unit
+def test_normal_tariff_quote_keeps_tercero_origin():
+    db = _FakeDB(
+        customer=[
+            {
+                "terceros_id": 42,
+                "tarifas_id": 5,
+                "tarifa_codigo": "005",
+                "tarifa_nombre": "FERRETERIA AAA",
+            }
+        ],
+        lines=[
+            {
+                "sku": "0020080005",
+                "name": "CEMENTO GRIS 50KG",
+                "price_rows": 1,
+                "price_min": 26000,
+                "price_max": 26000,
+                "qty_alm": 4,
+                "qty_bd6": 0,
+                "qty_sur": 2,
+                "qty_dis": None,
+                "qty_bod": 1,
+            }
+        ],
+    )
+    parsed, _ = parse_quote_request(
+        {"terceros_id": 42, "site": "neiva", "skus": ["0020080005"]}
+    )
+    out = fetch_customer_quote(db, parsed)
+    assert out["status"] == "ok"
+    assert out["tarifa_origen"] == "tercero"
+    assert out["tarifa"]["id"] == 5
