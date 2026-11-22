@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from typing import Sequence
 
 _NOISE = frozenset(
     "precio precios valor cuesta cuanto vale de del la el los las un una unos "
@@ -115,3 +116,36 @@ def quote_search_statement(
         predicate = f"({predicate}) AND {name} LIKE {placeholder} ESCAPE '!'"
         params.append(f"%{escape_like(normalize(query.strip()))}%")
     return sql.replace(original, predicate, 1), tuple(params)
+
+
+def quote_skus_statement(
+    skus: Sequence[str], *, dialect: str = "tsql"
+) -> tuple[str, tuple[str, ...]]:
+    """Exact-SKU batch quote: N codes resolved in ONE query.
+
+    Unlike the LIKE/REPLACE name predicate (non-sargable: SQL Server
+    aggregates the whole inventory per call), ``LOWER(a.ArticulosCodigo)
+    IN (...)`` gets predicate pushdown — the plan seeks inventory rows per
+    SKU instead of scanning ``InvDetalleExistencias`` (subtree cost 0.50 vs
+    16.55 in ``docs/reference/j3-quote-sku-lookup-explain.md``).
+
+    Matching keeps ``catalog.quote_search``'s exact-code semantics
+    (``LOWER(a.ArticulosCodigo) = token``): case-insensitive, no trimming —
+    a code with surrounding spaces does not match, same as quote_search.
+    """
+    from business_analyzer.core.j3system_website_stock import build_quote_search_sql
+
+    codes = [str(s).strip() for s in skus if str(s).strip()]
+    if not codes:
+        raise ValueError("quote_skus_statement requires at least one SKU")
+    sql = build_quote_search_sql(limit=len(codes), dialect=dialect)
+    placeholder = "?" if dialect == "sqlite" else "%s"
+    original = (
+        f"(a.ArticulosNombre LIKE {placeholder} "
+        f"OR a.ArticulosCodigo LIKE {placeholder})"
+    )
+    if sql.count(original) != 1:
+        raise RuntimeError("unrecognized quote-search predicate")
+    in_list = ", ".join(placeholder for _ in codes)
+    predicate = f"LOWER(a.ArticulosCodigo) IN ({in_list})"
+    return sql.replace(original, predicate, 1), tuple(c.lower() for c in codes)

@@ -574,6 +574,115 @@ def _tool_quote_search(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     }
 
 
+_QUOTE_SKUS_MAX = 20
+
+
+def _tool_quote_skus(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
+    """Batch exact-SKU quote: N codes in ONE J3 query + short TTL cache.
+
+    ``catalog.quote_search`` by SKU pays ~2.4 s of SQL Server time per call
+    because its name predicate is non-sargable (full-inventory aggregate).
+    The exact-code ``IN (...)`` predicate gets predicate pushdown, and a
+    per-SKU cache with single-flight absorbs repeats/stampedes: cache
+    misses of one call are resolved by ONE batch query whose rows fill the
+    per-SKU entries (including empty answers for missing codes). Prices
+    and stock follow the same closed quote contract as quote_search (J3
+    ``ArticulosVenta`` before IVA, website-allowlist qty); no cost, no
+    writes, Magento not consulted.
+    """
+    del ctx  # audience is enforced by the registry before this handler runs
+    from depotru_tools.catalog_query import quote_skus_statement
+    from depotru_tools.quote_cache import get_quote_sku_cache
+
+    def _error(reason: str, skus: list[str]) -> dict:
+        return {
+            "skus": skus,
+            "products": [],
+            "count": 0,
+            "found": [],
+            "missing": [],
+            "status": "error",
+            "source": "none",
+            "reason": reason,
+        }
+
+    raw = params.get("skus")
+    if not isinstance(raw, (list, tuple)):
+        return _error("skus_required", [])
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    invalid = False
+    for item in raw:
+        if not isinstance(item, str):
+            invalid = True
+            continue
+        code = item.strip()
+        if not code:
+            continue
+        key = code.casefold()
+        if key not in seen:
+            seen.add(key)
+            cleaned.append(code)
+    if invalid or len(cleaned) > _QUOTE_SKUS_MAX:
+        return _error("skus_invalid", cleaned[:_QUOTE_SKUS_MAX])
+    if not cleaned:
+        return _error("skus_required", [])
+    lower_skus = [c.casefold() for c in cleaned]
+
+    cache = get_quote_sku_cache()
+
+    def _batch_compute(sku_key: str) -> list[dict]:
+        # One query for every key of THIS call still missing from the cache;
+        # sibling entries (and empty answers) are stored from the same rows.
+        # A concurrent overlapping call may run its own batch for keys this
+        # flight has not stored yet — bounded duplication, same answers.
+        missing_now = [k for k in lower_skus if cache.peek(k) is None]
+        if not missing_now:
+            return cache.peek(sku_key) or []
+        sql, sql_params = quote_skus_statement(missing_now)
+        rows = _quote_search_j3_rows(sql, sql_params, limit=len(missing_now))
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            grouped.setdefault(str(row.get("sku") or "").casefold(), []).append(row)
+        for k in missing_now:
+            cache.store(k, grouped.get(k, []))
+        return grouped.get(sku_key, [])
+
+    try:
+        rows_by_key: dict[str, list[dict]] = {
+            sku_key: cache.resolve(sku_key, _batch_compute) for sku_key in lower_skus
+        }
+    except Exception:  # noqa: BLE001 — map any J3 failure to the fixed reason
+        return _error("catalog_unavailable", cleaned)
+
+    from business_analyzer.core.quote_search_iva import build_product
+
+    products: list[dict] = []
+    found: list[str] = []
+    missing: list[str] = []
+    try:
+        for sku_key in lower_skus:
+            rows = rows_by_key.get(sku_key) or []
+            if not rows:
+                missing.append(sku_key)
+                continue
+            found.append(sku_key)
+            for row in rows:
+                products.append(build_product(j3_row=row))
+    except Exception:  # noqa: BLE001 — unexpected validation/Decimal failure
+        return _error("catalog_unavailable", cleaned)
+
+    return {
+        "skus": cleaned,
+        "products": products,
+        "count": len(products),
+        "found": found,
+        "missing": missing,
+        "status": "ok" if products else "empty",
+        "source": "j3" if products else "none",
+    }
+
+
 def _tool_quote_for_customer(ctx: ToolContext, params: Mapping[str, Any]) -> dict:
     """Customer list price before IVA and per-warehouse stock. Fails closed.
 
@@ -939,6 +1048,25 @@ def register_builtin_tools(registry: ToolRegistry) -> None:
             parameters_schema={
                 "query": "product name or SKU fragment",
                 "limit": "max results (default 6)",
+            },
+        )
+    )
+    registry.register(
+        ToolSpec(
+            name="catalog.quote_skus",
+            description=(
+                "Batch exact-SKU quote: resolves 1-20 ArticulosCodigo in ONE "
+                "J3 query (price before IVA, IVA rate, website-allowlist "
+                "stock) with a short TTL cache. Use this instead of N "
+                "quote_search calls when the SKUs are already known. Reports "
+                "found/missing per code; fails closed with "
+                "catalog_unavailable. Does not write."
+            ),
+            scope=ToolScope.PUBLIC_CATALOG,
+            handler=_tool_quote_skus,
+            public_safe=True,
+            parameters_schema={
+                "skus": 'list of 1-20 exact SKU codes, e.g. ["0020090002"]',
             },
         )
     )
