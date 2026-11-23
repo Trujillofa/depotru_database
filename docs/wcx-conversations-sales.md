@@ -1,6 +1,13 @@
 # WCX conversations → SmartBusiness sales — D4 design
 
 **Status: proposed design; owner decisions required, not an implementation.**
+
+**2026-11-23 addendum:** the owner subsequently authorized SELECT-only discovery.
+See [live aggregate evidence and installed-schema corrections](wcx-sales-select-evidence.md).
+In particular, installed `wcx_customers` has `phone_shared`, not the draft's
+`contact_id`/`link_state`, and SmartBusiness `Fecha` is date-only. Historical
+statements below about unexecuted discovery describe the original design delivery,
+not the later authorized discovery. No proposed attribution policy is activated.
 D3 was released by the owner in the task thread and PR
 [#116](https://github.com/Trujillofa/depotru_database/pull/116) is merged at
 `3e0509b202a65552c833cae227590f76a3604cdc`. That approval permits this D4 design,
