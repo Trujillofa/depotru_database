@@ -96,7 +96,9 @@ No channel/status enum meaning is inferred from numeric values.
 
 ## 2. Storage (PostgreSQL, inbox-owned)
 
-The **real migration** is `sql/038_wcx_import.sql` in the depotru-inbox repo,
+The **real migration** is `sql/039_wcx_import.sql` in the depotru-inbox repo
+(renumbered from `038`, which the advisor-technical-decisions migration PR #47
+already occupies on the same `sql/` sequence; this file was never applied),
 delivered in PR https://github.com/Trujillofa/depotru-inbox/pull/45 (branch
 `hermes/d3-wcx-import` from `master`), reviewed there with the importer
 (`scripts/wcx-import.ts`) and the ephemeral-Postgres tests (`pgtests/`). The
