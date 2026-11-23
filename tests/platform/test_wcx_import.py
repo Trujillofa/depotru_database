@@ -208,3 +208,40 @@ def test_symlink_input_is_rejected(tmp_path):
     (tmp_path / "alias.jsonl").symlink_to(tmp_path / "synthetic.jsonl")
     with pytest.raises(ValueError, match="unsafe_input"):
         scan_export(tmp_path, "synthetic")
+
+
+def test_initial_customer_movement_idticket0_belongs_to_case(tmp_path):
+    """Owner-verified rule: idTicket==0 with id==envelope id (or first
+    movement), typeMov=8, is the customer's initial message of the case."""
+    row = record()
+    row["movements"] = [
+        {"id": 1, "idTicket": 0, "typeMov": 8, "contentText": "SYNTHETIC"}
+    ]
+    write_rows(tmp_path, [row])
+    counts = scan_export(tmp_path, "synthetic")
+    assert counts["movements_wrong_case"] == 0
+    assert counts["messages_unique"] == 1
+    assert counts["movements_initial_customer"] == 1
+
+
+def test_idticket0_not_first_and_foreign_id_is_not_initial(tmp_path):
+    row = record()
+    row["movements"] = [
+        {"id": 1, "idTicket": 1},
+        {"id": 55, "idTicket": 0, "typeMov": 0},
+    ]
+    write_rows(tmp_path, [row])
+    counts = scan_export(tmp_path, "synthetic")
+    assert counts["movements_initial_customer"] == 0
+    assert counts["movements_wrong_case"] == 1
+
+
+def test_idticket0_first_movement_without_id_equality_still_initial(tmp_path):
+    row = record(case_id=9)
+    row["movements"] = [
+        {"id": 77, "idTicket": 0, "typeMov": 8, "contentText": "SYNTHETIC"}
+    ]
+    write_rows(tmp_path, [row])
+    counts = scan_export(tmp_path, "synthetic")
+    assert counts["movements_initial_customer"] == 1
+    assert counts["messages_unique"] == 1
