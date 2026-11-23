@@ -1,0 +1,78 @@
+-- D4 DESIGN ONLY: single SELECT over logical, validated input relations.
+-- Neither relation exists in production. No adapter, DDL or writer is shipped.
+-- Named DB-API parameter is bound, never interpolated from user input.
+WITH candidates AS (
+    SELECT c.source, c.case_id, i.invoice_key, i.net_cop
+    FROM case_facts c
+    JOIN invoice_facts i ON i.customer_key = c.customer_key
+    WHERE c.link_state = 'approved'
+      AND c.customer_key IS NOT NULL
+      AND i.sale_eligible = 1
+      AND i.sold_epoch >= c.opened_epoch
+      AND i.sold_epoch < c.window_end_epoch
+      AND i.sold_epoch < %(observed_until_epoch)s
+), invoice_multiplicity AS (
+    SELECT invoice_key, COUNT(*) AS candidate_cases
+    FROM candidates
+    GROUP BY invoice_key
+), evidence AS (
+    SELECT a.source, a.case_id,
+           MAX(CASE WHEN m.candidate_cases > 1 THEN 1 ELSE 0 END) AS ambiguous,
+           COUNT(*) AS invoice_count,
+           SUM(a.net_cop) AS net_cop
+    FROM candidates a
+    JOIN invoice_multiplicity m ON m.invoice_key = a.invoice_key
+    GROUP BY a.source, a.case_id
+), classified AS (
+    SELECT c.source, c.case_id, c.declared_outcome, c.loss_reason,
+           CASE
+               WHEN c.first_response_seconds IS NULL
+                 OR c.first_response_seconds < 0 THEN 'unknown'
+               WHEN c.first_response_seconds <= 300 THEN '0_to_5_min'
+               WHEN c.first_response_seconds <= 1800 THEN '5_to_30_min'
+               WHEN c.first_response_seconds <= 7200 THEN '30_to_120_min'
+               ELSE 'over_120_min'
+           END AS response_band,
+           CASE
+               WHEN c.opened_epoch IS NULL OR c.window_end_epoch IS NULL
+                 OR c.window_end_epoch <= c.opened_epoch THEN 'invalid_time'
+               WHEN c.window_end_epoch > %(observed_until_epoch)s THEN 'censored'
+               WHEN c.link_state <> 'approved' OR c.link_state IS NULL
+                 OR c.customer_key IS NULL THEN 'unlinked'
+               WHEN e.ambiguous = 1 THEN 'ambiguous_attribution'
+               WHEN c.declared_outcome = 'lost' AND e.net_cop > 0
+                   THEN 'outcome_conflict'
+               WHEN e.net_cop > 0 THEN 'converted'
+               WHEN c.declared_outcome = 'lost' THEN 'declared_lost'
+               WHEN e.invoice_count > 0 THEN 'net_nonpositive'
+               ELSE 'no_observed_sale'
+           END AS outcome,
+           CASE WHEN COALESCE(e.ambiguous, 0) = 0
+                THEN COALESCE(e.net_cop, 0) ELSE 0 END AS attributable_net_cop
+    FROM case_facts c
+    LEFT JOIN evidence e ON e.source = c.source AND e.case_id = c.case_id
+    WHERE c.opened_epoch >= %(cohort_start_epoch)s
+      AND c.opened_epoch < %(cohort_end_epoch)s
+), facts AS (
+    SELECT response_band, outcome, COALESCE(declared_outcome, 'unknown') AS declared_outcome,
+           CASE WHEN declared_outcome = 'lost'
+                THEN COALESCE(loss_reason, 'unknown')
+                ELSE 'not_applicable' END AS loss_reason,
+           CASE WHEN declared_outcome = 'lost' THEN 1 ELSE 0 END AS declared_lost,
+           CASE WHEN outcome IN (
+               'converted', 'declared_lost', 'net_nonpositive', 'no_observed_sale'
+           ) THEN 1 ELSE 0 END AS eligible,
+           CASE WHEN outcome = 'converted' THEN 1 ELSE 0 END AS converted,
+           CASE WHEN outcome IN (
+               'converted', 'declared_lost', 'net_nonpositive', 'no_observed_sale'
+           ) THEN attributable_net_cop ELSE 0 END AS net_cop
+    FROM classified
+)
+SELECT response_band, outcome, declared_outcome, loss_reason, COUNT(*) AS cases,
+       SUM(declared_lost) AS declared_lost_cases,
+       SUM(eligible) AS eligible_cases, SUM(converted) AS converted_cases,
+       SUM(net_cop) AS net_cop,
+       1.0 * SUM(converted) / NULLIF(SUM(eligible), 0) AS conversion_rate
+FROM facts
+GROUP BY response_band, outcome, declared_outcome, loss_reason
+ORDER BY response_band, outcome, declared_outcome, loss_reason;

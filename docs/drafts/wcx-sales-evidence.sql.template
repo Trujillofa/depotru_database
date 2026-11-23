@@ -1,0 +1,82 @@
+-- D4 live discovery evidence, 2026-11-23. Reference only; NOT a migration.
+-- Statements were executed separately on their respective servers by a local
+-- process. No cross-server join, staging table or persistent identity bridge.
+-- Output policy: metadata/counts only. Private projection rows stay in local
+-- memory; NEVER print/export them to repo, cards, PRs, logs or external LLMs.
+
+-- PostgreSQL: BEGIN READ ONLY; statement_timeout=30000; end with ROLLBACK.
+SELECT table_name,column_name,data_type
+FROM information_schema.columns
+WHERE table_schema='public'
+  AND table_name IN ('wcx_customers','wcx_cases','wcx_messages')
+ORDER BY table_name,ordinal_position;
+
+SELECT COUNT(*)::int customers,COUNT(phone_e164)::int with_phone,
+       COUNT(*) FILTER(WHERE phone_shared)::int shared_flag_rows,
+       COUNT(DISTINCT source)::int sources
+FROM wcx_customers;
+
+SELECT COUNT(*)::int cases,COUNT(source_customer_id)::int with_customer,
+       COUNT(created_at)::int with_utc,COUNT(created_local)::int with_local,
+       COUNT(source_timezone)::int with_timezone
+FROM wcx_cases;
+
+SELECT COUNT(*)::int messages,COUNT(occurred_at)::int with_utc,
+       COUNT(occurred_local)::int with_local,
+       COUNT(source_timezone)::int with_timezone,
+       COUNT(DISTINCT source_type)::int source_type_count,
+       COUNT(DISTINCT actor)::int actor_count
+FROM wcx_messages;
+
+SELECT COUNT(*)::int distinct_phones,
+       COUNT(*) FILTER(WHERE n>1)::int shared_phone_groups
+FROM (
+    SELECT source,phone_e164,COUNT(*) n FROM wcx_customers
+    WHERE phone_e164 IS NOT NULL GROUP BY source,phone_e164
+) p;
+
+-- PRIVATE projection, captured only into local process memory:
+SELECT source,source_customer_id,phone_e164,phone_shared FROM wcx_customers;
+
+-- MSSQL: pymssql bound parameters, connection rollback/close after SELECTs.
+SELECT TABLE_SCHEMA,TABLE_NAME,COLUMN_NAME,DATA_TYPE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME='banco_datos'
+   OR (COLUMN_NAME LIKE '%%Telefon%%' OR COLUMN_NAME LIKE '%%Celular%%'
+       OR COLUMN_NAME LIKE '%%Nit%%')
+ORDER BY TABLE_NAME,ORDINAL_POSITION;
+
+SELECT COLUMN_NAME,DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA='dbo' AND TABLE_NAME='clientes'
+ORDER BY ORDINAL_POSITION;
+
+-- Bind ('2025-11-01', '2026-11-01'). Not an approved conversation cohort.
+SELECT COUNT_BIG(*) sales_line_rows,
+       SUM(CASE WHEN TercerosIdentificacion IS NULL
+                 OR LTRIM(RTRIM(TercerosIdentificacion))=''
+                THEN CAST(1 AS bigint) ELSE 0 END) missing_identification_rows,
+       SUM(CASE WHEN NumeroDocumento IS NULL THEN CAST(1 AS bigint)
+                ELSE 0 END) missing_document_number_rows,
+       SUM(CASE WHEN TotalSinIva IS NULL THEN CAST(1 AS bigint)
+                ELSE 0 END) missing_amount_rows,
+       SUM(CASE WHEN Cantidad<0 THEN CAST(1 AS bigint)
+                ELSE 0 END) negative_quantity_rows,
+       COUNT(DISTINCT TercerosID) customer_keys
+FROM dbo.banco_datos
+WHERE Fecha >= %s AND Fecha < %s
+  AND DocumentosCodigo NOT IN ('XY','AS','TS','YX','ISC');
+
+SELECT COUNT_BIG(*) n,COUNT(DISTINCT uid) distinct_uid,
+       COUNT(DISTINCT nit) distinct_nit FROM dbo.clientes;
+
+-- PRIVATE projection, captured only into local process memory:
+SELECT uid,nit,telefono,celular FROM dbo.clientes;
+
+-- PRIVATE grouped identities, not publishable aggregates. Same bound dates.
+SELECT TercerosIdentificacion,COUNT_BIG(*) n FROM dbo.banco_datos
+WHERE Fecha >= %s AND Fecha < %s
+  AND DocumentosCodigo NOT IN ('XY','AS','TS','YX','ISC')
+GROUP BY TercerosIdentificacion;
+
+-- Local phone/NIT candidate algorithm and aggregate-only results:
+-- ../wcx-sales-select-evidence.md. No metric SELECT or live attribution run.
