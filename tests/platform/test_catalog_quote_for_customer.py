@@ -6,8 +6,10 @@ import pytest
 
 from business_analyzer.core.j3system_customer_quote import (
     FORBIDDEN_SQL_FRAGMENTS,
+    PUBLIC_TARIFF_CODE,
     build_customer_quote_lines_sql,
     build_customer_tariff_sql,
+    build_public_quote_lines_sql,
     fetch_customer_quote,
     parse_quote_request,
 )
@@ -149,18 +151,7 @@ def _request():
 
 
 @pytest.mark.unit
-def test_missing_and_refused_tariffs_do_not_read_prices():
-    missing = _FakeDB([{"terceros_id": 42, "tarifas_id": None}])
-    out = fetch_customer_quote(missing, _request())
-    assert out["reason"] == "tariff_missing"
-    assert len(missing.calls) == 1
-
-    zero = _FakeDB(
-        [{"terceros_id": 42, "tarifas_id": 0, "tarifa_codigo": "", "tarifa_nombre": ""}]
-    )
-    assert fetch_customer_quote(zero, _request())["reason"] == "tariff_missing"
-    assert len(zero.calls) == 1
-
+def test_refused_tariff_does_not_read_prices():
     cost = _FakeDB(
         [
             {
@@ -414,3 +405,289 @@ def test_tool_fails_closed_when_the_price_query_raises(monkeypatch: pytest.Monke
     assert out["reason"] == "erp_unavailable"
     assert out["lines"] == []
     assert out["tarifa"]["codigo"] == "005"
+
+
+# --- Consumidor final: public-tariff fallback (BFF-A3) ----------------------
+
+
+class _FakeDB29321:
+    """FakeDB that answers the tariff read for tercero 29321 and any price read."""
+
+    def __init__(self, customer, lines=None, boom_on=None):
+        self.customer = customer
+        self.lines = lines or []
+        self.boom_on = boom_on
+        self.calls: list[tuple[str, tuple]] = []
+
+    def execute_query(self, sql, params):
+        self.calls.append((sql, params))
+        if self.boom_on is not None and "AdmTerceros" not in sql:
+            raise ConnectionError("down")
+        if "AdmTerceros" in sql:
+            return self.customer
+        return self.lines
+
+
+_CONSUMIDOR_FINAL = {"terceros_id": 29321, "tarifas_id": None}
+
+_PUBLIC_LINES = [
+    {
+        "sku": "0020080005",
+        "name": "CEMENTO GRIS 50KG",
+        "price_rows": 1,
+        "price_min": 28000,
+        "price_max": 28000,
+        "qty_alm": 4,
+        "qty_bd6": 0,
+        "qty_sur": 2,
+        "qty_dis": None,
+        "qty_bod": 1,
+    }
+]
+
+
+def _request_29321():
+    parsed, error = parse_quote_request(
+        {"terceros_id": 29321, "site": "neiva", "skus": ["0020080005"]}
+    )
+    assert error is None and parsed is not None
+    return parsed
+
+
+@pytest.mark.unit
+def test_consumidor_final_without_tariff_falls_back_to_public_price():
+    """RED BFF-A3: 29321 (TarifasID NULL) must quote at the public price.
+
+    Today this returns ``tariff_missing``. With the fallback it must return
+    ok lines priced at the public store reference (``ArticulosVenta``) and
+    mark the public-tariff origin explicitly.
+    """
+    db = _FakeDB29321([dict(_CONSUMIDOR_FINAL)], lines=list(_PUBLIC_LINES))
+    out = fetch_customer_quote(db, _request_29321())
+    assert out["status"] == "ok", out
+    assert out["terceros_id"] == 29321
+    assert out["site"] == "neiva"
+    assert out["price_includes_iva"] is False
+    assert out["tarifa_origen"] == "publica"
+    assert out["tarifa"]["id"] is None
+    assert out["tarifa"]["codigo"] == "PUBLICA"
+    assert out["tarifa"]["nombre"].strip() != ""
+    line = out["lines"][0]
+    assert line["status"] == "ok"
+    assert line["price"] == 28000
+    assert line["unit"] == "UND"
+    assert [w["code"] for w in line["warehouses"]] == [
+        "ALM",
+        "BD6",
+        "SUR",
+        "DIS",
+        "BOD",
+    ]
+    assert [w["qty"] for w in line["warehouses"]] == [4, 0, 2, 0, 1]
+    # the fallback read prices: exactly two queries (tariff + public lines)
+    assert len(db.calls) == 2
+    assert "AdmPrecios" not in db.calls[1][0]
+    assert "ArticulosVenta" in db.calls[1][0]
+
+
+@pytest.mark.unit
+def test_zero_tarifas_id_also_falls_back_to_public_price():
+    db = _FakeDB29321(
+        [
+            {
+                "terceros_id": 29321,
+                "tarifas_id": 0,
+                "tarifa_codigo": "",
+                "tarifa_nombre": "",
+            }
+        ],
+        lines=list(_PUBLIC_LINES),
+    )
+    out = fetch_customer_quote(db, _request_29321())
+    assert out["status"] == "ok", out
+    assert out["tarifa_origen"] == "publica"
+
+
+@pytest.mark.unit
+def test_refused_tariff_never_falls_back():
+    db = _FakeDB29321(
+        [
+            {
+                "terceros_id": 29321,
+                "tarifas_id": 6,
+                "tarifa_codigo": "006",
+                "tarifa_nombre": "AL COSTO",
+            }
+        ],
+        lines=list(_PUBLIC_LINES),
+    )
+    out = fetch_customer_quote(db, _request_29321())
+    assert out["status"] == "error"
+    assert out["reason"] == "tariff_refused"
+    assert len(db.calls) == 1
+
+
+@pytest.mark.unit
+def test_dangling_tariff_row_does_not_fall_back():
+    db = _FakeDB29321(
+        [
+            {
+                "terceros_id": 29321,
+                "tarifas_id": 9,
+                "tarifa_codigo": "",
+                "tarifa_nombre": "",
+            }
+        ],
+        lines=list(_PUBLIC_LINES),
+    )
+    out = fetch_customer_quote(db, _request_29321())
+    assert out["status"] == "error"
+    assert out["reason"] == "tariff_missing"
+    assert len(db.calls) == 1
+
+
+@pytest.mark.unit
+def test_public_fallback_fails_closed_when_price_read_raises():
+    db = _FakeDB29321([dict(_CONSUMIDOR_FINAL)], boom_on="lines")
+    out = fetch_customer_quote(db, _request_29321())
+    assert out["status"] == "error"
+    assert out["reason"] == "erp_unavailable"
+    assert out["lines"] == []
+    assert out["tarifa"]["codigo"] == "PUBLICA"
+
+
+@pytest.mark.unit
+def test_normal_tariff_quote_keeps_tercero_origin():
+    db = _FakeDB(
+        customer=[
+            {
+                "terceros_id": 42,
+                "tarifas_id": 5,
+                "tarifa_codigo": "005",
+                "tarifa_nombre": "FERRETERIA AAA",
+            }
+        ],
+        lines=[
+            {
+                "sku": "0020080005",
+                "name": "CEMENTO GRIS 50KG",
+                "price_rows": 1,
+                "price_min": 26000,
+                "price_max": 26000,
+                "qty_alm": 4,
+                "qty_bd6": 0,
+                "qty_sur": 2,
+                "qty_dis": None,
+                "qty_bod": 1,
+            }
+        ],
+    )
+    parsed, _ = parse_quote_request(
+        {"terceros_id": 42, "site": "neiva", "skus": ["0020080005"]}
+    )
+    out = fetch_customer_quote(db, parsed)
+    assert out["status"] == "ok"
+    assert out["tarifa_origen"] == "tercero"
+    assert out["tarifa"]["id"] == 5
+
+
+# --- Public fallback SQL guards ----------------------------------------------
+
+
+@pytest.mark.unit
+def test_public_sql_reads_articulosventa_and_skips_cost_pii_and_admprecios():
+    sql = build_public_quote_lines_sql(site="neiva", skus=("0020080005",))
+    assert "ArticulosVenta" in sql
+    assert "AdmPrecios" not in sql
+    assert "PreciosIncremento" not in sql
+    for code in ("ALM", "BD6", "SUR", "DIS", "BOD"):
+        assert f"'{code}'" in sql
+    assert "'FLO'" not in sql
+    assert "SaldoActual" in sql
+    assert "MAX(Ano)" in sql
+    # The public query may read ArticulosVenta by design; every other
+    # forbidden fragment (cost, margin, PII) still applies.
+    for fragment in FORBIDDEN_SQL_FRAGMENTS:
+        if fragment == "ArticulosVenta":
+            continue
+        assert fragment not in sql, fragment
+    # no bound parameters: the public price needs no tariff id
+    assert "%s" not in sql.replace(">= 0", "")
+
+
+@pytest.mark.unit
+def test_public_sql_rejects_injection_skus():
+    with pytest.raises(ValueError):
+        build_public_quote_lines_sql(site="neiva", skus=("X'; DROP TABLE a;--",))
+
+
+@pytest.mark.unit
+def test_tariff_sql_still_never_reads_articulosventa():
+    sql = build_customer_quote_lines_sql(site="neiva", skus=("0020080005",))
+    assert "ArticulosVenta" not in sql
+
+
+# --- Inbox contract (lib/advisor/quote-validate.ts, lib/customer-quote.ts) ---
+
+
+def _inbox_parse_line(line):
+    """Mirror of the inbox strict line validation (quote-validate.ts)."""
+    warehouses = line.get("warehouses")
+    assert isinstance(warehouses, list) and len(warehouses) > 0
+    for w in warehouses:
+        assert isinstance(w["code"], str) and w["code"].strip()
+        assert isinstance(w["qty"], (int, float)) and w["qty"] >= 0
+    assert isinstance(line["sku"], str) and line["sku"].strip()
+    assert isinstance(line["name"], str) and line["name"].strip()
+    assert isinstance(line["unit"], str) and line["unit"].strip()
+    assert line["status"] == "ok"
+    price = line["price"]
+    assert isinstance(price, (int, float)) and price >= 0
+
+
+@pytest.mark.unit
+def test_fallback_response_satisfies_inbox_quote_contract():
+    """The public-fallback response must keep validating for the inbox.
+
+    Mirrors what ``lib/advisor/quote-validate.ts`` and the lenient
+    ``customerQuoteFromBff`` parser of ``lib/customer-quote.ts`` check of a
+    ``catalog.quote_for_customer`` payload: matching terceros/site, net IVA
+    basis, a tarifa record with non-empty nombre/codigo, and a line set that
+    equals the requested SKU set with typed price/stock.
+    """
+    db = _FakeDB29321([dict(_CONSUMIDOR_FINAL)], lines=list(_PUBLIC_LINES))
+    parsed, _ = parse_quote_request(
+        {"terceros_id": 29321, "site": "neiva", "skus": ["0020080005"]}
+    )
+    out = fetch_customer_quote(db, parsed)
+    assert out["status"] == "ok"
+    assert out["terceros_id"] == 29321
+    assert out["site"] == "neiva"
+    assert out["price_includes_iva"] is False
+    tarifa = out["tarifa"]
+    assert isinstance(tarifa, dict)
+    assert isinstance(tarifa["codigo"], str) and tarifa["codigo"].strip()
+    assert isinstance(tarifa["nombre"], str) and tarifa["nombre"].strip()
+    assert isinstance(out["lines"], list) and len(out["lines"]) == 1
+    for line in out["lines"]:
+        _inbox_parse_line(line)
+    skus = {line["sku"] for line in out["lines"]}
+    assert skus == {"0020080005"}
+    assert out["tarifa_origen"] == "publica"
+
+
+@pytest.mark.unit
+def test_fallback_tarifa_id_is_none_documents_strict_a3_gap():
+    """The strict A3 validator requires tarifa.id > 0; the fallback has none.
+
+    Documented deliberately: ``quote-validate.ts`` rejects ``tarifa.id``
+    null as ``tariff_missing``, so the strict auto-quote path declines
+    public-fallback customers until the inbox adopts the contract. The
+    human flow (lenient ``customerQuoteFromBff``) accepts ``id`` null. No
+    ERP tariff id is invented to force the strict path green.
+    """
+    db = _FakeDB29321([dict(_CONSUMIDOR_FINAL)], lines=list(_PUBLIC_LINES))
+    out = fetch_customer_quote(db, _request_29321())
+    assert out["tarifa"]["id"] is None
+    assert out["tarifa"]["codigo"] == PUBLIC_TARIFF_CODE
+    assert out["tarifa"]["nombre"].strip()
