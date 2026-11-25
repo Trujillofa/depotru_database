@@ -245,6 +245,7 @@ def test_quote_skus_short_ttl_cache(_fake_db, monkeypatch: pytest.MonkeyPatch):
     ctx = ToolContext(audience=Audience.PUBLIC)
     out1 = _tool_quote_skus(ctx, {"skus": ["0020090002"]})
     out2 = _tool_quote_skus(ctx, {"skus": ["0020090002"]})
+    assert out1["status"] == "ok"
     assert out2["status"] == "ok"
     assert len(_FakeDB.calls) == 1  # warm hit inside the TTL window
     time.sleep(0.08)  # TTL expires
@@ -390,7 +391,6 @@ def test_quote_skus_batch_beats_per_sku_profile(monkeypatch: pytest.MonkeyPatch)
     the batch tool must resolve the same 6 SKUs in one query (< 0.6 s here).
     """
     from business_analyzer.core.database import Database  # noqa: F401
-    from depotru_tools.builtins import _tool_quote_skus
 
     latency = 0.2
     monkeypatch.setattr(
